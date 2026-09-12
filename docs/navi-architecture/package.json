@@ -1,0 +1,19 @@
+{
+  "name": "navi-architecture-validation",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Executable checks for NAVI's architecture; not a NAVI application.",
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "scripts": {
+    "test": "node --test validation/native-messaging.test.mjs validation/contracts.test.mjs validation/pi-sdk.test.mjs",
+    "test:contracts": "node --test validation/native-messaging.test.mjs validation/contracts.test.mjs",
+    "test:pi": "node --test validation/pi-sdk.test.mjs"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1"
+  }
+}
