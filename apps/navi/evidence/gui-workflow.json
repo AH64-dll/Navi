@@ -1,0 +1,80 @@
+{
+  "private_display": true,
+  "private_bus": true,
+  "software_webgl": true,
+  "gui_close_preserves_session": true,
+  "inspection": {
+    "renderer": "webgl",
+    "sessions": [
+      {
+        "created": 1791634572163,
+        "cwd": "/tmp/navi-isolated-yjinkvgf",
+        "id": "navi-ea10746e59b706eb",
+        "name": "Isolated validation",
+        "profile": "terminal",
+        "running": true
+      },
+      {
+        "created": 1791634578593,
+        "cwd": "/tmp/navi-isolated-yjinkvgf",
+        "id": "navi-dfa2254c6381a60a",
+        "name": "GUI review",
+        "profile": "fixture-shell",
+        "running": true
+      },
+      {
+        "created": 1791634581930,
+        "cwd": "/tmp/navi-isolated-yjinkvgf",
+        "id": "navi-3f00f9f5df41a7b1",
+        "name": "Fixture shell",
+        "profile": "fixture-shell",
+        "running": true
+      }
+    ],
+    "active": "navi-3f00f9f5df41a7b1",
+    "terminal": "[amrhares@fedora navi-isolated-yjinkvgf]$                                                     ",
+    "title": "Fixture shell"
+  },
+  "workflow": {
+    "ok": true,
+    "steps": [
+      "Hardware controls disabled",
+      "Remote decision endpoint rejected",
+      "Decision and speech configuration saved",
+      "External desktop launcher blocked",
+      "Named fixture harness launched and attached",
+      "Session selection switched the terminal",
+      "GUI command reached Rust and launched a registered harness",
+      "Stop canceled pending inference without a terminal side effect"
+    ],
+    "sessions": [
+      {
+        "created": 1791634572163,
+        "cwd": "/tmp/navi-isolated-yjinkvgf",
+        "id": "navi-ea10746e59b706eb",
+        "name": "Isolated validation",
+        "profile": "terminal",
+        "running": true
+      },
+      {
+        "created": 1791634578593,
+        "cwd": "/tmp/navi-isolated-yjinkvgf",
+        "id": "navi-dfa2254c6381a60a",
+        "name": "GUI review",
+        "profile": "fixture-shell",
+        "running": true
+      },
+      {
+        "created": 1791634581930,
+        "cwd": "/tmp/navi-isolated-yjinkvgf",
+        "id": "navi-3f00f9f5df41a7b1",
+        "name": "Fixture shell",
+        "profile": "fixture-shell",
+        "running": true
+      }
+    ],
+    "model": "GUI replacement provider",
+    "voice_engine": "whisper",
+    "renderer": "webgl"
+  }
+}

@@ -1,5 +1,7 @@
 # NAVI
 
+> Current CLI/extension foundation: [architecture](../navi-foundation/architecture.md) and [developer setup](../../packages/navi/README.md). Its CLI-owned harness and relay-only native host supersede this older browser-spawned embedded-agent placement. The research and reference validation below remain historical evidence, not a statement of current runtime behavior.
+
 Architecture and executable integration checks for a browser-first assistant built around [Pi](https://github.com/earendil-works/pi).
 
 **There is no runnable NAVI browser extension or native host yet.** The current work makes the design concrete and tests selected contracts against Pi's published packages.

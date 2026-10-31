@@ -1,0 +1,5 @@
+/target/
+/evidence/*.png
+/evidence/*.wav
+__pycache__/
+*.pyc

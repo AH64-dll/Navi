@@ -1,0 +1,76 @@
+{
+  "kind": "synthetic speech smoke",
+  "results": [
+    {
+      "phrase": "Hey Navi. Open Codex.",
+      "transcript": {
+        "text": "Hay Navi, open to oldness.",
+        "language": "en",
+        "ttft_ms": 480.2,
+        "decode_tps": 17.5
+      },
+      "elapsed_ms": 1166.3,
+      "moonshine": "Cainavi opened coordinates.",
+      "moonshine_ms": 42.0,
+      "wake": []
+    },
+    {
+      "phrase": "Hey Navi. Open Claude.",
+      "transcript": {
+        "text": "Tay Navi opened logs.",
+        "language": "en",
+        "ttft_ms": 176.1,
+        "decode_tps": 371.3
+      },
+      "elapsed_ms": 203.3,
+      "moonshine": "In every open cloud.",
+      "moonshine_ms": 29.5,
+      "wake": []
+    },
+    {
+      "phrase": "Hey Navi. Switch to the Navi session.",
+      "transcript": {
+        "text": "Hey Navi, switch to Navi fashion.",
+        "language": "en",
+        "ttft_ms": 46.1,
+        "decode_tps": 117.5
+      },
+      "elapsed_ms": 173.9,
+      "moonshine": "Hey Navi, switch to the Navi session.",
+      "moonshine_ms": 41.1,
+      "wake": []
+    },
+    {
+      "phrase": "Open the browser.",
+      "transcript": {
+        "text": "Open the browser.",
+        "language": "en",
+        "ttft_ms": 54.9,
+        "decode_tps": 14.3
+      },
+      "elapsed_ms": 334.6,
+      "moonshine": "Open the browser.",
+      "moonshine_ms": 26.6,
+      "wake": []
+    },
+    {
+      "phrase": "The weather is nice today.",
+      "transcript": {
+        "text": "But where there is ice to day?",
+        "language": "en",
+        "ttft_ms": 49.3,
+        "decode_tps": 67.6
+      },
+      "elapsed_ms": 167.8,
+      "moonshine": "But wherever is ice today.",
+      "moonshine_ms": 26.0,
+      "wake": []
+    }
+  ],
+  "silence": {
+    "text": "",
+    "language": "",
+    "ttft_ms": 0.0,
+    "decode_tps": 0.0
+  }
+}

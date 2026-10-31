@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "NAVI Foundation Bridge",
+  "description": "Connects the NAVI CLI harness to one document you attach. Foundation scaffold, not a complete product.",
+  "version": "0.0.1",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "NAVI: attach this tab"
+  }
+}

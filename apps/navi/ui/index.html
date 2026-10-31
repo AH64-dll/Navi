@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'">
+  <title>Navi · Orchestration Station</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="surface.css">
+  <link rel="stylesheet" href="station.css">
+</head>
+<body class="booting">
+  <canvas id="field" aria-hidden="true"></canvas><div class="scan" aria-hidden="true"></div>
+  <div class="brand"><b>Copland OS Enterprise</b><i>Navi · Orchestration Station</i></div>
+  <div id="whisper" aria-hidden="true"></div>
+  <aside class="session-dock glass" aria-label="Sessions">
+    <header><span>SESSIONS</span><button id="new-session" title="Create a session">+</button></header>
+    <div id="sessions"></div>
+    <div id="chief-status">Local chief · starting</div>
+  </aside>
+  <section class="terminal-pane" aria-label="Harness terminal">
+    <header class="pane-title">
+      <span class="pane-name"><i id="signal"></i><b id="session-name">Navi</b><em id="harness-name">Station</em></span>
+      <span class="pane-state" id="state">ready</span>
+      <button id="focus-top" title="Focus view" aria-label="Toggle focus view">⤢</button>
+    </header>
+    <div id="terminal"></div>
+    <div id="empty-session"><h1>Your terminals, together.</h1><p>Open Codex, Claude Code, Pi, or a custom harness.</p><button id="empty-launch">Create session</button><p class="muted">Sessions keep running when this window closes.</p></div>
+    <form id="command-form"><label class="sr-only" for="command">Command to the local chief</label><input id="command" placeholder="Open Codex · Switch to Navi · Open the browser" autocomplete="off"><button type="submit">Run</button><button type="button" id="stop">Stop</button></form>
+    <div class="pane-edge" aria-hidden="true"></div>
+  </section>
+  <section class="syslog" aria-label="Activity"><span class="syslog-title">SYSTEM</span><div id="syslog"></div></section>
+  <nav class="orbit-controls" aria-label="Station controls">
+    <button class="orb" id="microphone" aria-pressed="false"><span>Mic off</span></button>
+    <button class="orb" id="desktop"><span>Desktop</span></button>
+    <button class="orb" id="settings-button"><span>Settings</span></button>
+    <button class="orb" id="motion-button" aria-pressed="true"><span>Motion</span></button>
+    <button class="orb" id="fullscreen-button"><span>Full View</span></button>
+  </nav>
+  <dialog id="launch-dialog" class="glass"><form id="launch-form">
+    <header><h2>Create session</h2><button type="button" data-close="launch-dialog">Close</button></header>
+    <label>Harness<select id="launch-profile"></select></label>
+    <label>Session name<input id="launch-name" placeholder="Optional name" maxlength="120"></label>
+    <label>Project directory<input id="launch-cwd" required></label>
+    <button type="submit">Open terminal</button>
+  </form></dialog>
+  <dialog id="settings-dialog" class="glass"><form id="settings-form">
+    <header><h2>Station settings</h2><button type="button" data-close="settings-dialog">Close</button></header>
+    <label>Decision model name<input id="model-name"></label>
+    <label>Local decision endpoint<input id="model-endpoint"></label>
+    <label>Model server executable<input id="model-server"></label>
+    <label>Decision weights<input id="model-weights"></label>
+    <label>Image projection<input id="model-projection"></label>
+    <label>GPU layers (0 for CPU)<input id="model-gpu" type="number" min="0" max="999"></label>
+    <label>CPU threads<input id="model-threads" type="number" min="1" max="8"></label>
+    <label>Confidence threshold<input id="model-confidence" type="number" min="0.5" max="1" step="0.01"></label>
+    <label>Listening mode<select id="listening"><option value="background">Keep listening with window closed</option><option value="gui">Listen while window is open</option></select></label>
+    <label>Assistant persona<select id="persona"><option value="jarvis">Jarvis</option><option value="friendly">Friendly</option><option value="concise">Concise</option></select></label>
+    <p>Voice uses “Hey Navi”, then an English command. Mic off releases the microphone.</p>
+    <p>Voice is experimental. Use the Stop button if speech is misunderstood.</p>
+    <label>Speech settings (JSON)<textarea id="speech" rows="3" spellcheck="false"></textarea></label>
+    <label>Launch profiles (JSON)<textarea id="profiles" rows="5" spellcheck="false"></textarea></label>
+    <label>Projects (JSON)<textarea id="projects" rows="3" spellcheck="false"></textarea></label>
+    <label>Browser favorites (JSON)<textarea id="favorites" rows="3" spellcheck="false"></textarea></label>
+    <button type="submit">Save settings</button>
+    <hr><h3>Zen browser connection</h3><p id="browser-status">Extension disconnected</p>
+    <p>Load the provided extension in Zen's about:debugging → This Firefox → Load Temporary Add-on. Select browser/manifest.json. Its popup connects to Navi and lets you attach a tab for control. Temporary installation lasts until Zen restarts; a signed add-on is needed for permanent installation.</p>
+    <button type="button" id="browser-folder">Open extension folder</button>
+    <h3>Desktop connection</h3><p id="desktop-status">Disconnected</p><p>Desktop opens the system's screen and input consent dialog. Choose the screen you want Navi to control.</p>
+  </form></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="boot" aria-hidden="true"><div class="boot-title"><b>Copland OS Enterprise</b><i>Navi · Orchestration Station</i></div></div>
+  <script src="vendor/xterm.js"></script><script src="scene.bundle.js"></script><script src="station.js"></script>
+</body>
+</html>

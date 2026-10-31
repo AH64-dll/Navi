@@ -1,0 +1,17 @@
+{
+  "headless_disposable_profile": true,
+  "private_station": true,
+  "test_only_permission_grant": true,
+  "native_connection": true,
+  "explicit_attach": true,
+  "typed_decision_to_real_dom_click": true,
+  "real_d1_to_dom_click": true,
+  "model": "real d1 CPU for first click; deterministic provider for fault checks",
+  "unchanged_observation_survives_slow_inference": true,
+  "hidden_secret_editable_text_excluded": true,
+  "url_query_and_fragment_redacted": true,
+  "changed_target_rejected_without_retry": true,
+  "focus_handler_cannot_retarget_click": true,
+  "daemon_restart_reconnect": true,
+  "navigation_revokes_page_grant": true
+}

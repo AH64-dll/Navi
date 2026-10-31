@@ -1,0 +1,616 @@
+{
+  "model": "d1-3B Q4_K_M text decisions",
+  "runtime": "llama.cpp b11540 CPU, two threads, separate endpoint",
+  "kind": "unseen command checks",
+  "cases": 32,
+  "correct": 22,
+  "accuracy": 0.6875,
+  "median_ms": 2630.5,
+  "p95_ms": 3835,
+  "results": [
+    {
+      "text": "Please open Codex.",
+      "expected": "launch:codex",
+      "selected": "launch:codex",
+      "pass": true,
+      "elapsed_ms": 3794,
+      "answer": {
+        "launch:codex": {
+          "noul": 0.9032697116588584,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.31801876129560647,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.7309835705191481,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Could you launch Claude Code?",
+      "expected": "launch:claude",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3776,
+      "answer": {
+        "launch:claude": {
+          "noul": 0.9350223333712286,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.30970019186449405,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.4473386294729276,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Open a new Pi session in Navi",
+      "expected": "launch:pi",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3774,
+      "answer": {
+        "launch:pi": {
+          "noul": 0.9722392503088028,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.2462971048618785,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.4448878817681581,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Start a terminal called Notes",
+      "expected": "launch:terminal",
+      "selected": "launch:terminal",
+      "pass": true,
+      "elapsed_ms": 3734,
+      "answer": {
+        "launch:terminal": {
+          "noul": 0.9871204997212704,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.29788904197717997,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.7761205818696892,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Create Codex named Release",
+      "expected": "launch:codex",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3775,
+      "answer": {
+        "launch:codex": {
+          "noul": 0.8500239479318177,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.30914223996271945,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.5475519651693042,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Open Claude in Navi, please.",
+      "expected": "launch:claude",
+      "selected": "launch:claude",
+      "pass": true,
+      "elapsed_ms": 3835,
+      "answer": {
+        "launch:claude": {
+          "noul": 0.9146550129256388,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.29005227865242433,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.7066900164140636,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Resume Design",
+      "expected": "switch:navi-1118ea142a58b8ca",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3916,
+      "answer": {
+        "noop": {
+          "noul": 0.393902196024518,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.5992039189157974,
+          "type": "noul"
+        },
+        "switch:navi-1118ea142a58b8ca": {
+          "noul": 0.9529895255358696,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Select the Review session",
+      "expected": "switch:navi-acca3ad21ad2ecef",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3754,
+      "answer": {
+        "noop": {
+          "noul": 0.2994487821426605,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.6151366243426911,
+          "type": "noul"
+        },
+        "switch:navi-acca3ad21ad2ecef": {
+          "noul": 0.9805700071447716,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Return to Design",
+      "expected": "switch:navi-1118ea142a58b8ca",
+      "selected": "switch:navi-1118ea142a58b8ca",
+      "pass": true,
+      "elapsed_ms": 3815,
+      "answer": {
+        "noop": {
+          "noul": 0.34050831569740825,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.8038895349444249,
+          "type": "noul"
+        },
+        "switch:navi-1118ea142a58b8ca": {
+          "noul": 0.970879329044103,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Focus the existing Review session",
+      "expected": "switch:navi-acca3ad21ad2ecef",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3714,
+      "answer": {
+        "noop": {
+          "noul": 0.332624918155393,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.6041690510949346,
+          "type": "noul"
+        },
+        "switch:navi-acca3ad21ad2ecef": {
+          "noul": 0.8535912497018584,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Launch Zen please",
+      "expected": "browser",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3735,
+      "answer": {
+        "browser": {
+          "noul": 0.990611299954199,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.2613261392458728,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.5412359866990775,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Start the browser",
+      "expected": "browser",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3735,
+      "answer": {
+        "browser": {
+          "noul": 0.9881316842413445,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.3659725675064828,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.6380048890839268,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Please open GitHub",
+      "expected": "favorite:0",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3735,
+      "answer": {
+        "favorite:0": {
+          "noul": 0.8159556776437312,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.299322358848461,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.5601831053632828,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Open Docs in my browser",
+      "expected": "favorite:1",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 3573,
+      "answer": {
+        "favorite:1": {
+          "noul": 0.982410300051414,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.2781947434118738,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.4161393599251465,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Never launch Pi",
+      "expected": "noop",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2610,
+      "answer": {
+        "noop": {
+          "noul": 0.3003097515029795,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.17565818334968927,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Don't switch to Design",
+      "expected": "noop",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2510,
+      "answer": {
+        "noop": {
+          "noul": 0.3601100977549476,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.32302171161591825,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Stop opening terminals",
+      "expected": "noop",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2610,
+      "answer": {
+        "noop": {
+          "noul": 0.3182914329296131,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.2773200521833624,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Do not open GitHub",
+      "expected": "noop",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2530,
+      "answer": {
+        "noop": {
+          "noul": 0.2955296363348152,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.4569999268661412,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Cancel opening Zen",
+      "expected": "noop",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2489,
+      "answer": {
+        "noop": {
+          "noul": 0.4794541722075904,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.5614881481597772,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Keep current terminal",
+      "expected": "noop",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2529,
+      "answer": {
+        "noop": {
+          "noul": 0.7444836711122558,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.7611496472455477,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Open Codex in Atlantis",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2410,
+      "answer": {
+        "noop": {
+          "noul": 0.281381694811696,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.49147831473164955,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Switch to the Blue session",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2529,
+      "answer": {
+        "noop": {
+          "noul": 0.3461185684270244,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.7605659123619116,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Switch to Design and Review",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2550,
+      "answer": {
+        "noop": {
+          "noul": 0.26800905218788224,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.776121907530839,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Open a picture",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2610,
+      "answer": {
+        "noop": {
+          "noul": 0.3321838781529554,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.6607711902130284,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Open Cloud Code",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2651,
+      "answer": {
+        "noop": {
+          "noul": 0.2934709183842918,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.7701448583864305,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Open the secret session",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2529,
+      "answer": {
+        "noop": {
+          "noul": 0.29735914350513093,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.8179726864953419,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Delete Review",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2570,
+      "answer": {
+        "noop": {
+          "noul": 0.22159536744412195,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.5762127169885826,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Please explain Codex",
+      "expected": "clarify|noop",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2489,
+      "answer": {
+        "noop": {
+          "noul": 0.46239054582853983,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.07997210269068408,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "No need to launch Claude",
+      "expected": "noop|clarify",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 3694,
+      "answer": {
+        "launch:claude": {
+          "noul": 0.03886755048575053,
+          "type": "noul"
+        },
+        "noop": {
+          "noul": 0.2979863886319464,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.13946938770932354,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "Maybe later we can open Codex",
+      "expected": "noop|clarify",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2469,
+      "answer": {
+        "noop": {
+          "noul": 0.4693264391077197,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.04338637637865663,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "I opened Claude yesterday",
+      "expected": "noop|clarify",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 2429,
+      "answer": {
+        "noop": {
+          "noul": 0.4633584045578424,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.06491558146588353,
+          "type": "noul"
+        }
+      }
+    },
+    {
+      "text": "What does switch to Review mean?",
+      "expected": "noop|clarify",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 2530,
+      "answer": {
+        "noop": {
+          "noul": 0.26789681187947595,
+          "type": "noul"
+        },
+        "request_now": {
+          "noul": 0.03192180503273555,
+          "type": "noul"
+        }
+      }
+    }
+  ]
+}

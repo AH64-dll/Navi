@@ -1,0 +1,16 @@
+{
+	"name": "@navi/foundation",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"description": "NAVI CLI and user-controlled browser bridge foundation; no model runtime.",
+	"engines": {
+		"node": ">=22.20.0"
+	},
+	"scripts": {
+		"check": "tsgo --noEmit -p tsconfig.json && tsgo --noEmit -p browser/tsconfig.json && tsgo --noEmit -p browser/tsconfig.test.json",
+		"test:unit": "node --test test/*.test.ts browser/test/*.test.ts",
+		"package:extension": "node scripts/package-extension.mjs",
+		"serve": "node src/cli/main.ts serve"
+	}
+}

@@ -1,0 +1,8 @@
+{
+  "name": "navi-station-surface",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"bundle": "node scripts/bundle.mjs"},
+  "dependencies": {"three": "0.180.0"}
+}

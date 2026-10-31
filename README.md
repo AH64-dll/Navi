@@ -10,6 +10,10 @@
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## NAVI foundation
+
+This fork keeps the upstream Pi monorepo below. NAVI adds a CLI-owned browser bridge in [`packages/navi`](packages/navi/README.md). See the [foundation architecture](docs/navi-foundation/architecture.md) and [contributor guide](docs/navi-foundation/contributing.md). It is infrastructure, not a complete AI assistant.
+
 # Pi Agent Harness
 
 This is the home of the Pi agent harness project including our self extensible coding agent.

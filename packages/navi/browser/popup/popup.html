@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>NAVI</title>
+		<link rel="stylesheet" href="popup.css" />
+	</head>
+	<body>
+		<main>
+			<h1>NAVI</h1>
+			<p class="status" id="phase">Checking status...</p>
+			<p class="detail" id="target"></p>
+			<p class="error" id="error" hidden></p>
+			<fieldset>
+				<legend>Capabilities for the next attach</legend>
+				<label><input type="checkbox" id="cap-observe" checked disabled /> Observe this page</label>
+				<label><input type="checkbox" id="cap-focus" /> Focus one observed element</label>
+				<label><input type="checkbox" id="cap-scroll" /> Scroll the page</label>
+			</fieldset>
+			<p class="note">
+				Focus and scroll can trigger page handlers and are observable by the site. NAVI never clicks, types or
+				navigates.
+			</p>
+			<div class="actions">
+				<button type="button" id="attach">Attach current tab</button>
+				<button type="button" id="detach">Detach</button>
+			</div>
+			<p class="note">
+				Attaching pins this tab and document. Switching tabs does not move the grant; navigating or closing the tab
+				ends it, and a new attach is required.
+			</p>
+		</main>
+		<script type="module" src="popup.js"></script>
+	</body>
+</html>

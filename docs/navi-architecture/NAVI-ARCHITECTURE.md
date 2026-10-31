@@ -1,5 +1,7 @@
 # NAVI architecture and implementation contract
 
+> Current CLI/extension foundation: [architecture](../navi-foundation/architecture.md) and [developer setup](../../packages/navi/README.md). Its CLI-owned harness and relay-only native host supersede this older browser-spawned embedded-agent placement. The research and reference validation below remain historical evidence, not a statement of current runtime behavior.
+
 **Revised 2026-09-13. This is the authoritative design.** NAVI is not an implemented application yet. This repository contains the design and executable checks of selected integration contracts. Passing those checks does not establish browser compatibility, answer quality, or release readiness.
 
 The [previous architecture](research/archive-2026-09-11-architecture.md) and original research reports are historical evidence. Where they disagree with this document, use this document. The [implementation review](research/11-implementation-review.md) records the corrections and Sodium evidence.

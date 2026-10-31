@@ -1,0 +1,89 @@
+:root {
+	color-scheme: light dark;
+	font-family: system-ui, sans-serif;
+}
+
+body {
+	margin: 0;
+	background: Canvas;
+	color: CanvasText;
+}
+
+main {
+	width: 320px;
+	padding: 12px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+h1 {
+	margin: 0;
+	font-size: 15px;
+	letter-spacing: 0.02em;
+}
+
+.status {
+	margin: 0;
+	font-weight: 600;
+}
+
+.detail,
+.note {
+	margin: 0;
+	font-size: 12px;
+	opacity: 0.8;
+	word-break: break-word;
+}
+
+.error {
+	margin: 0;
+	padding: 6px 8px;
+	border-radius: 4px;
+	font-size: 12px;
+	background: color-mix(in srgb, red 18%, transparent);
+}
+
+fieldset {
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+	border-radius: 6px;
+	font-size: 12px;
+}
+
+legend {
+	padding: 0 4px;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	opacity: 0.8;
+}
+
+label {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	padding: 2px 0;
+}
+
+.actions {
+	display: flex;
+	gap: 8px;
+}
+
+button {
+	flex: 1;
+	padding: 6px 10px;
+	font-size: 13px;
+	border-radius: 5px;
+	border: 1px solid color-mix(in srgb, CanvasText 30%, transparent);
+	background: color-mix(in srgb, CanvasText 8%, transparent);
+	color: inherit;
+	cursor: pointer;
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}

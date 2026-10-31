@@ -1,0 +1,57 @@
+{
+  "kind": "Deterministic Piper Amy PCM in 100 ms chunks through production capture; physical microphone not tested",
+  "tts_noise_scale": 0,
+  "tts_noise_scale_w": 0,
+  "real_d1_cpu": true,
+  "private_terminal_launch_and_switch": true,
+  "no_audio_device_opened": true,
+  "capture_pre_roll_seconds": 3,
+  "capture_limit_seconds": 20,
+  "silence_endpoint_seconds": 0.9,
+  "results": [
+    {
+      "phrase": "Hey Navi. Open a terminal called Sandbox.",
+      "audio_sha256": "f50d92ea89d6811bba3d0e873a16c8c6d51356f64b5e694176dad31cb0ff332b",
+      "transcript": "open a terminal called Sandbox",
+      "wake_at_seconds": 2.7,
+      "recording_seconds": 5.8,
+      "asr_ms": 1321.8,
+      "action": {
+        "kind": "launch",
+        "profile": "terminal"
+      }
+    },
+    {
+      "phrase": "Hey Navi. Switch to Sandbox.",
+      "audio_sha256": "e1f2c90634f496df0456393ce78a4779c708e05123f32d904c27ac835417f705",
+      "transcript": "switch to sandbox",
+      "wake_at_seconds": 2.6,
+      "recording_seconds": 5.2,
+      "asr_ms": 1526.3,
+      "action": {
+        "id": "navi-d0494e69359af9e3",
+        "kind": "switch"
+      }
+    },
+    {
+      "phrase": "Hey Navi. Stop.",
+      "audio_sha256": "ee5f53d645e13997fbac1375d45e882340c9692a96ee37f188264bc9ea66bd32",
+      "missed_wake": true,
+      "action_executed": false
+    },
+    {
+      "phrase": "Hey Navi, stop.",
+      "audio_sha256": "fe2684b76baa1ea7c29c0b446e59018e5a06dfb44bba5cb9fc2954d5c200391a",
+      "transcript": "stop",
+      "wake_at_seconds": 2.5,
+      "recording_seconds": 4.0,
+      "asr_ms": 219.6,
+      "cancel_generation_advanced": true
+    },
+    {
+      "phrase": "Open another terminal.",
+      "audio_sha256": "d0b3a6a71aa4a4c48eaec2dee9728417b50866d92b43441a1b02c18c6e975117",
+      "no_wake_no_action": true
+    }
+  ]
+}

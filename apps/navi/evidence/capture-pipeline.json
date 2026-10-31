@@ -1,0 +1,28 @@
+{
+  "source": "synthetic 1536x864 30 fps; no live PipeWire check",
+  "output_frames": 4,
+  "output_fps": 2,
+  "queue_limit": 1,
+  "frames": [
+    {
+      "timestamp": 0,
+      "size": 40859,
+      "caps": "image/jpeg, sof-marker=(int)4, width=(int)768, height=(int)432, pixel-aspect-ratio=(fraction)1/1, framerate=(fraction)2/1, interlace-mode=(string)progressive, colorimetry=(string)sRGB, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono"
+    },
+    {
+      "timestamp": 500000000,
+      "size": 40883,
+      "caps": "image/jpeg, sof-marker=(int)4, width=(int)768, height=(int)432, pixel-aspect-ratio=(fraction)1/1, framerate=(fraction)2/1, interlace-mode=(string)progressive, colorimetry=(string)sRGB, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono"
+    },
+    {
+      "timestamp": 1000000000,
+      "size": 40921,
+      "caps": "image/jpeg, sof-marker=(int)4, width=(int)768, height=(int)432, pixel-aspect-ratio=(fraction)1/1, framerate=(fraction)2/1, interlace-mode=(string)progressive, colorimetry=(string)sRGB, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono"
+    },
+    {
+      "timestamp": 1500000000,
+      "size": 40836,
+      "caps": "image/jpeg, sof-marker=(int)4, width=(int)768, height=(int)432, pixel-aspect-ratio=(fraction)1/1, framerate=(fraction)2/1, interlace-mode=(string)progressive, colorimetry=(string)sRGB, multiview-mode=(string)mono, multiview-flags=(GstVideoMultiviewFlagsSet)0:ffffffff:/right-view-first/left-flipped/left-flopped/right-flipped/right-flopped/half-aspect/mixed-mono"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "kind": "Initial failures from synthetic PCM through the production streaming buffer",
+  "physical_microphone_used": false,
+  "phrase": "Hey Navi. Switch to Sandbox.",
+  "failures": [
+    {
+      "pre_roll_seconds": 1.5,
+      "transcript": "Pay Navi Switch to Sandbox",
+      "decision": "clarify",
+      "action_executed": false
+    },
+    {
+      "pre_roll_seconds": 3,
+      "speech_bias_included_session_names": true,
+      "wake_detected": false,
+      "action_executed": false,
+      "note": "Piper's default stochastic synthesis produced a missed wake; physical speech reliability remains unverified"
+    },
+    {
+      "phrase": "Hey Navi, stop.",
+      "wake_detected": true,
+      "transcript": "Hey, Navi, stop",
+      "issue": "Wake-prefix cleanup did not accept punctuation between Hey and Navi",
+      "action_executed": false
+    },
+    {
+      "pre_roll_seconds": 3,
+      "speech_bias_included_session_names": false,
+      "transcript": "switch to Sanbox",
+      "decision": "clarify",
+      "action_executed": false
+    }
+  ],
+  "changes": [
+    "Retain three seconds of pre-roll, bounded to 192000 bytes of float32 PCM",
+    "Bias Whistle with at most 24 registered names, prioritizing the active session",
+    "Keep exact target resolution and clarification for unrecognized names",
+    "Strip punctuation within the recognized wake phrase"
+  ]
+}

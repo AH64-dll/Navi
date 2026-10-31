@@ -1,0 +1,711 @@
+{
+  "model": "d1-3B Q4_K_M + Q8 image projection",
+  "runtime": "llama.cpp b11540 Vulkan",
+  "cases": 28,
+  "correct": 13,
+  "accuracy": 0.4642857142857143,
+  "median_ms": 128.0,
+  "p95_ms": 1314,
+  "results": [
+    {
+      "text": "Open Codex",
+      "expected": "launch:codex",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 1314,
+      "answer": {
+        "choice": "launch:codex",
+        "confidence": 0.5498905794371584,
+        "probabilities": {
+          "browser": 0.027063568040954892,
+          "clarify": 0.12495105848798156,
+          "favorite:0": 0.004499582939908083,
+          "favorite:1": 0.006578146929664161,
+          "launch:claude": 0.06935333289457987,
+          "launch:codex": 0.590809617670144,
+          "launch:pi": 0.008743306988417144,
+          "launch:terminal": 0.012655910580793236,
+          "noop": 0.005635743594411252,
+          "switch:navi-494b4329f7123ded": 0.037118942554143615,
+          "switch:navi-ed109febaa6179c8": 0.11259078931900232
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Launch Claude Code",
+      "expected": "launch:claude",
+      "selected": "launch:claude",
+      "pass": true,
+      "elapsed_ms": 143,
+      "answer": {
+        "choice": "launch:claude",
+        "confidence": 0.6295718240128819,
+        "probabilities": {
+          "browser": 0.007206121282365942,
+          "clarify": 0.08716759501036603,
+          "favorite:0": 0.004377315955493445,
+          "favorite:1": 0.003159002258017679,
+          "launch:claude": 0.6632471127389836,
+          "launch:codex": 0.18216819071936727,
+          "launch:pi": 0.008029064123595175,
+          "launch:terminal": 0.01382990175267245,
+          "noop": 0.0065347831991066346,
+          "switch:navi-494b4329f7123ded": 0.01547199895816406,
+          "switch:navi-ed109febaa6179c8": 0.008808914001867606
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Start Pi",
+      "expected": "launch:pi",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 131,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.3760695817071202,
+        "probabilities": {
+          "browser": 0.008059854148394347,
+          "clarify": 0.05480047274264967,
+          "favorite:0": 0.002091754628032247,
+          "favorite:1": 0.004769698206705929,
+          "launch:claude": 0.010392129203518138,
+          "launch:codex": 0.012347504219849282,
+          "launch:pi": 0.32456953118991305,
+          "launch:terminal": 0.02774653734517741,
+          "noop": 0.005985429463447503,
+          "switch:navi-494b4329f7123ded": 0.11644656002765766,
+          "switch:navi-ed109febaa6179c8": 0.43279052882465474
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Open a terminal",
+      "expected": "launch:terminal",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 132,
+      "answer": {
+        "choice": "launch:terminal",
+        "confidence": 0.30907834864009953,
+        "probabilities": {
+          "browser": 0.006420912647161941,
+          "clarify": 0.053618326935071424,
+          "favorite:0": 0.0024585451266823997,
+          "favorite:1": 0.0038136184995652945,
+          "launch:claude": 0.02452245006827786,
+          "launch:codex": 0.00966362631460715,
+          "launch:pi": 0.01586993570291923,
+          "launch:terminal": 0.3718894078546359,
+          "noop": 0.007700489198720207,
+          "switch:navi-494b4329f7123ded": 0.19022477329154297,
+          "switch:navi-ed109febaa6179c8": 0.31381791436081563
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Create a Codex session called Review",
+      "expected": "launch:codex",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 129,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.4154577454123158,
+        "probabilities": {
+          "browser": 0.0046765771497407115,
+          "clarify": 0.009071679742514696,
+          "favorite:0": 0.0010744152442237146,
+          "favorite:1": 0.002066223360872382,
+          "launch:claude": 0.04001979211741583,
+          "launch:codex": 0.42378811486232193,
+          "launch:pi": 0.004135405515075524,
+          "launch:terminal": 0.026030202051523548,
+          "noop": 0.008914621615667513,
+          "switch:navi-494b4329f7123ded": 0.01162501796581152,
+          "switch:navi-ed109febaa6179c8": 0.4685979503748325
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Launch Claude in Navi",
+      "expected": "launch:claude",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 128,
+      "answer": {
+        "choice": "launch:claude",
+        "confidence": 0.397149347534608,
+        "probabilities": {
+          "browser": 0.013272027468894132,
+          "clarify": 0.2621897567896404,
+          "favorite:0": 0.0052950399852335454,
+          "favorite:1": 0.006013218725083056,
+          "launch:claude": 0.45195395230418905,
+          "launch:codex": 0.08193430083636508,
+          "launch:pi": 0.01893976628644324,
+          "launch:terminal": 0.05312006644404073,
+          "noop": 0.01220993869054638,
+          "switch:navi-494b4329f7123ded": 0.03348911723783153,
+          "switch:navi-ed109febaa6179c8": 0.06158281523173268
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Open the browser",
+      "expected": "browser",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 131,
+      "answer": {
+        "choice": "clarify",
+        "confidence": 0.3734751422967784,
+        "probabilities": {
+          "browser": 0.323623103505146,
+          "clarify": 0.4304319475425258,
+          "favorite:0": 0.006365552718015894,
+          "favorite:1": 0.006868391117203915,
+          "launch:claude": 0.00621665994467088,
+          "launch:codex": 0.0075746807577106385,
+          "launch:pi": 0.006943325202273671,
+          "launch:terminal": 0.017895368329645854,
+          "noop": 0.007899681698222796,
+          "switch:navi-494b4329f7123ded": 0.10637693617072735,
+          "switch:navi-ed109febaa6179c8": 0.07980435301385747
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Bring up Zen",
+      "expected": "browser",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 129,
+      "answer": {
+        "choice": "clarify",
+        "confidence": 0.22623885124753204,
+        "probabilities": {
+          "browser": 0.27376735438243743,
+          "clarify": 0.29658077386139275,
+          "favorite:0": 0.0023454667882126788,
+          "favorite:1": 0.004583262506820657,
+          "launch:claude": 0.005745799628966078,
+          "launch:codex": 0.008634841221098172,
+          "launch:pi": 0.011149820721623672,
+          "launch:terminal": 0.0323759162465535,
+          "noop": 0.005885115349158304,
+          "switch:navi-494b4329f7123ded": 0.11117261702056326,
+          "switch:navi-ed109febaa6179c8": 0.24775903227317345
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Don't open Claude",
+      "expected": "noop",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 129,
+      "answer": {
+        "choice": "noop",
+        "confidence": 0.5784956912396477,
+        "probabilities": {
+          "browser": 0.012436092779067796,
+          "clarify": 0.10751508367001356,
+          "favorite:0": 0.003242985548652883,
+          "favorite:1": 0.004128606383136356,
+          "launch:claude": 0.004321538078343266,
+          "launch:codex": 0.011029899733208094,
+          "launch:pi": 0.010090359173602513,
+          "launch:terminal": 0.030106757344691298,
+          "noop": 0.6168142647633161,
+          "switch:navi-494b4329f7123ded": 0.09149119642492494,
+          "switch:navi-ed109febaa6179c8": 0.10882321610104333
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Do not launch Codex",
+      "expected": "noop",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 129,
+      "answer": {
+        "choice": "noop",
+        "confidence": 0.4711064003035744,
+        "probabilities": {
+          "browser": 0.011188493646403569,
+          "clarify": 0.07644759308027285,
+          "favorite:0": 0.002624751496994375,
+          "favorite:1": 0.0038051252573126342,
+          "launch:claude": 0.004321849798197986,
+          "launch:codex": 0.004378686715432873,
+          "launch:pi": 0.009515757771619737,
+          "launch:terminal": 0.044378982650916166,
+          "noop": 0.5191876366396131,
+          "switch:navi-494b4329f7123ded": 0.1435345824482143,
+          "switch:navi-ed109febaa6179c8": 0.18061654049502265
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Cancel that",
+      "expected": "noop",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 130,
+      "answer": {
+        "choice": "noop",
+        "confidence": 0.3596250457419282,
+        "probabilities": {
+          "browser": 0.011775245933058308,
+          "clarify": 0.3325506507788526,
+          "favorite:0": 0.0037497084266596863,
+          "favorite:1": 0.003524847147882746,
+          "launch:claude": 0.00828864251733531,
+          "launch:codex": 0.01284317444650544,
+          "launch:pi": 0.00991233805416763,
+          "launch:terminal": 0.031085241860141864,
+          "noop": 0.4178409506744802,
+          "switch:navi-494b4329f7123ded": 0.05180154850237255,
+          "switch:navi-ed109febaa6179c8": 0.11662765165854354
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Hello Navi",
+      "expected": "noop",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 128,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.5074543894067703,
+        "probabilities": {
+          "browser": 0.01908646681260203,
+          "clarify": 0.28178972232952354,
+          "favorite:0": 0.0025763584872491897,
+          "favorite:1": 0.004782965625509629,
+          "launch:claude": 0.004456288583364824,
+          "launch:codex": 0.00668460511595712,
+          "launch:pi": 0.006940125916080377,
+          "launch:terminal": 0.03270094681124176,
+          "noop": 0.023930228499449785,
+          "switch:navi-494b4329f7123ded": 0.06482102872195776,
+          "switch:navi-ed109febaa6179c8": 0.5522312630970639
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "What's the weather?",
+      "expected": "clarify",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 129,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.3427506142404497,
+        "probabilities": {
+          "browser": 0.05017430833595356,
+          "clarify": 0.38778228385159424,
+          "favorite:0": 0.002280295733030951,
+          "favorite:1": 0.004138389767316436,
+          "launch:claude": 0.008794589678415725,
+          "launch:codex": 0.010550780369533289,
+          "launch:pi": 0.008056066329314614,
+          "launch:terminal": 0.03040327670377341,
+          "noop": 0.014223091131534697,
+          "switch:navi-494b4329f7123ded": 0.08109635969912417,
+          "switch:navi-ed109febaa6179c8": 0.4025005584004089
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Open that one",
+      "expected": "clarify",
+      "selected": "switch:navi-ed109febaa6179c8",
+      "pass": false,
+      "elapsed_ms": 131,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.6436064808781361,
+        "probabilities": {
+          "browser": 0.020333015627051337,
+          "clarify": 0.19330452330118253,
+          "favorite:0": 0.0022237672954952157,
+          "favorite:1": 0.003986525636563843,
+          "launch:claude": 0.0030936730177920104,
+          "launch:codex": 0.006996763887253655,
+          "launch:pi": 0.00475952133850098,
+          "launch:terminal": 0.013261377349998448,
+          "noop": 0.004410763079086155,
+          "switch:navi-494b4329f7123ded": 0.07162417775967939,
+          "switch:navi-ed109febaa6179c8": 0.6760058917073964
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Launch an unknown harness called Solaris",
+      "expected": "clarify",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 133,
+      "answer": {
+        "choice": "clarify",
+        "confidence": 0.7210125050778641,
+        "probabilities": {
+          "browser": 0.009444507120978551,
+          "clarify": 0.7463750046162401,
+          "favorite:0": 0.00573302310999526,
+          "favorite:1": 0.005561826892727876,
+          "launch:claude": 0.02951207392998261,
+          "launch:codex": 0.0217794411335902,
+          "launch:pi": 0.02948023108654873,
+          "launch:terminal": 0.0624703285099845,
+          "noop": 0.012520760176364916,
+          "switch:navi-494b4329f7123ded": 0.04450796269306408,
+          "switch:navi-ed109febaa6179c8": 0.03261484073052338
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Delete all my files",
+      "expected": "clarify",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 127,
+      "answer": {
+        "choice": "clarify",
+        "confidence": 0.3681102263359306,
+        "probabilities": {
+          "browser": 0.013555620844833098,
+          "clarify": 0.42555475121448233,
+          "favorite:0": 0.0033919736709740684,
+          "favorite:1": 0.00595465497586661,
+          "launch:claude": 0.02001614837853224,
+          "launch:codex": 0.024324190539958875,
+          "launch:pi": 0.01545166748871674,
+          "launch:terminal": 0.04925674634985468,
+          "noop": 0.07940827393841952,
+          "switch:navi-494b4329f7123ded": 0.06629085760510721,
+          "switch:navi-ed109febaa6179c8": 0.29679511499325434
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Tell me a joke",
+      "expected": "noop",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 127,
+      "answer": {
+        "choice": "clarify",
+        "confidence": 0.4010971985938613,
+        "probabilities": {
+          "browser": 0.07248543633802416,
+          "clarify": 0.4555429078126011,
+          "favorite:0": 0.004394038948860003,
+          "favorite:1": 0.00651870139691853,
+          "launch:claude": 0.010248610634784263,
+          "launch:codex": 0.011274633243633772,
+          "launch:pi": 0.010473974407046392,
+          "launch:terminal": 0.04464258935551813,
+          "noop": 0.04286105339550119,
+          "switch:navi-494b4329f7123ded": 0.09694675558798742,
+          "switch:navi-ed109febaa6179c8": 0.24461129887912503
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Switch to the Design session",
+      "expected": "switch:navi-494b4329f7123ded",
+      "selected": "switch:navi-494b4329f7123ded",
+      "pass": true,
+      "elapsed_ms": 128,
+      "answer": {
+        "choice": "switch:navi-494b4329f7123ded",
+        "confidence": 0.973663820891828,
+        "probabilities": {
+          "browser": 0.002669674296328959,
+          "clarify": 0.00405678432514453,
+          "favorite:0": 0.002087811537117944,
+          "favorite:1": 0.0010286172298222518,
+          "launch:claude": 0.001851389199500573,
+          "launch:codex": 0.0019965801870929552,
+          "launch:pi": 0.0017928456877480117,
+          "launch:terminal": 0.0033130881874700474,
+          "noop": 0.0035308326941682435,
+          "switch:navi-494b4329f7123ded": 0.9760580189925708,
+          "switch:navi-ed109febaa6179c8": 0.0016143576630356026
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Go back to Review",
+      "expected": "switch:navi-ed109febaa6179c8",
+      "selected": "switch:navi-ed109febaa6179c8",
+      "pass": true,
+      "elapsed_ms": 125,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.7736298346115631,
+        "probabilities": {
+          "browser": 0.008575734265866058,
+          "clarify": 0.06443201647510041,
+          "favorite:0": 0.0011329619076943362,
+          "favorite:1": 0.001923289244212278,
+          "launch:claude": 0.002750550607049447,
+          "launch:codex": 0.004503739061949701,
+          "launch:pi": 0.002196427555641393,
+          "launch:terminal": 0.006288452066062046,
+          "noop": 0.010606669131536971,
+          "switch:navi-494b4329f7123ded": 0.10338121912892098,
+          "switch:navi-ed109febaa6179c8": 0.7942089405559665
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Create a NEW terminal session",
+      "expected": "launch:terminal",
+      "selected": "launch:terminal",
+      "pass": true,
+      "elapsed_ms": 126,
+      "answer": {
+        "choice": "launch:terminal",
+        "confidence": 0.8415235644339872,
+        "probabilities": {
+          "browser": 0.0030297728303914934,
+          "clarify": 0.02937574779014132,
+          "favorite:0": 0.002628018007618123,
+          "favorite:1": 0.00212589292188465,
+          "launch:claude": 0.03665632171292409,
+          "launch:codex": 0.016554031957131315,
+          "launch:pi": 0.03477296034308961,
+          "launch:terminal": 0.8559305131218066,
+          "noop": 0.003935097069254857,
+          "switch:navi-494b4329f7123ded": 0.012275765662994752,
+          "switch:navi-ed109febaa6179c8": 0.002715878582763354
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Switch to the existing terminal called Review",
+      "expected": "switch:navi-ed109febaa6179c8",
+      "selected": "switch:navi-ed109febaa6179c8",
+      "pass": true,
+      "elapsed_ms": 125,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.9416810369465995,
+        "probabilities": {
+          "browser": 0.003699243076810421,
+          "clarify": 0.004916082623842412,
+          "favorite:0": 0.0008480869053324015,
+          "favorite:1": 0.0015526574970951522,
+          "launch:claude": 0.0021453151368382535,
+          "launch:codex": 0.0016796333680385775,
+          "launch:pi": 0.001206869854707908,
+          "launch:terminal": 0.003141660295544685,
+          "noop": 0.007596465900211791,
+          "switch:navi-494b4329f7123ded": 0.026231224481033263,
+          "switch:navi-ed109febaa6179c8": 0.9469827608605452
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Switch to missing session Blue",
+      "expected": "clarify",
+      "selected": "clarify",
+      "pass": true,
+      "elapsed_ms": 125,
+      "answer": {
+        "choice": "clarify",
+        "confidence": 0.8045062789920625,
+        "probabilities": {
+          "browser": 0.005792307710685162,
+          "clarify": 0.8222784354473296,
+          "favorite:0": 0.0022808447508126935,
+          "favorite:1": 0.0021506271276300723,
+          "launch:claude": 0.004812875888881011,
+          "launch:codex": 0.00554167863944869,
+          "launch:pi": 0.00990324925580414,
+          "launch:terminal": 0.02356517603885342,
+          "noop": 0.008932926122118474,
+          "switch:navi-494b4329f7123ded": 0.07696945104012573,
+          "switch:navi-ed109febaa6179c8": 0.03777242797831091
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Open GitHub",
+      "expected": "favorite:0",
+      "selected": "clarify",
+      "pass": false,
+      "elapsed_ms": 127,
+      "answer": {
+        "choice": "favorite:0",
+        "confidence": 0.44788494678086926,
+        "probabilities": {
+          "browser": 0.211710064728106,
+          "clarify": 0.17931326921681345,
+          "favorite:0": 0.4980772243462448,
+          "favorite:1": 0.004488334940416123,
+          "launch:claude": 0.007018463279525543,
+          "launch:codex": 0.005735551214963929,
+          "launch:pi": 0.006452449184245774,
+          "launch:terminal": 0.009208780297220692,
+          "noop": 0.006160699710191768,
+          "switch:navi-494b4329f7123ded": 0.03363279934407289,
+          "switch:navi-ed109febaa6179c8": 0.03820236373819915
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Open my Docs favorite",
+      "expected": "favorite:1",
+      "selected": "favorite:1",
+      "pass": true,
+      "elapsed_ms": 126,
+      "answer": {
+        "choice": "favorite:1",
+        "confidence": 0.7308737165456803,
+        "probabilities": {
+          "browser": 0.014595838850932056,
+          "clarify": 0.14928502584738523,
+          "favorite:0": 0.0069275339312118815,
+          "favorite:1": 0.7553397423142548,
+          "launch:claude": 0.0036211882868273063,
+          "launch:codex": 0.003984891645866152,
+          "launch:pi": 0.00386538468620934,
+          "launch:terminal": 0.005408181378553667,
+          "noop": 0.005050083253124596,
+          "switch:navi-494b4329f7123ded": 0.01527617543497256,
+          "switch:navi-ed109febaa6179c8": 0.03664595437066228
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Don't open the browser",
+      "expected": "noop",
+      "selected": "noop",
+      "pass": true,
+      "elapsed_ms": 123,
+      "answer": {
+        "choice": "noop",
+        "confidence": 0.8790783882699675,
+        "probabilities": {
+          "browser": 0.0044217596835417865,
+          "clarify": 0.04367088801608414,
+          "favorite:0": 0.00187366266045876,
+          "favorite:1": 0.002095886648107045,
+          "launch:claude": 0.00395529471326059,
+          "launch:codex": 0.005338255441343356,
+          "launch:pi": 0.0033150312704134976,
+          "launch:terminal": 0.008169731241818357,
+          "noop": 0.8900712620636069,
+          "switch:navi-494b4329f7123ded": 0.02108960453992407,
+          "switch:navi-ed109febaa6179c8": 0.015998623721441497
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Start Codex, please",
+      "expected": "launch:codex",
+      "selected": "launch:codex",
+      "pass": true,
+      "elapsed_ms": 126,
+      "answer": {
+        "choice": "launch:codex",
+        "confidence": 0.9010917064883814,
+        "probabilities": {
+          "browser": 0.0038023434929246743,
+          "clarify": 0.0154003583506174,
+          "favorite:0": 0.002357243591626965,
+          "favorite:1": 0.001744926911856213,
+          "launch:claude": 0.0432635991890748,
+          "launch:codex": 0.9100833695348922,
+          "launch:pi": 0.0034282354869717667,
+          "launch:terminal": 0.004944989722154445,
+          "noop": 0.003439530282381357,
+          "switch:navi-494b4329f7123ded": 0.006169658824431877,
+          "switch:navi-ed109febaa6179c8": 0.005365744613068374
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Launch a fresh Claude Code terminal",
+      "expected": "launch:claude",
+      "selected": "launch:claude",
+      "pass": true,
+      "elapsed_ms": 127,
+      "answer": {
+        "choice": "launch:claude",
+        "confidence": 0.91170698684924,
+        "probabilities": {
+          "browser": 0.0024149195912037944,
+          "clarify": 0.009834523190716845,
+          "favorite:0": 0.0018577932181804671,
+          "favorite:1": 0.0014635596434167857,
+          "launch:claude": 0.9197336244084,
+          "launch:codex": 0.04511248720661477,
+          "launch:pi": 0.003524907251271995,
+          "launch:terminal": 0.008878618846455669,
+          "noop": 0.0031717101861146995,
+          "switch:navi-494b4329f7123ded": 0.003016333016716469,
+          "switch:navi-ed109febaa6179c8": 0.0009915234409084218
+        },
+        "type": "choice"
+      }
+    },
+    {
+      "text": "Keep the current session",
+      "expected": "noop",
+      "selected": "switch:navi-ed109febaa6179c8",
+      "pass": false,
+      "elapsed_ms": 125,
+      "answer": {
+        "choice": "switch:navi-ed109febaa6179c8",
+        "confidence": 0.8785209069336657,
+        "probabilities": {
+          "browser": 0.0029768158845744903,
+          "clarify": 0.01602069784601562,
+          "favorite:0": 0.0007265195476838942,
+          "favorite:1": 0.0015619467053869338,
+          "launch:claude": 0.0014156072126637262,
+          "launch:codex": 0.0023472946315258917,
+          "launch:pi": 0.0015805362922695838,
+          "launch:terminal": 0.006467726742020002,
+          "noop": 0.05399560395658922,
+          "switch:navi-494b4329f7123ded": 0.023342790332483487,
+          "switch:navi-ed109febaa6179c8": 0.889564460848787
+        },
+        "type": "choice"
+      }
+    }
+  ]
+}

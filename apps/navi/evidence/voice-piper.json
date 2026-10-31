@@ -1,0 +1,214 @@
+{
+  "kind": "Piper Amy low synthetic English fixture; no microphone",
+  "wake_score": 1,
+  "wake_threshold": 0.25,
+  "results": [
+    {
+      "phrase": "Open Codex.",
+      "transcript": {
+        "text": "Open Codex.",
+        "language": "en",
+        "ttft_ms": 579.3,
+        "decode_tps": 75.2
+      },
+      "elapsed_ms": 646.3,
+      "moonshine": "Open codecs.",
+      "moonshine_ms": 26.9,
+      "whisper": "Open codex.",
+      "whisper_ms": 134.5,
+      "wake": []
+    },
+    {
+      "phrase": "Open Claude.",
+      "transcript": {
+        "text": "Open Claude",
+        "language": "en",
+        "ttft_ms": 47.5,
+        "decode_tps": 373.0
+      },
+      "elapsed_ms": 58.3,
+      "moonshine": "Open clod.",
+      "moonshine_ms": 16.4,
+      "whisper": "Open Cloud.",
+      "whisper_ms": 86.8,
+      "wake": []
+    },
+    {
+      "phrase": "Launch Claude Code.",
+      "transcript": {
+        "text": "Launch Claude Code.",
+        "language": "en",
+        "ttft_ms": 84.5,
+        "decode_tps": 20.1
+      },
+      "elapsed_ms": 482.3,
+      "moonshine": "Launch Claude Code.",
+      "moonshine_ms": 21.0,
+      "whisper": "Launch Cloud Code.",
+      "whisper_ms": 102.3,
+      "wake": []
+    },
+    {
+      "phrase": "Start Pi.",
+      "transcript": {
+        "text": "Start pi.",
+        "language": "en",
+        "ttft_ms": 109.1,
+        "decode_tps": 13.6
+      },
+      "elapsed_ms": 403.5,
+      "moonshine": "Start pi.",
+      "moonshine_ms": 13.4,
+      "whisper": "Start pie.",
+      "whisper_ms": 95.1,
+      "wake": []
+    },
+    {
+      "phrase": "Open a terminal.",
+      "transcript": {
+        "text": "Open a terminal",
+        "language": "en",
+        "ttft_ms": 526.5,
+        "decode_tps": 51.9
+      },
+      "elapsed_ms": 623.0,
+      "moonshine": "Open a terminal.",
+      "moonshine_ms": 17.6,
+      "whisper": "Open a terminal.",
+      "whisper_ms": 107.8,
+      "wake": []
+    },
+    {
+      "phrase": "Switch to Review.",
+      "transcript": {
+        "text": "Switch to Review.",
+        "language": "en",
+        "ttft_ms": 119.6,
+        "decode_tps": 155.9
+      },
+      "elapsed_ms": 158.2,
+      "moonshine": "Switch to review.",
+      "moonshine_ms": 17.6,
+      "whisper": "Switch to review.",
+      "whisper_ms": 100.0,
+      "wake": []
+    },
+    {
+      "phrase": "Open the browser.",
+      "transcript": {
+        "text": "Open the browser.",
+        "language": "en",
+        "ttft_ms": 78.1,
+        "decode_tps": 23.8
+      },
+      "elapsed_ms": 246.4,
+      "moonshine": "Open the browser.",
+      "moonshine_ms": 20.0,
+      "whisper": "Open the browser.",
+      "whisper_ms": 113.9,
+      "wake": []
+    },
+    {
+      "phrase": "Stop.",
+      "transcript": {
+        "text": "Stop!",
+        "language": "en",
+        "ttft_ms": 92.0,
+        "decode_tps": 250.9
+      },
+      "elapsed_ms": 104.2,
+      "moonshine": "Stop.",
+      "moonshine_ms": 15.1,
+      "whisper": "Stop.",
+      "whisper_ms": 79.5,
+      "wake": []
+    },
+    {
+      "phrase": "Cancel.",
+      "transcript": {
+        "text": "GENSO.",
+        "language": "en",
+        "ttft_ms": 98.7,
+        "decode_tps": 393.1
+      },
+      "elapsed_ms": 111.6,
+      "moonshine": "Gensel,",
+      "moonshine_ms": 17.6,
+      "whisper": "Gensil",
+      "whisper_ms": 80.0,
+      "wake": []
+    },
+    {
+      "phrase": "Hey Navi. Open Codex.",
+      "transcript": {
+        "text": "Hay Navi. Open Codex.",
+        "language": "en",
+        "ttft_ms": 83.0,
+        "decode_tps": 77.2
+      },
+      "elapsed_ms": 226.1,
+      "moonshine": "Hey navvy, open codex.",
+      "moonshine_ms": 33.2,
+      "whisper": "Hey Navi, Open Codex.",
+      "whisper_ms": 147.3,
+      "wake": [
+        "HEY NAVI"
+      ]
+    },
+    {
+      "phrase": "Hey Navi. Open Claude.",
+      "transcript": {
+        "text": "Hey Navi, Open Claude.",
+        "language": "en",
+        "ttft_ms": 100.1,
+        "decode_tps": 68.5
+      },
+      "elapsed_ms": 246.4,
+      "moonshine": "Hey Navi, open cloud.",
+      "moonshine_ms": 31.0,
+      "whisper": "Hey Navi, open Claude.",
+      "whisper_ms": 145.6,
+      "wake": [
+        "HEY NAVI"
+      ]
+    },
+    {
+      "phrase": "Hey Navi. Switch to Review.",
+      "transcript": {
+        "text": "Hay Navi. Switch to review.",
+        "language": "en",
+        "ttft_ms": 44.8,
+        "decode_tps": 73.4
+      },
+      "elapsed_ms": 208.5,
+      "moonshine": "Hey Navi, switch to review.",
+      "moonshine_ms": 32.3,
+      "whisper": "Hey Navi, switch to review.",
+      "whisper_ms": 145.2,
+      "wake": [
+        "HEY NAVI"
+      ]
+    },
+    {
+      "phrase": "The weather is nice today.",
+      "transcript": {
+        "text": "The weather is nice today.",
+        "language": "en",
+        "ttft_ms": 39.1,
+        "decode_tps": 28.1
+      },
+      "elapsed_ms": 288.4,
+      "moonshine": "The weather is nice today.",
+      "moonshine_ms": 23.6,
+      "whisper": "The weather is nice today.",
+      "whisper_ms": 117.5,
+      "wake": []
+    }
+  ],
+  "silence": {
+    "text": "",
+    "language": "",
+    "ttft_ms": 0.0,
+    "decode_tps": 0.0
+  }
+}

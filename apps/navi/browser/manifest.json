@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Navi Station",
+  "version": "0.1.0",
+  "description": "Connect Zen tabs and an explicitly attached page to the local Navi station.",
+  "browser_specific_settings": {"gecko": {"id": "station@navi.local", "strict_min_version": "128.0"}},
+  "permissions": ["nativeMessaging", "tabs", "activeTab", "scripting"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {"scripts": ["background.js"]},
+  "action": {"default_popup": "popup.html", "default_title": "Navi Station"},
+  "commands": {"_execute_action": {"suggested_key": {"default": "Alt+Shift+L"}}}
+}
