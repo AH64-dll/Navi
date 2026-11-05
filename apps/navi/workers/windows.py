@@ -1,7 +1,6 @@
 """KDE window handles and focus actions through the installed KWin API."""
 import json
 import os
-from pathlib import Path
 import re
 
 from gi.repository import Gio, GLib

@@ -866,7 +866,6 @@ class Gateway:
 
     def _wait_reply(self, previous_ids, timeout=PROMPT_TIMEOUT_S, emit=None):
         deadline = time.time() + timeout
-        settle_deadline = None
         while time.time() < deadline:
             if self._failure:
                 raise GatewayError(f"OpenCode: {self._failure}")
