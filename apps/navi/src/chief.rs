@@ -1491,6 +1491,8 @@ impl App {
             "how are we doing", "what's left", "what is left", "whats left", "what remains",
             "what's remaining", "what is remaining", "how much remains", "show the graph",
             "show me the graph", "open the graph", "progress graph", "progress panel",
+            "is the project done", "is the project finished", "is the project complete",
+            "are we done", "are we finished", "are we there yet",
         ]
         .iter()
         .any(|phrase| lower.contains(phrase));
