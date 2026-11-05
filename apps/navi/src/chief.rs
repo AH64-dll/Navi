@@ -2552,6 +2552,18 @@ impl App {
                         .cloned()
                         .unwrap_or_else(|| session["name"].as_str().unwrap_or("A session").to_string());
                     let mut line = format!("{label} {state}");
+                    let held = self
+                        .held_prompts
+                        .lock()
+                        .unwrap()
+                        .get(session["id"].as_str().unwrap_or_default())
+                        .map_or(0, Vec::len);
+                    if held > 0 {
+                        line.push_str(&format!(
+                            " ({held} prompt{} waiting to be sent)",
+                            if held == 1 { "" } else { "s" }
+                        ));
+                    }
                     // A session from another project says where it is.
                     if let Some(project_id) = session["project_id"].as_str()
                         && here.as_deref() != Some(project_id)
