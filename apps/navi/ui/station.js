@@ -3386,8 +3386,8 @@ function evidenceDrawer(signals,total) {
     head.append(graphNode('span','evidence-time',relativeTime(signal.time)));
     head.title=formatStamp(signal.time)+(Number.isFinite(Number(signal.id))?' · #'+signal.id:'');
     row.append(head);
-    /* Older commit rows hold the bare 40-character HEAD; twelve characters name it. */
-    row.append(graphNode('p','evidence-text',String(signal.evidence||'').replace(/^HEAD ([0-9a-f]{12})[0-9a-f]{28}\b/,'$1')));
+    /* "HEAD <hash> <subject>" reads as "<hash> <subject>"; older rows hold all 40 characters. */
+    row.append(graphNode('p','evidence-text',String(signal.evidence||'').replace(/^HEAD ([0-9a-f]{12})(?:[0-9a-f]{28})?\b/,'$1')));
     list.append(row);
   }
   drawer.append(list);
