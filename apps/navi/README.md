@@ -438,7 +438,7 @@ model and without the assistant:
 | "Reopen Codex", "resume terminal", "reopen Codex #2" | Reopens a finished session from Recent (newest first, this project first) under its old name; a harness that recorded its conversation id continues that conversation. Clicking a finished chip does the same. When nothing finished matches but that session is open, Navi says so; otherwise the words go on to "reopen <task>" |
 | "Help", "what can you do", `/help` | Lists what Navi answers without a model |
 | "Thanks", "never mind", "cancel", "forget it" | A short acknowledgement, without waking the assistant |
-| "Is Codex done?", "what is Claude doing", "what's running", "is anything busy", `/sessions`, "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them |
+| "Is Codex done?", "what is Claude doing", "what's running", "is anything busy", `/sessions`, "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them; "is Pi open" with no Pi says it is not open |
 
 Steps chain with "then" (or "and" when every half is one of these commands), at most
 four: "switch to acme-api then assess the project" assesses acme-api, because a step
@@ -502,7 +502,8 @@ replies. A session launched in another project makes that project active.
 Typed commands carry the active project. Voice commands carry none, so the daemon keeps
 the project the station last reported (on load, on each switch, with each typed command,
 and on a spoken "switch to …") and falls back to the project of the voice-targeted
-session. Naming a project in the command ("how far is acme-api") still wins.
+session. Naming a project in the command ("how far is acme-api") still wins. Spoken
+conversation that reaches the assistant uses the same project.
 
 "Add project…" at the end of the switcher menu (or the switcher itself, while there is
 no project) opens a dialog: a folder, typed or picked with the window's native folder

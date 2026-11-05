@@ -321,11 +321,21 @@ impl App {
     fn tmux_out(&self, args: &[&str]) -> Result<std::process::Output> {
         let mut command = self.tmux();
         command.args(args);
-        command
+        let output = command
             .env_remove("TMUX")
             .env_remove("TMUX_PANE")
             .output()
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string());
+        self.forget_panes(args);
+        output
+    }
+
+    /// A killed or new session changes the pane list: the next status read
+    /// ("close Codex" then "ask Codex …") must not see the cached one.
+    fn forget_panes(&self, args: &[&str]) {
+        if matches!(args.first(), Some(&("kill-session" | "new-session"))) {
+            *self.status_cache.panes.lock().unwrap() = None;
+        }
     }
 
     fn tmux_ok(&self, args: &[&str]) -> bool {
@@ -333,7 +343,7 @@ impl App {
         // client (exit-empty off). If it inherited our captured stdout pipe,
         // output() would wait for EOF that never comes, so detach its stdio.
         let mut command = self.tmux();
-        command
+        let ok = command
             .args(args)
             .env_remove("TMUX")
             .env_remove("TMUX_PANE")
@@ -342,7 +352,9 @@ impl App {
             .stderr(Stdio::null())
             .status()
             .map(|status| status.success())
-            .unwrap_or(false)
+            .unwrap_or(false);
+        self.forget_panes(args);
+        ok
     }
 
     /// One `list-panes` call feeds liveness, pid, exit status, and command —

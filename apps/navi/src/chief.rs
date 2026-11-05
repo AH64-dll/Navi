@@ -624,11 +624,29 @@ impl App {
         Ok(AssistantTurn { id, path, context, attachments })
     }
 
+    /// Voice sends no project: the one the station last reported, else the
+    /// project of the session voice targets.
+    fn station_project(&self, projects: &[Value]) -> Option<Value> {
+        let current = self.current_project.lock().unwrap().clone();
+        let active = self.settings()["active_session"].as_str().and_then(|id| {
+            self.sessions().ok()?.into_iter().find(|session| session["id"] == id)?["project_id"]
+                .as_str()
+                .map(str::to_string)
+        });
+        [current, active]
+            .into_iter()
+            .flatten()
+            .find_map(|id| projects.iter().find(|project| project["id"] == id.as_str()).cloned())
+    }
+
     pub(crate) fn assistant_project(&self, reference: Option<&str>) -> Result<Value> {
         match reference.filter(|value| !value.trim().is_empty()) {
             Some(reference) => self.resolve_project(reference),
             None => {
                 let projects = self.projects()?;
+                if let Some(project) = self.station_project(&projects) {
+                    return Ok(project);
+                }
                 if projects.len() != 1 {
                     return Err(format!(
                         "Pass project_id; {} projects are registered",
@@ -1426,18 +1444,8 @@ impl App {
             *self.current_project.lock().unwrap() = project["id"].as_str().map(str::to_string);
             return Ok(project);
         }
-        // Voice sends no project: the one the station shows, else the
-        // project of the session voice targets.
-        let current = self.current_project.lock().unwrap().clone();
-        let active = self.settings()["active_session"].as_str().and_then(|id| {
-            self.sessions().ok()?.into_iter().find(|session| session["id"] == id)?["project_id"]
-                .as_str()
-                .map(str::to_string)
-        });
-        for id in [current, active].into_iter().flatten() {
-            if let Some(project) = projects.iter().find(|project| project["id"] == id.as_str()) {
-                return Ok(project.clone());
-            }
+        if let Some(project) = self.station_project(&projects) {
+            return Ok(project);
         }
         match projects.len() {
             1 => Ok(projects[0].clone()),
@@ -1865,7 +1873,7 @@ impl App {
             .iter()
             .any(|phrase| lower.contains(phrase));
         let yes_no = ["is ", "are ", "has ", "did "].iter().any(|prefix| lower.starts_with(prefix))
-            && ["done", "finished", "ready", "waiting", "working", "busy", "still", "stuck",
+            && ["done", "finished", "ready", "waiting", "working", "busy", "still", "stuck", "open",
                 "running", "idle", "alive", "blocked", "asking", "thinking"]
                 .iter()
                 .any(|word| mentioned(lower, word));
@@ -1887,12 +1895,21 @@ impl App {
             })
             .map(|session| session["id"].clone())
             .collect();
+        if ids.is_empty() && !(waiting || overview) {
+            // "Is Codex open?" with no Codex: say so rather than ask a model.
+            let settings = self.settings();
+            let absent = settings["profiles"].as_array().into_iter().flatten().find(|profile| {
+                ["name", "id"].iter().any(|key| mentioned(lower, profile[*key].as_str().unwrap_or("")))
+                    || (profile["id"] == "claude" && mentioned(lower, "claude code"))
+            });
+            return Ok(absent.map(|profile| {
+                json!({"kind":"session_status","ids":[],"waiting":false,"absent":profile["name"]})
+            }));
+        }
         Ok(if !ids.is_empty() {
             Some(json!({"kind":"session_status","ids":ids,"waiting":waiting}))
-        } else if waiting || overview {
-            Some(json!({"kind":"session_status","all":true,"waiting":waiting}))
         } else {
-            None
+            Some(json!({"kind":"session_status","all":true,"waiting":waiting}))
         })
     }
 
@@ -2320,7 +2337,10 @@ impl App {
                 };
                 let text = match (chosen.len(), action["waiting"] == true) {
                     (0, true) => "Nothing is waiting for your input.".to_string(),
-                    (0, false) => "No harness is open here. Say “open Codex” to start one.".to_string(),
+                    (0, false) => match action["absent"].as_str() {
+                        Some(name) => format!("{name} is not open. Say “open {name}” to start it."),
+                        None => "No harness is open here. Say “open Codex” to start one.".to_string(),
+                    },
                     (1, _) => format!("{}.", describe(chosen[0])),
                     _ => format!(
                         "{} sessions: {}.",
