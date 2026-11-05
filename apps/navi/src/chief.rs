@@ -2098,6 +2098,23 @@ impl App {
         if object.is_empty() {
             return Ok(None);
         }
+        // "Stop everything", "close all terminals": every open session here,
+        // or those of one kind.
+        if op != "reopen" {
+            let every = match object.as_str() {
+                "all" | "everything" | "all of them" | "every session" | "all sessions" | "all the sessions"
+                | "all harnesses" | "all the harnesses" | "all my sessions" => Some(String::new()),
+                other => other
+                    .strip_prefix("all the ")
+                    .or_else(|| other.strip_prefix("all my "))
+                    .or_else(|| other.strip_prefix("all "))
+                    .or_else(|| other.strip_prefix("every "))
+                    .map(|kind| kind.trim_end_matches(" sessions").trim_end_matches(" session").to_string()),
+            };
+            if let Some(kind) = every {
+                return Ok(Some(json!({"kind":"session_control_all","op":op,"filter":kind})));
+            }
+        }
         let sessions = self.sessions()?;
         if op == "reopen" {
             // A finished session, by its Recent label ("Codex #2") or name,
@@ -2646,6 +2663,69 @@ impl App {
                     }
                     [] => "That session is no longer open.".to_string(),
                     many => self.ask_which(action, many, &labels)?,
+                };
+                Ok(json!({"reply": reply(here.as_deref(), text, self.choice_extra())}))
+            }
+            "session_control_all" => {
+                let sessions = self.sessions()?;
+                let labels = session_labels(&sessions);
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                let filter = spoken_numbers(action["filter"].as_str().unwrap_or_default());
+                let singular = filter.strip_suffix("es").filter(|_| filter.ends_with("xes")).or_else(|| filter.strip_suffix('s'));
+                let label = |session: &Value| {
+                    labels
+                        .get(session["id"].as_str().unwrap_or_default())
+                        .cloned()
+                        .unwrap_or_else(|| session["name"].as_str().unwrap_or("a session").to_string())
+                };
+                let confirmed = action["confirmed"] == true;
+                let chosen: Vec<&Value> = sessions
+                    .iter()
+                    .filter(|session| session["running"] == true)
+                    .filter(|session| match action["ids"].as_array() {
+                        Some(ids) if confirmed => ids.contains(&session["id"]),
+                        _ => here.is_none() || session["project_id"].as_str() == here.as_deref(),
+                    })
+                    .filter(|session| {
+                        filter.is_empty()
+                            || names_session(session, &filter)
+                            || singular.is_some_and(|kind| names_session(session, kind))
+                    })
+                    .filter(|session| {
+                        action["op"] == "kill" || matches!(session["state"].as_str(), Some("running" | "busy" | "needs_input"))
+                    })
+                    .collect();
+                let names = chosen.iter().map(|session| label(session)).collect::<Vec<_>>().join(", ");
+                let count = |n: usize| format!("{n} session{}", if n == 1 { "" } else { "s" });
+                let text = if chosen.is_empty() {
+                    match action["op"].as_str() {
+                        Some("kill") => "Nothing like that is open here.".to_string(),
+                        _ => "Nothing is working right now.".to_string(),
+                    }
+                } else if action["op"] != "kill" {
+                    for session in &chosen {
+                        self.session_interrupt(&json!({"id": session["id"]}))?;
+                    }
+                    format!("Interrupted {names}.")
+                } else if confirmed {
+                    for session in &chosen {
+                        self.session_kill(&json!({"id": session["id"]}))?;
+                    }
+                    match chosen.len() {
+                        1 => format!("Closed {names}. It stays under Recent."),
+                        n => format!("Closed {}: {names}. They stay under Recent.", count(n)),
+                    }
+                } else {
+                    // Closing several panes at once is confirmed first.
+                    let mut confirm = action.clone();
+                    confirm["confirmed"] = json!(true);
+                    confirm["ids"] = json!(chosen.iter().map(|session| session["id"].clone()).collect::<Vec<_>>());
+                    *self.pending_choice.lock().unwrap() = Some(json!({"time":now(),"action":confirm,"confirm":true,
+                        "choices":[{"id":"yes","label":"Yes"},{"id":"no","label":"No"}]}));
+                    match chosen.len() {
+                        1 => format!("Close {names}? Say yes to confirm."),
+                        n => format!("Close {}: {names}? Say yes to confirm.", count(n)),
+                    }
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, self.choice_extra())}))
             }
@@ -3805,7 +3885,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”, “stop everything”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
@@ -3969,6 +4049,18 @@ fn resolve_choice(text: &str, pending: &Value) -> Option<Value> {
     }
     let choices = pending["choices"].as_array()?;
     let lower = conversational_text(text).to_lowercase();
+    // A yes-or-no question: anything else is a new command.
+    if pending["confirm"] == true {
+        let answer = lower.trim().trim_end_matches(['.', '!']).trim();
+        return match answer {
+            "yes" | "yeah" | "yep" | "yes please" | "sure" | "do it" | "confirm" | "go ahead" | "okay" | "ok"
+            | "yes do it" | "correct" => Some(pending["action"].clone()),
+            "no" | "nope" | "no thanks" | "don't" | "cancel" | "never mind" | "stop" | "no don't" => {
+                Some(json!({"kind":"ack","reply":"Okay, nothing was closed."}))
+            }
+            _ => None,
+        };
+    }
     let mut spoken = lower.trim().trim_end_matches(['.', '!', '?']).trim();
     for prefix in ["the one in ", "the one ", "the ", "number ", "in "] {
         spoken = spoken.strip_prefix(prefix).unwrap_or(spoken);
