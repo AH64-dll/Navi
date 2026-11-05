@@ -1023,7 +1023,8 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         ("estimate", Some(estimate)) => (
             format!(
                 "Whole-project estimate from {}: {}",
-                estimate.source, estimate.evidence
+                source_name(&estimate.source),
+                estimate.evidence
             ),
             json!({"kind":"estimate","source":estimate.source,"time":estimate.time,
                 "evidence":estimate.evidence,"confidence":estimate.confidence}),
@@ -1575,7 +1576,11 @@ impl App {
                     p["aspect_id"].as_str(),
                     "verdict",
                     "user",
-                    Some(if next_state == "done" { 1.0 } else { 0.0 }),
+                    Some(match next_state {
+                        "done" => 1.0,
+                        "in_progress" => 0.5,
+                        _ => 0.0,
+                    }),
                     1.0,
                     &format!("task state set to {next_state} by user"),
                 )?;

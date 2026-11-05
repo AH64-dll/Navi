@@ -142,6 +142,11 @@ class Station(Gtk.Window):
             display.connect("monitor-removed", self.on_monitors_changed)
         if os.environ.get("NAVI_QA_OUTPUT"):
             delay = int(os.environ.get("NAVI_QA_DELAY", "8"))
+            # QA only: a script that puts the page in the state to capture (for
+            # example `navi.showGraph(true)`), run two seconds before the shot.
+            script = os.environ.get("NAVI_QA_SCRIPT")
+            if script:
+                GLib.timeout_add_seconds(max(1, delay - 2), self.evaluate, script)
             GLib.timeout_add_seconds(max(1, delay), self.capture_qa)
 
     # ---- geometry: the monitor at the pointer, clamped to its work area ----
@@ -714,8 +719,10 @@ if __name__ == "__main__":
     GLib.set_prgname("navi-station")
     GLib.set_application_name("Navi")
     station = Station()
+    # GLib 2.80+ exposes unix signals on GLibUnix; older typelibs only on GLib.
+    signal_add = getattr(GLibUnix, "signal_add", None) or GLib.unix_signal_add
     for number in (signal.SIGTERM, signal.SIGINT):
-        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, number, lambda: station.destroy() or False)
+        signal_add(GLib.PRIORITY_DEFAULT, number, lambda: station.destroy() or False)
     station.show_all()
     GLib.timeout_add(150, station.refine_geometry)
     Gtk.main()

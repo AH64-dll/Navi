@@ -14,6 +14,11 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let snapshot, seq = 0, requests = 0, motion = !reducedMotion.matches;
 const pending = new Map();
 let busy = false;
+/* Events older than this are history the feed replays (it starts from seq 0 on
+ * every boot and after a daemon restart); narrating rows are drawn for live
+ * events only. */
+const REPLAY_SLACK=15000;
+let replayBefore=Date.now()-REPLAY_SLACK;
 
 /* ---------------- transport: bounded, expiring, self-healing ---------------- */
 
@@ -287,7 +292,8 @@ function updateEmptyState() {
   const empty=element('chat-empty');
   if (!empty) return;
   const conversation=messages.some(message=>message.role==='user'||message.role==='assistant'
-    ||(message.role==='system'&&message.status==='failed'));
+    ||(message.role==='system'&&(message.status==='failed'
+      ||message.parts.some(part=>part.tone==='progress'))));
   empty.hidden=conversation;
 }
 
@@ -530,6 +536,18 @@ function renderMarkdown(container,text) {
       continue;
     }
     if (!line.trim()) { flushParagraph(); closeList(); continue; }
+    const progress=progressLine(line);
+    if (progress) {
+      flushParagraph(); closeList();
+      let group=container.lastElementChild;
+      if (!group||!group.classList.contains('progress-chips')) {
+        group=document.createElement('div');
+        group.className='progress-chips';
+        container.append(group);
+      }
+      group.append(progressChip(progress));
+      continue;
+    }
     const bullet=/^\s*[-*+]\s+(.*)$/.exec(line);
     const numbered=/^\s*\d{1,9}[.)]\s+(.*)$/.exec(line);
     if (bullet||numbered) {
@@ -553,6 +571,55 @@ function renderMarkdown(container,text) {
     paragraph.push(line);
   }
   flushParagraph();
+}
+
+/* The assistant's machine-readable progress lines (recorded by the daemon) read
+ * as chips: the grammar mirrors detector::parse_progress_lines. */
+function progressLine(line) {
+  const match=/^[\s>*`-]*(?:PROGRESS|Progress:|progress)\s*:?\s+(.*)$/.exec(line);
+  if (!match) return null;
+  let rest=match[1].replace(/`+\s*$/,''), evidence='';
+  const bar=rest.indexOf('|');
+  if (bar>=0) { evidence=rest.slice(bar+1).trim(); rest=rest.slice(0,bar).trim(); }
+  let part=null, tail='';
+  const overall=/^(?:overall|whole project|project|total)\b(.*)$/i.exec(rest);
+  if (overall) tail=overall[1];
+  else {
+    const named=/^(?:part|aspect|area)\b\s*(.*)$/i.exec(rest);
+    if (!named) return null;
+    const body=named[1].trim();
+    const quoted=/^["“]([^"”]*)["”](.*)$/.exec(body);
+    if (quoted) { part=quoted[1].trim(); tail=quoted[2]; }
+    else {
+      const split=body.lastIndexOf(' ');
+      if (split<0) return null;
+      part=body.slice(0,split).trim().replace(/:$/,'');
+      tail=body.slice(split);
+    }
+    if (!part) return null;
+  }
+  const number=/^[\s:=]*(\d+(?:\.\d+)?)/.exec(tail);
+  if (!number) return null;
+  const percent=Number(number[1]);
+  if (!Number.isFinite(percent)||percent<0||percent>100) return null;
+  return {part,percent,evidence};
+}
+function progressChip(entry) {
+  const chip=document.createElement('span');
+  chip.className='progress-chip';
+  chip.dataset.scope=entry.part?'part':'overall';
+  const name=document.createElement('span');
+  name.className='chip-name';
+  name.textContent=entry.part||'Overall';
+  const value=document.createElement('b');
+  value.className='chip-value';
+  value.textContent=Math.round(entry.percent)+'%';
+  const bar=document.createElement('i');
+  bar.className='chip-bar';
+  bar.style.setProperty('--fill',Math.round(entry.percent)+'%');
+  chip.append(name,value,bar);
+  chip.title=entry.evidence||'Recorded as an estimate';
+  return chip;
 }
 
 function textPart(part) {
@@ -980,6 +1047,14 @@ function replyDone(event) {
   saveMessage(message);
   clearAttention();
   bump(message);
+  /* A spoken "show the progress" opens the panel; any answer about progress
+   * may have moved it, so the HUD re-reads. */
+  if (!event.replayed) {
+    if (details.action==='show_graph') showGraph(true);
+    if (details.action==='show_graph'||details.progress_recorded>0) scheduleGraph(300);
+    const project=String(details.project_id||'');
+    if (assessing&&assessing.via==='assistant'&&project===assessing.project&&details.source!=='navi') endAssessment(project);
+  }
 }
 /* The daemon reports the answering model; a fallback is visible when it differs
  * from the stored request (BUG-010). */
@@ -1047,6 +1122,9 @@ function failedEvent(event) {
     if (request) request.done=true;
     return;
   }
+  /* A failure from before this window opened is history: replaying it must not
+   * mark a fresh window as failed. */
+  if (event.replayed) return;
   surfaceFailure(text);
   setPhase('error');
 }
@@ -1091,6 +1169,37 @@ function transcriptEvent(event) {
   });
   activeText=text;
 }
+function warningEvent(event) {
+  const message=String(event.message||event.details?.text||'Warning');
+  if (!event.replayed) warningRow(message);
+  const project=String(event.project_id||event.details?.project_id||'');
+  if (assessing&&project===assessing.project&&/assessment|PROGRESS lines/i.test(message)) endAssessment(project);
+}
+/* A progress report is one compact row: who moved what, and on what evidence.
+ * Reports for another project only refresh that project's switcher entry. */
+function progressEvent(event) {
+  const details=event.details||{};
+  const project=String(details.project_id||event.project_id||'');
+  const active=activeProjectId();
+  if (!event.replayed&&(!project||project===active)) {
+    const message=capitalise(String(event.message||'Progress updated'));
+    const evidence=details.scan===true||details.assessment?'':String(details.evidence||'').trim();
+    const line=evidence?`${message} — ${evidence}`:message;
+    const parts=[{type:'text',text:line.length>420?line.slice(0,419)+'…':line,tone:'progress'}];
+    if (details.note) parts.push({type:'text',text:String(details.note),tone:'warning'});
+    addMessage({role:'system',time:Number(event.time)||Date.now(),status:'complete',parts,
+      meta:{project_id:project||undefined,source:String(details.source||'')||undefined}});
+  }
+  if (details.assessment&&project&&!event.replayed) beginAssessment(project,details.assessment);
+  if (details.scan===true&&details.digest&&project) {
+    scans.set(project,{digest:String(details.digest),time:Number(event.time)||Date.now()});
+  }
+  /* The whole-project line is the last one an assessment reports. */
+  const overall=details.value!==null&&details.value!==undefined&&!details.aspect_id&&!details.task_id;
+  if (overall&&details.source!=='detector') endAssessment(project);
+  if (project===active) scheduleGraph(event.replayed?1200:250);
+  scheduleOverview(event.replayed?2500:1200);
+}
 function handleEvent(event) {
   if (!event||typeof event!=='object') return;
   switch (event.kind) {
@@ -1101,15 +1210,19 @@ function handleEvent(event) {
     case 'reply': replyDone(event); break;
     case 'tool_use': toolUse(event); break;
     case 'approval': approvalEvent(event); break;
-    case 'warning': warningRow(String(event.message||event.details?.text||'Warning')); break;
-    case 'queued': queuedEvent(event); break;
+    /* The feed replays from the start on every boot; a row that only narrates
+     * (a warning, a queue note, a launch, a progress report) is drawn for live
+     * events only, or each restart would re-append the whole history. */
+    case 'warning': warningEvent(event); break;
+    case 'queued': if (!event.replayed) queuedEvent(event); break;
     case 'error': failedEvent(event); break;
     case 'stopped': stoppedEvent(event); break;
-    case 'launched': launchedEvent(event); break;
+    case 'launched': if (!event.replayed) launchedEvent(event); break;
+    case 'progress': progressEvent(event); break;
     case 'transcript': transcriptEvent(event); break;
-    /* A harness tail that produced evidence moves the graph; the panel follows
-     * without a reload (BUG-087/089). */
-    case 'harness': if (graphOpen) loadGraph(); break;
+    /* A harness tail that produced evidence moves the graph; the panel and the
+     * HUD follow without a reload (BUG-087/089). */
+    case 'harness': scheduleGraph(800); break;
     case 'command': closeTurn(); break;
     case 'ready': break;   // the boot line carries no user-visible state
     default: break;        // a newer kind renders nothing instead of throwing
@@ -1157,9 +1270,10 @@ function projectSwitcher() {
   button.setAttribute('aria-haspopup','listbox');
   button.setAttribute('aria-expanded','false');
   const name=document.createElement('span'); name.className='project-name';
+  const percent=document.createElement('span'); percent.className='project-percent';
   const state=document.createElement('span'); state.className='project-path-state';
   const caret=document.createElement('span'); caret.className='project-caret'; caret.textContent='▾';
-  button.append(name,state,caret);
+  button.append(name,percent,state,caret);
   button.addEventListener('click',event=>{
     event.stopPropagation();
     switcherOpen=!switcherOpen;
@@ -1183,8 +1297,14 @@ function projectSwitcher() {
     renderProjectSwitcher();
     button.focus();
   });
-  switcherShell={bar,button,menu,name,state};
+  switcherShell={bar,button,menu,name,percent,state};
   return switcherShell;
+}
+/* A project's headline from the overview, or '' while it has none. */
+function overviewLabel(id) {
+  const row=overview.get(String(id||''));
+  const value=row?Number(row.percent):NaN;
+  return row&&row.percent!==null&&row.percent!==undefined&&Number.isFinite(value)?wholePercent(value):'';
 }
 
 function renderProjectSwitcher(force) {
@@ -1192,12 +1312,14 @@ function renderProjectSwitcher(force) {
   if (!shell) return;
   const list=projectList();
   const active=activeProjectRow();
-  const signature=list.map(project=>`${project.id}:${project.path_state||'ok'}`).join('|')
+  const signature=list.map(project=>`${project.id}:${project.path_state||'ok'}:${overviewLabel(project.id)}`).join('|')
     +`#${active?.id||''}#${switcherOpen?'1':'0'}#${list.length}`;
   if (!force&&signature===switcherSignature) return;
   switcherSignature=signature;
   shell.bar.hidden=!list.length;
   shell.name.textContent=active?active.name:'No project';
+  shell.percent.textContent=active?overviewLabel(active.id):'';
+  shell.percent.hidden=!shell.percent.textContent;
   shell.state.textContent=active?pathState(active):'';
   shell.state.dataset.state=active?pathState(active):'none';
   shell.button.title=active
@@ -1219,7 +1341,10 @@ function renderProjectSwitcher(force) {
     badge.dataset.state=pathState(project); badge.textContent=pathState(project);
     const key=document.createElement('span'); key.className='project-key';
     key.textContent=index<9?'Ctrl+'+(index+1):'';
-    option.append(name,path,badge,key);
+    const percent=document.createElement('span'); percent.className='project-percent';
+    percent.textContent=overviewLabel(project.id)||'—';
+    percent.title='Completion';
+    option.append(name,path,percent,badge,key);
     option.addEventListener('click',event=>{
       event.stopPropagation();
       switcherOpen=false;
@@ -1833,6 +1958,7 @@ function update(value) {
   renderSessions(payload.sessions||[]);
   renderProjectSwitcher();
   updateProjectLine();
+  syncProgressScope();
   applyVoice(payload.voice||{});
   for (const event of payload.events||[]) {
     if (!event||typeof event!=='object') continue;
@@ -1845,6 +1971,7 @@ function update(value) {
       while (seenOrder.length>SEEN_LIMIT) seenSeqs.delete(seenOrder.shift());
       seq=Math.max(seq,Number(event.seq)||0);
     }
+    if (Number(event.time)<replayBefore) event.replayed=true;
     /* An event's project_id attributes the row; it never moves the active
      * project, which only the switcher and Ctrl+1..9 change (BUG-090). */
     try { handleEvent(event); }
@@ -1932,6 +2059,7 @@ function reconcileFeed(value) {
   if (Number.isFinite(oldest)&&oldest>1&&seq>0&&seq<oldest-1) reset=true;
   if (!reset) return;
   seq=0;
+  replayBefore=Date.now()-2000;
   seenSeqs.clear(); seenOrder.length=0;
   if (turn) {
     const open=turn.message;
@@ -1955,6 +2083,14 @@ function surfaceSettings(value) {
   }
   const emptyMic=element('empty-mic');
   if (emptyMic) emptyMic.disabled=value.isolated===true||!!settings.microphone;
+  const launch=element('empty-launch');
+  if (launch) {
+    const profile=(settings.profiles||[]).find(entry=>entry&&entry.id&&!isTerminalProfile(entry));
+    launch.hidden=!profile||!projectList().length;
+    if (profile) launch.textContent='Open '+(profile.name||profile.id);
+  }
+  const assess=element('empty-assess');
+  if (assess) assess.disabled=!projectList().length;
   const note=element('mic-note');
   if (note) note.textContent=micExplanation(status);
   const switcher=element('model-switcher');
@@ -1970,6 +2106,15 @@ function surfaceSettings(value) {
   }
 }
 
+/* Progress follows the project list and the active project: a new project gets
+ * its switcher percent, and a changed selection loads its graph once. */
+let progressScope=null;
+function syncProgressScope() {
+  const list=projectList().map(project=>project.id).join('|');
+  if (list!==progressScope) { progressScope=list; loadOverview(); }
+  const active=activeProjectId()||null;
+  if (graphRequested!==active) loadGraph();
+}
 let hydratedChat=false;
 function hydrateOnce() {
   if (hydratedChat||!snapshot?.settings) return;
@@ -2079,6 +2224,8 @@ element('voice-use').onclick=()=>useConfirm();
 element('voice-edit').onclick=()=>editConfirm();
 element('empty-mic').onclick=toggleMicrophone;
 element('empty-session').onclick=()=>openNewDialog();
+element('empty-launch').onclick=()=>{ const profile=preferredProfile(); if (profile) quickLaunch(profile); };
+element('empty-assess').onclick=()=>assessProject();
 element('empty-settings').onclick=()=>openSettings();
 
 /* The reader owns the log: nothing auto-scrolls unless the view is already at the
@@ -2351,7 +2498,19 @@ if (splitterBar) {
  * Unknown is an em dash, never 0 or 100, and verified and confidence sit beside
  * the headline because a percentage alone cannot be judged (BUG-084/089). */
 
-let graphData=null, graphLoading=false, graphSeq=0;
+/* -- progress: the headline, its parts, and the evidence behind them -------
+ * One payload (`graph_get`) feeds three surfaces: the HUD in the strip, the ring
+ * around the emblem, and this panel. It is loaded for the active project whether
+ * or not the panel is open, so the main screen always shows where the work is. */
+let graphData=null, graphLoading=false, graphSeq=0, graphDirty=false, graphFocus=null;
+let graphRequested;              // the project the last load asked for
+let graphEditing=false;          // the headline's set-% form is open
+const expandedParts=new Set();   // part ids whose tasks are shown
+const overview=new Map();        // project_id -> {percent, basis, confidence, verified}
+const scans=new Map();           // project_id -> the last scan digest this window saw
+let assessing=null;              // {project, until, via} while an assessment runs
+let graphTimer=null, overviewTimer=null, assessTimer=null;
+const ASSESS_WINDOW=4*60*1000;
 
 function graphNode(tag,className,text) {
   const node=document.createElement(tag);
@@ -2365,6 +2524,12 @@ function formatPercent(value) {
   if (!Number.isFinite(number)) return '—';
   return (Number.isInteger(number)?String(number):number.toFixed(1))+'%';
 }
+/* Headline numbers read as whole percents; the evidence keeps the decimals. */
+function wholePercent(value) {
+  if (value===null||value===undefined||value==='') return '—';
+  const number=Number(value);
+  return Number.isFinite(number)?Math.round(number)+'%':'—';
+}
 function formatConfidence(value) {
   if (value===null||value===undefined) return '—';
   const number=Number(value);
@@ -2376,30 +2541,82 @@ function formatStamp(value) {
   if (!Number.isFinite(number)||number<=0) return '—';
   return new Date(number).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 }
-/* A percentage is only shown when something in it is evidence-backed. A project
- * with aspects but no covered task is unknown, not zero (BUG-084/089). */
+const SOURCE_NAMES={claude:'Claude Code',codex:'Codex',pi:'Pi',opencode:'OpenCode',agy:'Antigravity',
+  navi:'Navi',detector:'the detector',user:'you',assistant:'the assistant'};
+function sourceName(source) {
+  const key=String(source||'');
+  return SOURCE_NAMES[key]||key||'unknown';
+}
+function capitalise(text) {
+  const value=String(text||'');
+  return value?value.charAt(0).toUpperCase()+value.slice(1):value;
+}
+/* Unknown is not zero: a project with no estimate and no evidence shows a dash
+ * (BUG-084/089). An estimate alone is a value, with or without tasks. */
 function graphUnknown(graph) {
-  if (!graph||graph.percent_null===true) return true;
-  const aspects=Array.isArray(graph.aspects)?graph.aspects:[];
-  if (!aspects.length) return true;
-  return !aspects.some(aspect=>Number(aspect.tasks)>Number(aspect.unknown||0));
+  return !graph||graph.percent_null===true||!Number.isFinite(Number(graph.percent));
 }
 function graphScoreLabel(graph) {
-  if (graphUnknown(graph)) return '—';
-  return formatPercent(graph.percent);
+  return graphUnknown(graph)?'—':wholePercent(graph.percent);
+}
+/* What the headline stands on, in words: whose estimate and how old it is. */
+function basisText(graph) {
+  const basis=graph?.basis||{};
+  if (basis.kind==='estimate') {
+    return `Estimate by ${sourceName(basis.source)} · ${relativeTime(basis.time)}`;
+  }
+  if (basis.kind==='parts') {
+    const parts=Number(basis.parts)||0;
+    return `Across ${parts} part${parts===1?'':'s'}`+(basis.time?` · ${relativeTime(basis.time)}`:'');
+  }
+  return 'No estimate yet';
+}
+function partBasis(aspect) {
+  if (aspect.basis==='estimate') {
+    const estimate=aspect.estimate||{};
+    return `Estimate by ${sourceName(estimate.source)} · ${relativeTime(estimate.time||aspect.time)}`;
+  }
+  if (aspect.basis==='tasks') {
+    const tasks=Number(aspect.tasks)||0;
+    return `From ${tasks} task${tasks===1?'':'s'}`;
+  }
+  return 'No evidence yet';
+}
+function graphFor(project) {
+  return graphData&&project&&graphData.project?.id===project.id?graphData:null;
+}
+
+function isAssessing(project) {
+  if (assessing&&Date.now()>=assessing.until) assessing=null;
+  return !!assessing&&!!project&&assessing.project===project;
+}
+function beginAssessment(project,via) {
+  if (!project) return;
+  assessing={project,until:Date.now()+ASSESS_WINDOW,via:String(via||'')};
+  clearTimeout(assessTimer);
+  assessTimer=setTimeout(()=>endAssessment(project),ASSESS_WINDOW+200);
+  renderHud();
+  renderGraph();
+}
+function endAssessment(project) {
+  if (!assessing||(project&&assessing.project!==project)) return;
+  assessing=null;
+  clearTimeout(assessTimer);
+  renderHud();
+  renderGraph();
 }
 
 /* The panel is re-fetched for the project now active; a late reply from a
  * previous project is dropped by the ticket instead of overwriting this one. */
 async function loadGraph() {
-  const region=element('graph-region');
-  if (!region) return null;
   const project=activeProjectId();
   const ticket=++graphSeq;
+  graphRequested=project||null;
   if (!project) {
     graphData=null;
     graphLoading=false;
     renderGraph();
+    renderHud();
     return null;
   }
   graphLoading=true;
@@ -2407,6 +2624,10 @@ async function loadGraph() {
     const result=await rpc('graph_get',{project_id:project});
     if (ticket!==graphSeq) return null;
     graphData=result&&result.project?result:null;
+    if (graphData) {
+      overview.set(project,{project_id:project,percent:graphData.percent,basis:graphData.basis?.kind,
+        confidence:graphData.confidence,verified:graphData.verified});
+    }
     return graphData;
   } catch (error) {
     if (ticket===graphSeq) {
@@ -2418,28 +2639,100 @@ async function loadGraph() {
     if (ticket===graphSeq) {
       graphLoading=false;
       renderGraph();
+      renderHud();
+      renderProjectSwitcher(true);
     }
   }
 }
-
-function graphHeader(graph,project) {
-  const head=graphNode('header','graph-head');
-  const score=graphNode('div','graph-score');
-  const value=graphNode('strong','graph-percent',graphScoreLabel(graph));
-  value.dataset.null=String(graphUnknown(graph));
-  score.append(value,graphNode('span','graph-caption','complete'));
-  const stats=graphNode('div','graph-sub');
-  /* With no aspects there is no weight at all: verified and confidence are
-   * vacuous, so they read as dashes rather than 0% (BUG-089). */
-  const vacuous=!graph||graph.percent_null===true;
-  stats.append(graphStat('Verified',vacuous?'—':formatPercent(graph.verified)));
-  stats.append(graphStat('Confidence',vacuous?'—':formatConfidence(graph.confidence)));
-  head.append(score,stats);
-  const name=graphNode('p','graph-project',project?`${project.name} · ${pathState(project)}`:'No project');
-  name.title=project?String(project.path||''):'';
-  head.append(name);
-  return head;
+/* Progress events arrive in bursts (a harness reports each part, then the
+ * whole), so the reload is debounced rather than run once per event. */
+function scheduleGraph(delay=400) {
+  clearTimeout(graphTimer);
+  graphTimer=setTimeout(()=>loadGraph(),delay);
 }
+async function loadOverview() {
+  try {
+    const result=await rpc('progress_overview');
+    overview.clear();
+    for (const row of Array.isArray(result?.projects)?result.projects:[]) {
+      if (row&&row.project_id) overview.set(String(row.project_id),row);
+    }
+    renderProjectSwitcher(true);
+  } catch (error) {
+    record('warn','progress overview unavailable: '+error.message);
+  }
+}
+function scheduleOverview(delay=1500) {
+  clearTimeout(overviewTimer);
+  overviewTimer=setTimeout(loadOverview,delay);
+}
+
+/* Assess: scan the files, then ask a linked harness in this project (or Navi's
+ * own assistant) to estimate each part. The answer arrives as progress events. */
+async function assessProject() {
+  const project=activeProjectId();
+  if (!project) { toast('Register a project first'); return null; }
+  if (isAssessing(project)) return null;
+  assessing={project,until:Date.now()+ASSESS_WINDOW,via:null};
+  renderHud();
+  renderGraph();
+  try {
+    const result=await rpc('project_detect',{project_id:project},30000);
+    if (result?.scan?.digest) scans.set(project,{digest:String(result.scan.digest),time:Date.now()});
+    if (result?.started===true) beginAssessment(project,result.via);
+    else assessing=null;
+    toast(String(result?.message||'Assessment started'));
+    scheduleGraph(150);
+    return result;
+  } catch (error) {
+    assessing=null;
+    toast(error.message);
+    return null;
+  } finally {
+    renderHud();
+    renderGraph();
+  }
+}
+async function reportProgress(params) {
+  const project=activeProjectId();
+  if (!project) throw new Error('Register a project first');
+  return rpc('progress_report',{project_id:project,source:'user',confidence:1,create:false,
+    evidence:'set by you in the progress panel',...params});
+}
+
+/* -- the HUD and the ring ---------------------------------------------------- */
+
+function renderHud() {
+  const hud=element('progress-hud');
+  if (!hud) return;
+  const project=activeProjectRow();
+  hud.hidden=!project;
+  if (!project) { window.naviScene?.setProgress?.(null,false); return; }
+  const graph=graphFor(project);
+  const unknown=graphUnknown(graph);
+  const value=unknown?null:Number(graph.percent);
+  const scanning=isAssessing(project.id);
+  const percent=element('hud-percent');
+  percent.textContent=unknown?'—':wholePercent(value);
+  percent.dataset.null=String(unknown);
+  element('hud-fill').style.width=unknown?'0%':`${Math.max(0,Math.min(100,value))}%`;
+  element('hud-basis').textContent=scanning
+    ?'Assessing…'
+    :graph?basisText(graph):(graphLoading?'Reading…':'No estimate yet');
+  hud.dataset.state=scanning?'assessing':unknown?'unknown':'known';
+  const assess=element('hud-assess');
+  assess.disabled=scanning;
+  assess.textContent=scanning?'Assessing…':unknown?'Assess':'Reassess';
+  const open=element('hud-open');
+  open.setAttribute('aria-expanded',String(graphOpen));
+  open.title=graph
+    ?`${project.name}: ${unknown?'no estimate yet':wholePercent(value)+' complete'}\n${String(graph.why||'')}\nClick for parts and evidence`
+    :`${project.name}: click for parts and evidence`;
+  window.naviScene?.setProgress?.(value,scanning);
+}
+
+/* -- the panel --------------------------------------------------------------- */
+
 function graphStat(label,value) {
   const pair=graphNode('span','graph-stat');
   pair.append(graphNode('span','graph-stat-label',label),graphNode('strong','graph-stat-value',value));
@@ -2448,94 +2741,325 @@ function graphStat(label,value) {
 function graphNotice(text) {
   return graphNode('p','graph-note',text);
 }
-
-function aspectRow(aspect) {
-  const row=graphNode('li','aspect');
-  row.dataset.aspect=String(aspect.id||'');
-  const tasks=Number(aspect.tasks)||0;
-  /* An aspect whose tasks carry no evidence is unknown, not 0%: the bar is empty
-   * and the value is an em dash (BUG-084/089). */
-  const empty=aspect.percent_null===true||tasks===0||Number(aspect.unknown||0)>=tasks;
-  const head=graphNode('div','aspect-head');
-  head.append(graphNode('span','aspect-title',String(aspect.title||aspect.key||'Aspect')));
-  const value=graphNode('span','aspect-value',empty?'—':formatPercent(aspect.percent));
-  value.dataset.null=String(empty);
-  head.append(value);
-  row.append(head);
-  const bar=graphNode('div','aspect-bar');
-  bar.setAttribute('role','img');
-  bar.setAttribute('aria-label',`${aspect.title||'Aspect'}: ${empty?'unknown':formatPercent(aspect.percent)}`);
-  const fill=graphNode('i','aspect-fill');
-  fill.dataset.state=empty?'unknown':'known';
-  fill.style.width=empty?'0%':`${Math.max(0,Math.min(100,Number(aspect.percent)))}%`;
+/* A bar is text's companion, never its replacement: the value is always also
+ * written beside it. `marker` places a tick where the tasks alone would put it. */
+function meter(value,barClass,fillClass,marker) {
+  const bar=graphNode('div',barClass);
+  const known=value!==null&&value!==undefined&&Number.isFinite(Number(value));
+  const fill=graphNode('i',fillClass);
+  fill.dataset.state=known?'known':'unknown';
+  fill.style.width=known?`${Math.max(0,Math.min(100,Number(value)))}%`:'0%';
   bar.append(fill);
-  row.append(bar);
-  const meta=graphNode('div','aspect-meta');
-  meta.append(graphNode('span','aspect-tasks',`${tasks} task${tasks===1?'':'s'}`));
-  if (Number(aspect.unknown)>0) {
-    meta.append(graphNode('span','aspect-unknown',`${aspect.unknown} without evidence`));
+  if (marker!==null&&marker!==undefined&&Number.isFinite(Number(marker))) {
+    const tick=graphNode('i','meter-marker');
+    tick.style.left=`${Math.max(0,Math.min(100,Number(marker)))}%`;
+    tick.title=`Tasks alone: ${wholePercent(marker)}`;
+    bar.append(tick);
   }
-  if (Number(aspect.weight)!==1) meta.append(graphNode('span','aspect-weight',`weight ${aspect.weight}`));
-  row.append(meta);
-  return row;
+  return bar;
 }
-
-function emptyGraphState() {
-  const block=graphNode('section','graph-empty');
-  block.append(graphNode('h4','empty-title','No aspects defined'));
-  block.append(graphNode('p','empty-hint',
-    'An aspect groups the work; completion is derived from evidence — checkpoints, commits, and harness test lines — never typed in.'));
+/* The whole-project estimates over time, oldest first, as one line. */
+function trendLine(trend) {
+  const points=(Array.isArray(trend)?trend:[])
+    .map(point=>Number(point?.percent))
+    .filter(Number.isFinite);
+  if (points.length<2) return null;
+  /* The axis spans the data (at least 10 points), so a 61 → 66 move reads as a
+   * rise instead of a flat line on a 0–100 scale. */
+  const low=Math.max(0,Math.min(...points)-3), high=Math.min(100,Math.max(...points)+3);
+  const span=Math.max(10,high-low), floor=Math.max(0,Math.min(low,100-span));
+  const width=96, height=26;
+  const step=width/(points.length-1);
+  const coords=points.map((value,index)=>
+    `${(index*step).toFixed(1)},${(height-2-((value-floor)/span)*(height-4)).toFixed(1)}`);
+  const svg=document.createElementNS(SVG_NS,'svg');
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  svg.setAttribute('width',String(width));
+  svg.setAttribute('height',String(height));
+  svg.setAttribute('class','graph-trend');
+  svg.setAttribute('role','img');
+  svg.setAttribute('aria-label',`Trend: ${points.map(value=>Math.round(value)+'%').join(', ')}`);
+  const line=document.createElementNS(SVG_NS,'polyline');
+  line.setAttribute('points',coords.join(' '));
+  const end=document.createElementNS(SVG_NS,'circle');
+  const [x,y]=coords[coords.length-1].split(',');
+  end.setAttribute('cx',x); end.setAttribute('cy',y); end.setAttribute('r','2.2');
+  svg.append(line,end);
+  return svg;
+}
+function percentForm(options) {
+  const form=graphNode('form','percent-form');
+  form.autocomplete='off';
+  const input=document.createElement('input');
+  input.type='number'; input.min='0'; input.max='100'; input.step='1';
+  input.placeholder='0–100';
+  input.dataset.focus=options.focus;
+  input.setAttribute('aria-label',options.label);
+  if (Number.isFinite(Number(options.value))&&options.value!==null) input.value=String(Math.round(Number(options.value)));
+  const unit=graphNode('span','percent-unit','%');
+  const submit=graphNode('button','primary',options.action||'Set');
+  submit.type='submit';
+  form.append(input,unit,submit);
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const raw=input.value.trim();
+    const value=Number(raw);
+    if (!raw||!Number.isFinite(value)||value<0||value>100) {
+      toast('Enter a percent from 0 to 100');
+      input.focus();
+      return;
+    }
+    submit.disabled=true;
+    try {
+      await options.submit(value);
+      input.blur();
+      await loadGraph();
+    } catch (error) {
+      toast(error.message);
+      submit.disabled=false;
+    }
+  });
+  form.addEventListener('keydown',event=>{
+    if (event.key!=='Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    input.blur();
+    options.cancel?.();
+  });
+  return form;
+}
+function textForm(options) {
   const form=graphNode('form','aspect-form');
   form.autocomplete='off';
   const input=document.createElement('input');
   input.type='text';
-  input.id='aspect-title';
-  input.maxLength=120;
-  input.placeholder='e.g. Assistant server';
-  input.setAttribute('aria-label','Aspect title');
-  const submit=graphNode('button','primary','Add aspect');
+  input.maxLength=options.max||160;
+  input.placeholder=options.placeholder;
+  input.dataset.focus=options.focus;
+  input.setAttribute('aria-label',options.label);
+  if (options.id) input.id=options.id;
+  const submit=graphNode('button','',options.action||'Add');
   submit.type='submit';
   form.append(input,submit);
   form.addEventListener('submit',async event=>{
     event.preventDefault();
     const title=input.value.trim();
-    const project=activeProjectId();
-    if (!title||!project) { input.focus(); return; }
+    if (!title) { input.focus(); return; }
     submit.disabled=true;
     try {
-      await rpc('aspect_add',{project_id:project,title});
+      await options.submit(title);
       input.value='';
-      toast('Aspect added');
+      graphFocus=options.focus;   // keep typing: the next one goes in the same field
+      input.blur();
       await loadGraph();
-    } catch (error) { toast(error.message); }
-    finally { submit.disabled=false; }
+    } catch (error) {
+      toast(error.message);
+      submit.disabled=false;
+    }
   });
-  block.append(form);
-  block.append(graphNode('p','empty-note','A new project shows — until an aspect has a task with evidence.'));
+  return form;
+}
+
+function graphHeader(graph,project) {
+  const head=graphNode('header','graph-head');
+  const top=graphNode('div','graph-top');
+  top.append(graphNode('span','graph-caption','Progress'));
+  const name=graphNode('span','graph-project',project?`${project.name} · ${pathState(project)}`:'No project');
+  name.title=project?String(project.path||''):'';
+  top.append(name);
+  const close=graphNode('button','icon graph-close','×');
+  close.type='button';
+  close.setAttribute('aria-label','Close progress');
+  close.addEventListener('click',()=>showGraph(false));
+  top.append(close);
+  head.append(top);
+  const unknown=graphUnknown(graph);
+  const score=graphNode('div','graph-score');
+  const value=graphNode('strong','graph-percent',graphScoreLabel(graph));
+  value.dataset.null=String(unknown);
+  score.append(value,graphNode('span','graph-caption','complete'));
+  const trend=trendLine(graph?.trend);
+  if (trend) score.append(trend);
+  head.append(score);
+  head.append(meter(unknown?null:graph.percent,'graph-bar','meter-fill'));
+  const scanning=isAssessing(project?.id);
+  head.append(graphNode('p','graph-basis',scanning?'Assessing… estimates appear as they are reported.':basisText(graph)));
+  if (graph?.why&&!scanning) head.append(graphNode('p','graph-why',String(graph.why)));
+  /* With no estimate and no evidence there is no weight at all: verified and
+   * confidence are vacuous, so they read as dashes rather than 0% (BUG-089). */
+  const stats=graphNode('div','graph-sub');
+  stats.append(graphStat('Verified',unknown?'—':formatPercent(graph.verified)));
+  stats.append(graphStat('Confidence',unknown?'—':formatConfidence(graph.confidence)));
+  const counts=graph?.tasks;
+  if (counts&&Number(counts.total)>0) stats.append(graphStat('Tasks',`${Number(counts.done)||0}/${Number(counts.total)}`));
+  head.append(stats);
+  const actions=graphNode('div','graph-actions');
+  const assess=graphNode('button','primary',scanning?'Assessing…':unknown?'Assess':'Reassess');
+  assess.type='button';
+  assess.disabled=!project||scanning;
+  assess.title='Scan the project, then ask a linked harness (or Navi) to estimate each part';
+  assess.addEventListener('click',()=>assessProject());
+  const set=graphNode('button','','Set %');
+  set.type='button';
+  set.disabled=!project;
+  set.title='Set the whole-project percent yourself';
+  set.setAttribute('aria-expanded',String(graphEditing));
+  set.addEventListener('click',()=>{
+    graphEditing=!graphEditing;
+    if (graphEditing) graphFocus='overall';
+    renderGraph();
+  });
+  const refresh=graphNode('button','','Refresh');
+  refresh.type='button';
+  refresh.addEventListener('click',()=>loadGraph());
+  actions.append(assess,set,refresh);
+  head.append(actions);
+  if (graphEditing&&project) {
+    head.append(percentForm({
+      focus:'overall', label:'Whole-project percent', value:graph?.percent,
+      submit:async value=>{ await reportProgress({percent:value}); graphEditing=false; },
+      cancel:()=>{ graphEditing=false; renderGraph(); },
+    }));
+  }
+  return head;
+}
+
+function taskList(items) {
+  const list=graphNode('ul','task-list');
+  for (const item of items) {
+    const row=graphNode('li','task');
+    const state=String(item.state||'todo');
+    row.dataset.state=state;
+    const box=document.createElement('input');
+    box.type='checkbox';
+    box.checked=state==='done';
+    box.setAttribute('aria-label',`${String(item.title||'Task')}: ${box.checked?'done':'not done'}`);
+    box.addEventListener('change',async ()=>{
+      box.disabled=true;
+      try {
+        await rpc('task_set',{id:item.id,state:box.checked?'done':'todo'});
+        await loadGraph();
+      } catch (error) {
+        toast(error.message);
+        box.checked=!box.checked;
+        box.disabled=false;
+      }
+    });
+    const title=graphNode('span','task-title',String(item.title||'Task'));
+    const known=item.percent!==null&&item.percent!==undefined;
+    const value=graphNode('span','task-value',known?wholePercent(item.percent):'—');
+    value.title=known
+      ?`${capitalise(sourceName(item.source))}${item.verified?' · verified':''}${item.time?' · '+relativeTime(item.time):''}`
+      :'No evidence yet';
+    row.append(box,title);
+    if (state==='in_progress'||state==='blocked') {
+      row.append(graphNode('span','task-flag',state==='blocked'?'blocked':'in progress'));
+    }
+    row.append(value);
+    list.append(row);
+  }
+  return list;
+}
+
+function aspectRow(aspect) {
+  const id=String(aspect.id||'');
+  const title=String(aspect.title||aspect.key||'Part');
+  const row=graphNode('li','aspect');
+  row.dataset.aspect=id;
+  row.dataset.basis=String(aspect.basis||'none');
+  const open=expandedParts.has(id);
+  const empty=aspect.percent_null===true||!Number.isFinite(Number(aspect.percent));
+  const head=graphNode('button','aspect-head');
+  head.type='button';
+  head.setAttribute('aria-expanded',String(open));
+  head.title=open?'Hide tasks':'Show tasks and set this part';
+  head.dataset.focus='head:'+id;
+  head.append(graphNode('span','aspect-caret',open?'▾':'▸'));
+  head.append(graphNode('span','aspect-title',title));
+  const value=graphNode('span','aspect-value',empty?'—':wholePercent(aspect.percent));
+  value.dataset.null=String(empty);
+  head.append(value);
+  head.addEventListener('click',()=>{
+    if (expandedParts.has(id)) expandedParts.delete(id); else expandedParts.add(id);
+    graphFocus='head:'+id;   // the row is rebuilt; keyboard focus stays on it
+    renderGraph();
+  });
+  row.append(head);
+  const derived=aspect.basis==='estimate'?aspect.derived:null;
+  const bar=meter(empty?null:aspect.percent,'aspect-bar','aspect-fill',derived);
+  bar.setAttribute('role','img');
+  bar.setAttribute('aria-label',`${title}: ${empty?'unknown':wholePercent(aspect.percent)}`);
+  row.append(bar);
+  const meta=graphNode('div','aspect-meta');
+  meta.append(graphNode('span','aspect-basis',partBasis(aspect)));
+  const items=Array.isArray(aspect.items)?aspect.items:[];
+  const tasks=Number(aspect.tasks)||items.length;
+  if (tasks) {
+    const done=items.filter(item=>item.state==='done').length;
+    meta.append(graphNode('span','aspect-tasks',`${done}/${tasks} task${tasks===1?'':'s'} done`));
+  }
+  if (Number(aspect.unknown)>0) meta.append(graphNode('span','aspect-unknown',`${aspect.unknown} without evidence`));
+  if (Number(aspect.weight)!==1) meta.append(graphNode('span','aspect-weight',`weight ${aspect.weight}`));
+  row.append(meta);
+  if (open) {
+    const body=graphNode('div','aspect-body');
+    const evidence=aspect.estimate?.evidence;
+    if (evidence) body.append(graphNode('p','aspect-evidence',String(evidence)));
+    if (Number.isFinite(Number(derived))&&derived!==null) {
+      body.append(graphNotice(`Its tasks alone say ${wholePercent(derived)}. Verified task evidence newer than the estimate takes over.`));
+    }
+    if (items.length) body.append(taskList(items));
+    body.append(textForm({
+      focus:'task:'+id, label:`Add a task to ${title}`, placeholder:'Add a task', max:200,
+      submit:title=>rpc('task_add',{project_id:activeProjectId(),aspect_id:id,title}),
+    }));
+    body.append(percentForm({
+      focus:'part:'+id, label:`${title} percent`, value:aspect.percent, action:'Set part',
+      submit:value=>reportProgress({aspect_id:id,percent:value}),
+    }));
+    row.append(body);
+  }
+  return row;
+}
+
+function emptyGraphState() {
+  const block=graphNode('section','graph-empty');
+  block.append(graphNode('h4','empty-title','No parts yet'));
+  block.append(graphNode('p','empty-hint',
+    'Parts split the project into areas, each with its own percent. Assess the project and a linked harness proposes them from the code, or add one here.'));
   return block;
 }
 
-function evidenceDrawer(signals) {
+function evidenceDrawer(signals,total) {
   const drawer=graphNode('details','graph-evidence');
   const shown=Math.min(signals.length,20);
+  const count=Math.max(Number(total)||0,signals.length);
   drawer.append(graphNode('summary','graph-evidence-head',
-    shown<signals.length?`Evidence (${shown} of ${signals.length})`:`Evidence (${signals.length})`));
+    shown<count?`Evidence (${shown} of ${count})`:`Evidence (${count})`));
   if (!signals.length) {
-    drawer.append(graphNotice('No evidence yet: a checkpoint, a commit, or a harness test line is what moves a number.'));
+    drawer.append(graphNotice('No evidence yet: an estimate from a harness, a checked task, a commit or a test line is what moves a number.'));
     return drawer;
   }
+  const aspects=new Map((Array.isArray(graphData?.aspects)?graphData.aspects:[])
+    .map(aspect=>[String(aspect.id),String(aspect.title||aspect.key||'')]));
   const list=graphNode('ul','evidence-list');
   for (const signal of signals.slice(0,20)) {
     const row=graphNode('li','evidence');
     row.dataset.source=String(signal.source||'');
+    row.dataset.verified=String(signal.verified===true);
     const head=graphNode('div','evidence-head');
     head.append(graphNode('span','evidence-kind',String(signal.kind||'signal')));
-    head.append(graphNode('span','evidence-source',String(signal.source||'')));
-    if (Number.isFinite(Number(signal.id))) head.append(graphNode('span','evidence-id','#'+signal.id));
-    head.append(graphNode('span','evidence-time',formatStamp(signal.time)));
+    head.append(graphNode('span','evidence-source',capitalise(sourceName(signal.source))));
+    const scope=signal.aspect_id?aspects.get(String(signal.aspect_id)):signal.task_id?'':'whole project';
+    if (scope) head.append(graphNode('span','evidence-scope',scope));
+    if (signal.value!==null&&signal.value!==undefined&&Number.isFinite(Number(signal.value))) {
+      head.append(graphNode('span','evidence-value',wholePercent(Number(signal.value)*100)));
+    }
+    if (signal.verified===true) head.append(graphNode('span','evidence-verified','verified'));
+    head.append(graphNode('span','evidence-time',relativeTime(signal.time)));
+    head.title=formatStamp(signal.time)+(Number.isFinite(Number(signal.id))?' · #'+signal.id:'');
     row.append(head);
     row.append(graphNode('p','evidence-text',String(signal.evidence||'')));
-    if (signal.task_id) row.append(graphNode('span','evidence-task',String(signal.task_id)));
     list.append(row);
   }
   drawer.append(list);
@@ -2545,24 +3069,48 @@ function evidenceDrawer(signals) {
 function renderGraph() {
   const region=element('graph-region');
   if (!region) return;
-  const graph=graphData;
+  /* A refresh replaces the panel. While a text field in it holds the caret the
+   * refresh waits for blur, so a progress event never eats what is being typed. */
+  const focused=document.activeElement;
+  if (focused&&region.contains(focused)&&focused.matches('input[type=text],input[type=number]')&&focused.value) {
+    graphDirty=true;
+    return;
+  }
+  graphDirty=false;
+  const project=activeProjectRow();
+  const graph=graphFor(project);
   const panel=graphNode('div','graph-panel');
-  panel.append(graphHeader(graph,activeProjectRow()));
+  panel.append(graphHeader(graph,project));
   if (!graph) {
     panel.append(graphNotice(graphLoading
-      ?'Reading the graph…'
-      :'No project selected. Register one in Settings; the graph is derived per project.'));
+      ?'Reading progress…'
+      :project?'Progress is unavailable right now.':'No project selected. Register one in Settings; progress is kept per project.'));
     region.replaceChildren(panel);
     return;
   }
   const aspects=Array.isArray(graph.aspects)?graph.aspects:[];
+  const parts=graphNode('section','graph-parts');
+  parts.append(graphNode('h4','graph-sub-title',aspects.length?`Parts (${aspects.length})`:'Parts'));
   if (aspects.length) {
     const list=graphNode('ul','aspect-list');
-    list.setAttribute('aria-label','Aspects');
+    list.setAttribute('aria-label','Parts');
     for (const aspect of aspects) list.append(aspectRow(aspect));
-    panel.append(list);
+    parts.append(list);
   } else {
-    panel.append(emptyGraphState());
+    parts.append(emptyGraphState());
+  }
+  parts.append(textForm({
+    id:'aspect-title', focus:'part:new', label:'New part', placeholder:'Add a part, e.g. Voice', max:120,
+    action:'Add part',
+    submit:title=>rpc('aspect_add',{project_id:activeProjectId(),title}),
+  }));
+  panel.append(parts);
+  const unassigned=Array.isArray(graph.unassigned)?graph.unassigned:[];
+  if (unassigned.length) {
+    const block=graphNode('section','graph-unassigned');
+    block.append(graphNode('h4','graph-sub-title',`Tasks without a part (${unassigned.length})`));
+    block.append(taskList(unassigned));
+    panel.append(block);
   }
   const risks=Array.isArray(graph.risks)?graph.risks:[];
   if (risks.length) {
@@ -2573,16 +3121,28 @@ function renderGraph() {
     block.append(list);
     panel.append(block);
   }
-  panel.append(evidenceDrawer(Array.isArray(graph.signals)?graph.signals:[]));
+  const scan=scans.get(String(project?.id||''));
+  if (scan) {
+    const block=graphNode('details','graph-evidence graph-scan');
+    block.append(graphNode('summary','graph-evidence-head','Last scan · '+relativeTime(scan.time)));
+    block.append(graphNotice(scan.digest));
+    panel.append(block);
+  }
+  panel.append(evidenceDrawer(Array.isArray(graph.signals)?graph.signals:[],graph.signal_count));
   const foot=graphNode('footer','graph-foot');
   foot.append(graphNode('span','graph-stamp','as of '+formatStamp(graph.as_of)));
-  const refresh=graphNode('button','graph-refresh','Refresh');
-  refresh.type='button';
-  refresh.addEventListener('click',()=>loadGraph());
-  foot.append(refresh);
   panel.append(foot);
   region.replaceChildren(panel);
+  if (graphFocus) {
+    const target=[...region.querySelectorAll('[data-focus]')].find(node=>node.dataset.focus===graphFocus);
+    graphFocus=null;
+    target?.focus();
+  }
 }
+element('graph-region')?.addEventListener('focusout',()=>{
+  if (!graphDirty) return;
+  setTimeout(()=>{ if (graphDirty) renderGraph(); },0);
+});
 
 /* The rendered panel, not the payload: a test asserts what the reader sees. */
 function graphSnapshot() {
@@ -2602,18 +3162,23 @@ function graphSnapshot() {
     percent:graphData?.percent??null,
     percent_null:graphData?.percent_null===true,
     unknown:graphUnknown(graphData),
+    basis:graphData?.basis?.kind||null,
     label:region?.querySelector('.graph-percent')?.textContent||null,
+    hud:element('hud-percent')?.textContent||null,
+    ring:window.naviScene?.progress?.()??null,
+    assessing:!!assessing,
     verified:stat('Verified'),
     confidence:stat('Confidence'),
     aspects:[...(region?.querySelectorAll('.aspect')||[])].map(row=>({
       title:row.querySelector('.aspect-title')?.textContent||'',
       value:row.querySelector('.aspect-value')?.textContent||'',
+      basis:row.dataset.basis||'',
       width:row.querySelector('.aspect-fill')?.style.width||'',
       empty:row.querySelector('.aspect-value')?.dataset.null==='true',
     })),
     risks:[...(region?.querySelectorAll('.risk')||[])].map(row=>row.textContent||''),
     evidence:region?.querySelectorAll('.evidence').length||0,
-    evidenceTotal:region?.querySelector('.graph-evidence-head')?.textContent||null,
+    evidenceTotal:region?.querySelector('.graph-evidence:not(.graph-scan) .graph-evidence-head')?.textContent||null,
     empty:!!region?.querySelector('.graph-empty'),
     as_of:region?.querySelector('.graph-stamp')?.textContent||null,
   };
@@ -2633,11 +3198,16 @@ function showGraph(open) {
   }
   document.body.dataset.graph=next?'open':'closed';
   element('graph-tab')?.setAttribute('aria-pressed',String(next));
+  element('hud-open')?.setAttribute('aria-expanded',String(next));
   syncFrame();
   scheduleFit();
   return next;
 }
 element('graph-tab')?.addEventListener('click',()=>showGraph(graphOpen?false:true));
+element('hud-open')?.addEventListener('click',()=>showGraph());
+element('hud-assess')?.addEventListener('click',()=>assessProject());
+/* Relative times ("3m ago") age while the window idles. */
+setInterval(()=>{ renderHud(); if (graphOpen&&!graphDirty) renderGraph(); },60000);
 
 /* The scene measures #stage-region itself; the station only reports that rect on
  * a layout change and owns the dim channel, which no observer can infer. Below
@@ -2693,6 +3263,9 @@ addEventListener('resize',()=>{ reconcileDock(); syncFrame(); scheduleFit(); });
 const sessionsBar=()=>element('sessions');
 const sessionNodes=new Map();
 let recentWrap=null, recentToggle=null, recentChips=null, addChip=null;
+let launchWrap=null, launchMenu=null, launchOpen=false;
+const SESSION_WORDS={starting:'starting',running:'running',idle:'ready',busy:'working',
+  needs_input:'needs input',interrupted:'interrupted',exited:'exited'};
 let recentList=[], recentOpen=false;
 
 function profileLabel(id) {
@@ -2731,7 +3304,8 @@ function updateSessionChip(node,session,label) {
   if (session.active===true) node.setAttribute('aria-current','true'); else node.removeAttribute('aria-current');
   node.querySelector('.session-name').textContent=label;
   const stateText=node.querySelector('.session-state');
-  stateText.textContent=live?String(session.state||'running'):'exited';
+  stateText.textContent=live?(SESSION_WORDS[session.state]||String(session.state||'running')):'exited';
+  node.dataset.harness=String(session.harness||'');
   node.title=[profileLabel(session.profile),session.cwd||'','last active '+relativeTime(session.last_active)].filter(Boolean).join(' · ');
   node.onclick=event=>{
     if (event.target.closest('.session-drop')) return;
@@ -2795,13 +3369,115 @@ function ensureSessionShell(bar) {
     recentWrap.append(recentToggle,recentChips);
   }
   if (!addChip) {
+    /* One click opens a harness in the active project; the dialog stays behind
+     * "More options" for another directory, a name or a first prompt. */
+    launchWrap=document.createElement('div');
+    launchWrap.className='launch-wrap';
     addChip=document.createElement('button');
     addChip.type='button';
     addChip.className='session-chip new';
-    addChip.textContent='+ session';
-    addChip.onclick=()=>openNewDialog();
+    addChip.textContent='+ harness';
+    addChip.title='Open a harness in the active project';
+    addChip.setAttribute('aria-haspopup','menu');
+    addChip.setAttribute('aria-expanded','false');
+    addChip.onclick=event=>{
+      event.stopPropagation();
+      launchOpen=!launchOpen;
+      renderLaunchMenu();
+      if (launchOpen) launchMenu.querySelector('.launch-option:not(:disabled)')?.focus();
+    };
+    launchMenu=document.createElement('div');
+    launchMenu.className='launch-menu';
+    launchMenu.setAttribute('role','menu');
+    launchMenu.setAttribute('aria-label','Open a harness');
+    launchMenu.hidden=true;
+    launchWrap.append(addChip,launchMenu);
+    document.addEventListener('click',event=>{
+      if (!launchOpen||launchWrap.contains(event.target)) return;
+      launchOpen=false;
+      renderLaunchMenu();
+    });
+    launchWrap.addEventListener('keydown',event=>{
+      if (!launchOpen) return;
+      if (event.key==='Escape') {
+        event.preventDefault();
+        launchOpen=false;
+        renderLaunchMenu();
+        addChip.focus();
+        return;
+      }
+      if (event.key!=='ArrowDown'&&event.key!=='ArrowUp') return;
+      event.preventDefault();
+      const items=[...launchMenu.querySelectorAll('button:not(:disabled)')];
+      if (!items.length) return;
+      const index=items.indexOf(document.activeElement);
+      const step=event.key==='ArrowDown'?1:-1;
+      items[(index+step+items.length)%items.length].focus();
+    });
   }
   return bar;
+}
+function isTerminalProfile(profile) {
+  return profile.id==='terminal'||profile.executable==='/bin/bash';
+}
+function harnessProfiles() {
+  const profiles=(snapshot?.settings?.profiles||[]).filter(profile=>profile&&profile.id);
+  return [...profiles.filter(profile=>!isTerminalProfile(profile)),...profiles.filter(isTerminalProfile)];
+}
+function preferredProfile() {
+  return harnessProfiles().find(profile=>!isTerminalProfile(profile))||null;
+}
+function renderLaunchMenu() {
+  if (!launchMenu) return;
+  launchMenu.hidden=!launchOpen;
+  addChip.setAttribute('aria-expanded',String(launchOpen));
+  if (!launchOpen) { launchMenu.replaceChildren(); return; }
+  const project=activeProjectRow();
+  const items=[graphNode('p','launch-head',project?`Open in ${project.name}`:'Register a project in Settings first')];
+  for (const profile of harnessProfiles()) {
+    const button=graphNode('button','launch-option');
+    button.type='button';
+    button.setAttribute('role','menuitem');
+    button.dataset.profile=String(profile.id);
+    const binary=isTerminalProfile(profile)?'shell':String(profile.executable||'').split('/').pop();
+    button.append(graphNode('span','launch-name',profile.name||profile.id));
+    /* The binary is shown only when the name does not already say it. */
+    if (binary&&binary.toLowerCase()!==String(profile.name||profile.id).toLowerCase()) {
+      button.append(graphNode('span','launch-hint',binary));
+    }
+    button.disabled=!project?.path;
+    button.onclick=event=>{
+      event.stopPropagation();
+      launchOpen=false;
+      renderLaunchMenu();
+      quickLaunch(profile);
+    };
+    items.push(button);
+  }
+  const more=graphNode('button','launch-option launch-more','More options…');
+  more.type='button';
+  more.setAttribute('role','menuitem');
+  more.onclick=event=>{
+    event.stopPropagation();
+    launchOpen=false;
+    renderLaunchMenu();
+    openNewDialog();
+  };
+  items.push(more);
+  launchMenu.replaceChildren(...items);
+}
+async function quickLaunch(profile) {
+  const project=activeProjectRow();
+  if (!project?.path) { openNewDialog(); return null; }
+  try {
+    const session=await rpc('create',{profile:profile.id,cwd:project.path});
+    if (session?.ok===false&&session.error) toast(String(session.error));
+    if (session?.id) openTerminal(session);
+    return session;
+  } catch (error) {
+    toast(error.message);
+    return null;
+  }
 }
 function renderSessions(list) {
   const bar=sessionsBar();
@@ -2851,7 +3527,7 @@ function renderSessions(list) {
     recentList=[];
     orderNodes(recentChips,[]);
   }
-  desired.push(addChip);
+  desired.push(launchWrap);
   orderNodes(bar,desired);
 }
 

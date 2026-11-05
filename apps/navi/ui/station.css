@@ -11,7 +11,7 @@
      `body[data-dock="closed"]` collapses the dock to zero. */
   --dock:min(46vw,720px);
   --dock-h:min(32vh,300px);
-  --graph:min(360px,30vw);
+  --graph:min(380px,32vw);
   --composer-max:min(30vh,320px);
   --composer-min:120px;
   --composer-line:22px;
@@ -51,6 +51,9 @@
 .empty-actions{display:flex;flex-wrap:wrap;gap:8px}
 .empty-actions button{font-size:11px;padding:6px 12px}
 .empty-note{margin:0;font-size:10px;line-height:1.5;color:#93b2d6}
+/* While the first-run block shows, the log keeps room for it: an overlay on a
+   one-line log would hide its buttons. */
+.chat:has(#chat-empty:not([hidden])) .chat-log-wrap{min-height:min(124px,20vh)}
 
 /* A message is a row of parts: head (who + time), parts, meta, actions. One accent
    per role, no gradients in text, and every state carries its own `data-status`. */
@@ -152,6 +155,17 @@
 .msg .part.tone-warning p{font-size:11.5px;color:#ffe6a8}
 .msg .part.tone-queued p{font-size:11.5px;color:#ffe6a8}
 .msg .part.tone-tool p{font-size:11.5px;color:#bfe9ff}
+.msg .part.tone-progress{border-left:2px solid #4fd8c0aa;padding-left:8px}
+.msg .part.tone-progress p{font-size:11.5px;color:#b8ffe9}
+/* The assistant's PROGRESS lines, recorded by the daemon, read as chips. */
+.progress-chips{display:flex;flex-wrap:wrap;gap:6px}
+.progress-chip{position:relative;display:inline-flex;align-items:baseline;gap:7px;padding:4px 9px 6px;
+  border:1px solid #4fd8c066;border-radius:6px;background:#06243899;overflow:hidden;font-size:11px;color:#dff8ff}
+.progress-chip[data-scope="overall"]{border-color:#9fe6ffaa;background:#0a2a5099}
+.chip-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip-value{font:italic 700 13px var(--serif);color:#b8ffe9;font-variant-numeric:tabular-nums}
+.chip-bar{position:absolute;left:0;bottom:0;height:2px;width:var(--fill,0%);background:linear-gradient(90deg,#4fd8c0,#9fe6ff)}
+.chat-empty .primary,.graph-panel .primary{border-color:#8dffe0aa;color:#d9fff6;box-shadow:0 0 14px #4fd8c02e}
 
 /* Per-row metadata and actions: actions appear on hover or keyboard focus, so the
    row stays quiet while it is being read (BUG-041). */
@@ -242,7 +256,8 @@ button:disabled{opacity:.45;cursor:default}
 
 /* Session strip: live sessions first, finished ones behind a collapsed Recent. The
    chip is a row control (role=button) so it can hold its own remove button. */
-.sessions{grid-area:strip;justify-self:start;max-width:100%;z-index:8;
+.strip{grid-area:strip;display:flex;align-items:flex-start;gap:var(--gap);min-width:0;z-index:20}
+.sessions{flex:0 1 auto;min-width:0;
   display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border-radius:10px}
 .session-chip{display:flex;align-items:center;gap:7px;padding:5px 11px;font-size:11px;
   color:var(--ice);border:1px solid #8eaff366;border-radius:4px;
@@ -251,6 +266,16 @@ button:disabled{opacity:.45;cursor:default}
 .session-chip.dead{opacity:.72}
 .session-dot{width:6px;height:6px;border-radius:50%;background:#8dffc0;flex:0 0 auto;box-shadow:0 0 8px #8dffc099}
 .session-chip.dead .session-dot{background:#7a8aa8;box-shadow:none}
+/* The dot carries the harness state: working pulses amber, waiting for input
+   glows cyan, starting is violet. The word beside it says the same in text. */
+.session-chip[data-state="busy"] .session-dot{background:#ffe08a;box-shadow:0 0 8px #ffe08a99;animation:dot-pulse 1.2s ease-in-out infinite}
+.session-chip[data-state="busy"] .session-state{color:#ffe08a}
+.session-chip[data-state="needs_input"] .session-dot{background:#9fe6ff;box-shadow:0 0 10px #9fe6ffcc}
+.session-chip[data-state="needs_input"] .session-state{color:#9fe6ff}
+.session-chip[data-state="starting"] .session-dot{background:#b7a6ff;box-shadow:0 0 8px #b7a6ff99}
+.session-chip[data-state="interrupted"] .session-dot{background:#ffb3b3;box-shadow:none}
+@keyframes dot-pulse{50%{opacity:.35}}
+body.still .session-dot{animation:none}
 .session-name{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .attachment-chips{display:flex;flex-wrap:wrap;gap:5px;padding:0 10px 6px}
 .attachment-chips[hidden]{display:none}
@@ -275,6 +300,42 @@ button:disabled{opacity:.45;cursor:default}
 .sessions-recent-chips{display:flex;flex-wrap:wrap;gap:8px}
 .recent-toggle{border-style:dashed;color:#9fb6d4;font-size:10px}
 
+/* Quick launch: one click opens a harness in the active project. */
+.launch-wrap{position:relative;display:flex}
+.launch-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;display:flex;flex-direction:column;gap:2px;
+  min-width:220px;max-height:min(340px,55vh);overflow:auto;padding:6px;border-radius:8px;
+  border:1px solid #8eaff355;background:linear-gradient(150deg,#0d1a52f7,#040b36fa);box-shadow:0 14px 32px #01032199}
+.launch-head{margin:2px 6px 4px;font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#7ec8d4}
+.launch-option{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:6px 9px;
+  border:1px solid transparent;border-radius:5px;background:none;text-align:left;cursor:pointer;color:var(--ice);font-size:11.5px}
+.launch-option:hover,.launch-option:focus-visible{border-color:#8eaff355;background:#3a55b544;outline:none}
+.launch-hint{font-size:9.5px;color:#9fc0e4}
+.launch-more{margin-top:3px;border-top:1px solid #8eaff333;border-radius:0 0 5px 5px;color:#9fe6ff;font-size:10.5px}
+
+/* Progress HUD: the active project's headline, always on the main screen. The
+   number is text; the bar along the bottom edge is its companion. */
+.progress-hud{flex:0 0 auto;margin-left:auto;position:relative;display:flex;align-items:center;gap:12px;
+  padding:7px 10px 10px 14px;border-radius:10px;overflow:hidden}
+.hud-main{display:flex;align-items:center;gap:14px;padding:0;background:none;border:0;color:inherit;
+  cursor:pointer;text-align:left;min-width:0}
+.hud-main:hover .hud-percent,.hud-main:focus-visible .hud-percent{color:#ffffff;text-shadow:0 0 14px #4fd8c0aa}
+.hud-main:focus-visible{outline:1px solid #8dffe066;outline-offset:3px}
+.hud-text{display:flex;flex-direction:column;gap:3px;min-width:0}
+.hud-label{font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#7ec8d4}
+.hud-basis{font-size:10.5px;color:#cfe3ff;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hud-percent{font:italic 700 28px var(--serif);color:#eafcff;line-height:1;letter-spacing:.5px;
+  font-variant-numeric:tabular-nums;min-width:62px;text-align:right}
+.hud-percent[data-null="true"]{color:#8fb4d9}
+.hud-assess{font-size:10px;letter-spacing:.8px;padding:5px 11px}
+.hud-bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:#0a1740}
+.hud-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4fd8c0,#9fe6ff);
+  box-shadow:0 0 8px #4fd8c0aa;transition:width .7s ease}
+.progress-hud[data-state="assessing"] .hud-basis{color:#ffe08a}
+.progress-hud[data-state="assessing"] .hud-bar{background:linear-gradient(90deg,transparent,#ffe08a66,transparent) 0 0/40% 100% no-repeat #0a1740;
+  animation:hud-scan 1.8s linear infinite}
+@keyframes hud-scan{from{background-position:-40% 0}to{background-position:140% 0}}
+body.still .progress-hud[data-state="assessing"] .hud-bar{animation:none}
+
 /* Project switcher (BUG-090): the strip's first control, so the active project is
    always visible instead of inferred. The menu overlays the strip only. */
 .project-switcher{position:relative;display:flex;align-items:center;flex-shrink:0}
@@ -285,6 +346,7 @@ button:disabled{opacity:.45;cursor:default}
   color:var(--ice);cursor:pointer;max-width:340px}
 .project-button:hover,.project-button:focus-visible{border-color:var(--cyan);outline:none}
 .project-switcher .project-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-percent{font-size:10.5px;color:#b8ffe9;font-variant-numeric:tabular-nums;white-space:nowrap}
 .project-path-state{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;padding:1px 5px;
   border-radius:999px;border:1px solid #8eaff344;color:#9fb6d4;white-space:nowrap}
 .project-path-state[data-state="ok"]{color:#8dffc0;border-color:#8dffc055}
@@ -294,15 +356,16 @@ button:disabled{opacity:.45;cursor:default}
   gap:2px;min-width:280px;max-width:360px;max-height:min(320px,50vh);overflow:auto;padding:6px;
   border-radius:8px;border:1px solid #8eaff355;background:linear-gradient(150deg,#0d1a52f7,#040b36fa);
   box-shadow:0 14px 32px #01032199}
-.project-option{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;
+.project-option{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:2px 8px;align-items:center;
   padding:6px 8px;border:1px solid transparent;border-radius:5px;background:none;text-align:left;cursor:pointer}
 .project-option:hover,.project-option:focus-visible{border-color:#8eaff355;background:#3a55b544;outline:none}
 .project-option[aria-selected="true"]{border-color:#8dffe077}
 .project-option .project-name{grid-column:1;grid-row:1;font-size:11.5px;color:var(--ice)}
-.project-option .project-path{grid-column:1;grid-row:2;font-size:9.5px;color:#9fc0e4;
+.project-option .project-path{grid-column:1 / span 2;grid-row:2;font-size:9.5px;color:#9fc0e4;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.project-option .project-path-state{grid-column:2;grid-row:1;justify-self:end}
-.project-option .project-key{grid-column:2;grid-row:2;justify-self:end;font-size:9px;color:#93b2d6}
+.project-option .project-percent{grid-column:2;grid-row:1;justify-self:end}
+.project-option .project-path-state{grid-column:3;grid-row:1;justify-self:end}
+.project-option .project-key{grid-column:3;grid-row:2;justify-self:end;font-size:9px;color:#93b2d6}
 
 /* The status line carries the active project beside the turn phase. */
 #project-status{max-width:190px;color:#9fe6ff;opacity:.9}
@@ -330,34 +393,70 @@ body[data-dock="closed"] .terminal-pane{display:none!important}
    panel; every number is text plus a bar, and unknown is an em dash (BUG-089). */
 #graph-region{grid-area:graph;z-index:8;margin-left:var(--gap);width:var(--graph);min-width:0;
   min-height:0;border-radius:12px;overflow:auto;padding:10px}
-.graph-panel{display:flex;flex-direction:column;gap:10px;min-width:0}
-.graph-head{display:flex;flex-direction:column;gap:4px}
+.graph-panel{display:flex;flex-direction:column;gap:12px;min-width:0}
+.graph-head{display:flex;flex-direction:column;gap:6px}
+.graph-top{display:flex;align-items:baseline;gap:8px;min-width:0}
+.graph-top .graph-project{flex:1;min-width:0}
+.graph-close{font-size:16px;padding:0 5px;color:#9fe6ff}
 .graph-score{display:flex;align-items:baseline;gap:8px}
-.graph-percent{font:italic 700 30px var(--serif);color:#eafcff;line-height:1;letter-spacing:.5px;
+.graph-percent{font:italic 700 34px var(--serif);color:#eafcff;line-height:1;letter-spacing:.5px;
   font-variant-numeric:tabular-nums}
 .graph-percent[data-null="true"]{color:#8fb4d9;opacity:.9}
 .graph-caption{font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4}
-.graph-sub{display:flex;flex-wrap:wrap;gap:10px}
+.graph-trend{margin-left:auto;align-self:center;overflow:visible}
+.graph-trend polyline{fill:none;stroke:#4fd8c0;stroke-width:1.4;stroke-linejoin:round;stroke-linecap:round}
+.graph-trend circle{fill:#eafffb}
+.graph-bar{position:relative;height:6px;border-radius:999px;background:#0a1740;border:1px solid #8cacd733}
+.meter-fill,.aspect-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#4fd8c0,#9fe6ff);
+  transition:width .5s ease}
+.meter-fill[data-state="unknown"],.aspect-fill[data-state="unknown"]{background:#3656b8}
+.meter-marker{position:absolute;top:-3px;bottom:-3px;width:2px;margin-left:-1px;border-radius:1px;background:#ffe08a;
+  box-shadow:0 0 6px #ffe08a99}
+.graph-basis{margin:0;font-size:11px;color:#cfe3ff}
+.graph-why{margin:0;font-size:10px;line-height:1.45;color:#8fb4d9}
+.graph-sub{display:flex;flex-wrap:wrap;gap:12px}
 .graph-stat{display:flex;align-items:baseline;gap:5px;color:#93b2d6}
 .graph-stat-label{font-size:8.5px;letter-spacing:1px;text-transform:uppercase}
 .graph-stat-value{font-size:11.5px;color:#cfe3ff;font-variant-numeric:tabular-nums}
 .graph-project{margin:0;font-size:9.5px;letter-spacing:.5px;color:#8fb4d9;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.graph-actions{display:flex;flex-wrap:wrap;gap:6px;padding-top:2px}
+.graph-actions button{font-size:10px;letter-spacing:.6px;padding:5px 11px}
+.percent-form{display:flex;align-items:center;gap:6px;min-width:0}
+.percent-form input{width:76px;padding:6px 8px;font-size:11px}
+.percent-unit{font-size:11px;color:#93b2d6}
+.percent-form button{padding:5px 10px;font-size:10px;letter-spacing:.6px}
 /* An empty panel says what is missing rather than implying a graph. */
 .graph-note{margin:0;font-size:11px;line-height:1.5;color:#8fb4d9;opacity:.85}
 
-.aspect-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
-.aspect{display:flex;flex-direction:column;gap:4px;min-width:0}
-.aspect-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
-.aspect-title{font-size:11.5px;color:#e2ecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aspect-value{flex-shrink:0;font-size:11px;color:#b8ffe9;font-variant-numeric:tabular-nums}
+.graph-parts,.graph-unassigned{display:flex;flex-direction:column;gap:8px}
+.aspect-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.aspect{display:flex;flex-direction:column;gap:4px;min-width:0;padding:6px 7px;border-radius:7px;border:1px solid transparent}
+.aspect:has(.aspect-head[aria-expanded="true"]){border-color:#8eaff344;background:#06123866}
+.aspect-head{display:flex;align-items:baseline;gap:7px;min-width:0;width:100%;padding:0;background:none;border:0;
+  color:inherit;text-align:left;cursor:pointer}
+.aspect-head:focus-visible{outline:1px solid #8dffe066;outline-offset:3px}
+.aspect-caret{flex:0 0 auto;font-size:9px;color:#8dffe0}
+.aspect-title{flex:1;min-width:0;font-size:11.5px;color:#e2ecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aspect-value{flex-shrink:0;font-size:11.5px;color:#b8ffe9;font-variant-numeric:tabular-nums}
 .aspect-value[data-null="true"]{color:#8fb4d9}
-.aspect-bar{height:5px;border-radius:999px;background:#0a1740;overflow:hidden;border:1px solid #8cacd733}
-.aspect-fill{display:block;height:100%;border-radius:999px;
-  background:linear-gradient(90deg,#4fd8c0,#9fe6ff)}
-.aspect-fill[data-state="unknown"]{background:#3656b8}
-.aspect-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:9px;letter-spacing:.5px;color:#8fb4d9}
+.aspect-bar{position:relative;height:5px;border-radius:999px;background:#0a1740;border:1px solid #8cacd733}
+.aspect-meta{display:flex;flex-wrap:wrap;gap:4px 9px;font-size:9px;letter-spacing:.4px;color:#8fb4d9}
+.aspect[data-basis="estimate"] .aspect-basis{color:#9fe6ff}
+.aspect[data-basis="tasks"] .aspect-basis{color:#b8ffe9}
 .aspect-unknown{color:#ffe08a}
+.aspect-body{display:flex;flex-direction:column;gap:7px;padding:4px 0 2px}
+.aspect-evidence{margin:0;padding-left:8px;border-left:2px solid #8eaff344;font-size:10.5px;line-height:1.45;color:#cfe3ff;
+  word-break:break-word}
+.task-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.task{display:flex;align-items:center;gap:7px;min-width:0;font-size:11px;color:#dfeaff}
+.task input{margin:0;accent-color:#4fd8c0;flex:0 0 auto}
+.task-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task[data-state="done"] .task-title{color:#9fb6d4;text-decoration:line-through;text-decoration-color:#4fd8c099}
+.task-flag{font-size:8.5px;letter-spacing:.8px;text-transform:uppercase;padding:1px 5px;border-radius:999px;
+  border:1px solid #ffe08a66;color:#ffe08a;white-space:nowrap}
+.task[data-state="blocked"] .task-flag{border-color:#ff8a8a77;color:#ffb3b3}
+.task-value{flex:0 0 auto;font-size:10px;color:#9fc0e4;font-variant-numeric:tabular-nums}
 
 .graph-risks{display:flex;flex-direction:column;gap:4px}
 .graph-sub-title{margin:0;font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4}
@@ -370,23 +469,23 @@ body[data-dock="closed"] .terminal-pane{display:none!important}
 .graph-evidence-head::-webkit-details-marker{display:none}
 .graph-evidence-head::before{content:'▸';color:#8dffe0;margin-right:6px;font-size:9px}
 .graph-evidence[open] .graph-evidence-head::before{content:'▾'}
-.graph-evidence .graph-note{padding:2px 9px 8px}
-.evidence-list{list-style:none;margin:0;padding:2px 9px 8px;display:flex;flex-direction:column;gap:6px;
-  max-height:240px;overflow:auto}
+.graph-evidence .graph-note{padding:2px 9px 8px;font-size:10.5px}
+.evidence-list{list-style:none;margin:0;padding:2px 9px 8px;display:flex;flex-direction:column;gap:7px;
+  max-height:260px;overflow:auto}
 .evidence{display:flex;flex-direction:column;gap:2px;border-left:2px solid #8eaff344;padding-left:7px;min-width:0}
-.evidence[data-source="harness"]{border-left-color:#8dffe099}
-.evidence[data-source="git"]{border-left-color:#9fe6ff88}
-.evidence-head{display:flex;flex-wrap:wrap;gap:6px;font-size:9px;letter-spacing:.6px;color:#93b2d6}
+.evidence[data-verified="true"]{border-left-color:#8dffc099}
+.evidence[data-source="user"]{border-left-color:#b7a6ff99}
+.evidence-head{display:flex;flex-wrap:wrap;gap:6px;font-size:9px;letter-spacing:.5px;color:#93b2d6}
 .evidence-kind{color:#bfe9ff;text-transform:uppercase}
-.evidence-id{color:#8aa8c8}
+.evidence-scope{color:#e2ecff}
+.evidence-value{color:#b8ffe9;font-variant-numeric:tabular-nums}
+.evidence-verified{color:#8dffc0;text-transform:uppercase}
 .evidence-text{margin:0;font-size:10.5px;line-height:1.45;color:#cfe3ff;word-break:break-word}
-.evidence-task{font-size:9px;color:#93b2d6}
 
 .graph-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:2px}
 .graph-stamp{font-size:9px;letter-spacing:.5px;color:#8fb4d9}
-.graph-refresh{font-size:9.5px;letter-spacing:.8px;padding:3px 9px;border-color:#8eaff355;color:#cfe3ff}
 
-/* Empty state: what is missing, and the one action that starts a real number. */
+/* Empty state: what is missing, and the action that starts a real number. */
 .graph-empty{display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:8px;
   border:1px dashed #8eaff355;background:#061040e6;min-width:0}
 .graph-empty .empty-title{font-size:13px}
@@ -434,6 +533,14 @@ body.resizing[data-dock="bottom"]{cursor:row-resize}
      so it is readable at this width instead of a 360 px drawer. */
   #graph-region{justify-self:stretch;width:auto;margin:0}
   #graph-tab{display:inline-flex}
+}
+
+/* Narrow strip: the HUD keeps its number and its action, and drops the basis
+   line, which the panel repeats. */
+@media(max-width:899px){
+  .progress-hud{gap:8px;padding:6px 8px 9px 10px}
+  .hud-basis{display:none}
+  .hud-percent{font-size:22px;min-width:48px}
 }
 
 /* Maximised terminal: it takes the stage cell, so the stage is no longer measured. */

@@ -19,6 +19,10 @@ import {buildEmblem, glowTexture, makeWord} from './copland.js';
 //   setPhase(idle|working|error)  the single energy/glitch driver of a turn.
 //   setEnergy(level)          legacy level-only setter; it never glitches.
 //   setMotion(bool)           live motion authority (also follows the OS query).
+//   setProgress(pct, scan)    the ring around the emblem: 0..100, or null for
+//                             unknown (track only). `scan` circles a comet while
+//                             an assessment runs; undefined keeps it as it is.
+//   progress()                the ring's target: {fill, known, scanning}.
 //   glitch()                  one tearing pulse; ignored while still.
 //   boot(done, instant)       entrance. `instant` is for tests only.
 //   degrade(reason)           drop to the CSS backdrop; safe to call twice.
@@ -30,8 +34,8 @@ import {buildEmblem, glowTexture, makeWord} from './copland.js';
 const canvas = document.getElementById('field');
 const FALLBACK_BACKGROUND = 'radial-gradient(ellipse at 22% 48%,#1638ff,#030b6a 45%,#01052e 80%)';
 const NOOP = {
-  setMotion() {}, setEnergy() {}, setPhase() {}, setLayout() {}, setFrame() {},
-  boot(done) { done?.(); }, glitch() {}, degrade() {}, bounds() { return null; },
+  setMotion() {}, setEnergy() {}, setPhase() {}, setLayout() {}, setFrame() {}, setProgress() {},
+  boot(done) { done?.(); }, glitch() {}, degrade() {}, bounds() { return null; }, progress() { return null; },
 };
 
 let renderer;
@@ -162,6 +166,57 @@ if (!renderer) {
     turns.push([holder, radius + .0075]);
   }
 
+  // ── Progress ring: the active project's completion, drawn around the emblem ──
+  // A faint track with a tick every 5 %, and a bright arc that starts at twelve
+  // o'clock and runs clockwise. The arc is cut in the shader on the torus' own u
+  // coordinate, so a new value animates through one uniform instead of rebuilding
+  // geometry. Unknown is not zero: an unknown value hides the arc and keeps the
+  // track. While an assessment runs, a comet circles the track.
+  const RING_RADIUS = 1.3;
+  const ring = new THREE.Group(); ring.position.z = -.12; stage.add(ring);
+  const ringVertex = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }';
+  const trackMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    uniforms: {uTime: {value: 0}, uFade: {value: 0}, uScan: {value: 0}, uTrack: {value: color('#3a6bff')}, uComet: {value: color('#bff6ff')}},
+    vertexShader: ringVertex,
+    fragmentShader: `
+      varying vec2 vUv; uniform float uTime, uFade, uScan; uniform vec3 uTrack, uComet;
+      void main(){
+        float behind = fract(uTime * 0.23 - vUv.x);
+        float comet = uScan * pow(1.0 - smoothstep(0.0, 0.2, behind), 2.0);
+        gl_FragColor = vec4(uTrack * 0.24 + uComet * comet, uFade);
+      }`,
+  });
+  const arcFill = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    uniforms: {uFill: {value: 0}, uTime: {value: 0}, uFade: {value: 0}, uColor: {value: color('#5ff5d8')}, uHead: {value: color('#ffffff')}},
+    vertexShader: ringVertex,
+    fragmentShader: `
+      varying vec2 vUv; uniform float uFill, uTime, uFade; uniform vec3 uColor, uHead;
+      void main(){
+        if (vUv.x > uFill) discard;
+        float head = smoothstep(uFill - 0.05, uFill, vUv.x);
+        float shimmer = 0.86 + 0.14 * sin(vUv.x * 70.0 - uTime * 2.4);
+        gl_FragColor = vec4(mix(uColor, uHead, head) * shimmer * 1.25, uFade * (0.8 + 0.2 * head));
+      }`,
+  });
+  // u = 0 sits on +x and runs counter-clockwise; a quarter turn and a mirror in y
+  // move it to twelve o'clock running clockwise, the way a gauge reads.
+  for (const [material, tube] of [[trackMat, .008], [arcFill, .028]]) {
+    const mesh = new THREE.Mesh(new THREE.TorusGeometry(RING_RADIUS, tube, 8, 320), material);
+    mesh.rotation.z = Math.PI / 2; mesh.scale.y = -1; ring.add(mesh);
+  }
+  const tickMat = new THREE.MeshBasicMaterial({color: 0x7fb8ff, transparent: true, opacity: .5, depthWrite: false, blending: THREE.AdditiveBlending});
+  fadeables.push([tickMat, .5]);
+  for (let i = 0; i < 20; i++) {
+    const major = i % 5 === 0, length = major ? .09 : .045;
+    const tick = new THREE.Mesh(new THREE.PlaneGeometry(major ? .012 : .007, length), tickMat);
+    const angle = Math.PI / 2 - i / 20 * Math.PI * 2, radius = RING_RADIUS + .045 + length / 2;
+    tick.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+    tick.rotation.z = angle - Math.PI / 2;
+    ring.add(tick);
+  }
+
   // ── Wandering lights that circle in front of and behind the emblem ───────────
   const wisps = [];
   for (const [radius, tilt, speed, phase, size] of [[1.32, .5, .42, 0, .075], [1.6, -.35, -.3, 2.2, .06]]) {
@@ -195,7 +250,7 @@ if (!renderer) {
       grow(centre[0] - half[0], centre[1] - half[1], centre[2] - half[2]);
       grow(centre[0] + half[0], centre[1] + half[1], centre[2] + half[2]);
     };
-    still(halo); still(floor); still(emblem);
+    still(halo); still(floor); still(emblem); still(ring);
     for (const [object, radius] of turns) disc(object, radius);
     // The turntable only yaws: its radius turns, its height does not.
     box.setFromObject(orbit);
@@ -249,6 +304,9 @@ if (!renderer) {
     stageX: .5, stageY: .5, stageXTarget: .5, stageYTarget: .5,
     dim: 0, dimTarget: 0, boot: 0, glitch: 0, phase: 'idle',
     frame: null, painted: -1,
+    // Progress ring: the fill (0..1) eases toward its target; `known` fades the
+    // arc in or out, and `scan` the comet of a running assessment.
+    fill: 0, fillTarget: 0, known: 0, knownTarget: 0, scan: 0, scanTarget: 0,
   };
   const pointer = {x: 0, y: 0}, smooth = {x: 0, y: 0};
 
@@ -468,6 +526,12 @@ if (!renderer) {
 
     orbit.rotation.y = t * (.16 + e * .22);
     for (const [mesh, speed] of arcs) mesh.rotation.z = t * speed * (1 + e);
+    trackMat.uniforms.uTime.value = t;
+    trackMat.uniforms.uFade.value = fade;
+    trackMat.uniforms.uScan.value = state.scan;
+    arcFill.uniforms.uTime.value = t;
+    arcFill.uniforms.uFill.value = state.fill;
+    arcFill.uniforms.uFade.value = fade * state.known;
     for (const wisp of wisps) {
       const a = wisp.phase + t * wisp.speed * (1 + e * 1.2);
       wisp.body.position.set(Math.cos(a) * wisp.radius, Math.sin(a) * wisp.radius, 0);
@@ -509,6 +573,9 @@ if (!renderer) {
     state.stageX = state.stageXTarget;
     state.stageY = state.stageYTarget;
     state.dim = state.dimTarget;
+    state.fill = state.fillTarget;
+    state.known = state.knownTarget;
+    state.scan = state.scanTarget;
     state.glitch = 0;
     smooth.x = 0; smooth.y = 0;
   }
@@ -527,6 +594,9 @@ if (!renderer) {
     state.stageX += (state.stageXTarget - state.stageX) * k;
     state.stageY += (state.stageYTarget - state.stageY) * k;
     state.dim += (state.dimTarget - state.dim) * k;
+    state.fill += (state.fillTarget - state.fill) * k * .35;
+    state.known += (state.knownTarget - state.known) * k * .5;
+    state.scan += (state.scanTarget - state.scan) * k * .5;
     state.glitch = Math.max(0, state.glitch - step * 8);
     smooth.x += (pointer.x - smooth.x) * k * .12; smooth.y += (pointer.y - smooth.y) * k * .12;
     draw();
@@ -593,6 +663,18 @@ if (!renderer) {
     setEnergy(level) { setLevel(level, false); },
     setLayout(stageX, dim = 0) { state.stageXTarget = stageX; state.dimTarget = dim; wake(); },
     setFrame(box, dim) { applyFrame(box, dim); if (!state.motion) { settle(); draw(); } wake(); },
+    setProgress(value, scanning) {
+      const number = value === null || value === undefined || value === '' ? NaN : Number(value);
+      const known = Number.isFinite(number);
+      if (known) state.fillTarget = Math.min(1, Math.max(0, number / 100));
+      state.knownTarget = known ? 1 : 0;
+      if (scanning !== undefined) state.scanTarget = scanning ? 1 : 0;
+      if (!state.motion) { settle(); draw(); }
+      wake();
+    },
+    progress() {
+      return {fill: Math.round(state.fillTarget * 1000) / 10, known: state.knownTarget === 1, scanning: state.scanTarget === 1};
+    },
     glitch() { if (state.motion) pulse(); },
     boot, degrade, renderer, scene, bounds,
   };

@@ -682,6 +682,13 @@ impl App {
             }
         });
         let message = format!("Assessing {name}. Navi's assistant is reading the project.");
+        self.event_for(
+            Some(&project_id),
+            None,
+            "progress",
+            &message,
+            json!({"project_id":project_id,"assessment":"assistant","source":"navi"}),
+        );
         Ok(json!({
             "project_id": project_id, "scan": scan, "seeded": seeded,
             "via": "assistant", "started": true, "message": message,

@@ -16,11 +16,26 @@
        canvas stays full-bleed behind it and #stage-region is a measurement cell, so
        every panel has a cell of its own and none can be positioned over another. -->
   <div id="shell">
-    <section id="sessions" class="sessions panel" aria-label="Harness sessions" hidden>
-      <!-- The active project is this window's own state (BUG-090): the switcher
-           shows its name and path state, and Ctrl+1..9 selects by position. -->
-      <div id="project-switcher" class="project-switcher"></div>
-    </section>
+    <!-- The strip: the project and its sessions on the left, the active project's
+         progress on the right. Both share the strip row; neither covers the stage. -->
+    <div id="strip" class="strip">
+      <section id="sessions" class="sessions panel" aria-label="Harness sessions" hidden>
+        <!-- The active project is this window's own state (BUG-090): the switcher
+             shows its name and path state, and Ctrl+1..9 selects by position. -->
+        <div id="project-switcher" class="project-switcher"></div>
+      </section>
+      <section id="progress-hud" class="progress-hud panel" aria-label="Project progress" data-state="unknown" hidden>
+        <button type="button" id="hud-open" class="hud-main" aria-controls="graph-region" aria-expanded="false">
+          <span class="hud-text">
+            <span class="hud-label">Progress</span>
+            <span id="hud-basis" class="hud-basis">No estimate yet</span>
+          </span>
+          <strong id="hud-percent" class="hud-percent" data-null="true">—</strong>
+        </button>
+        <button type="button" id="hud-assess" class="hud-assess" title="Scan the project, then ask a linked harness (or Navi) to estimate each part">Assess</button>
+        <span class="hud-bar" aria-hidden="true"><i id="hud-fill"></i></span>
+      </section>
+    </div>
 
     <div id="stage-region" aria-hidden="true"></div>
 
@@ -36,7 +51,7 @@
       <div id="terminal-host"></div>
     </section>
 
-    <aside id="graph-region" class="panel" aria-label="Project graph" hidden></aside>
+    <aside id="graph-region" class="panel" aria-label="Project progress" hidden></aside>
 
     <section class="chat panel" aria-label="Chat with Navi">
       <div id="toast" role="status" aria-live="polite"></div>
@@ -54,9 +69,11 @@
              overlays an empty log, so it never steals height from the composer. -->
         <div id="chat-empty" class="chat-empty">
           <p class="empty-title">Ask Navi for real work.</p>
-          <p class="empty-hint">Type a request · press <b>/</b> for commands · say “Hey Navi”</p>
+          <p class="empty-hint">Say “Hey Navi, open Claude Code” or “how far along is the project?” · type a request · press <b>/</b> for commands</p>
           <div class="empty-actions">
-            <button type="button" id="empty-session">New harness session</button>
+            <button type="button" id="empty-launch" class="primary" hidden>Open harness</button>
+            <button type="button" id="empty-assess">Assess progress</button>
+            <button type="button" id="empty-session">New session…</button>
             <button type="button" id="empty-settings">Settings</button>
             <button type="button" id="empty-mic">Enable mic</button>
           </div>
@@ -89,7 +106,7 @@
         <button type="button" id="voice-pill" class="pill" title="Voice status">Mic off</button>
         <!-- Below 900 px there is no room for a rail or a drawer: the graph
              becomes a tab in the composer area (BUG-089). -->
-        <button type="button" id="graph-tab" class="pill" title="Project graph" aria-pressed="false">Graph</button>
+        <button type="button" id="graph-tab" class="pill" title="Project progress" aria-pressed="false">Progress</button>
         <span id="chief-status"></span>
         <button type="button" id="settings-button" class="icon" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.1 7.1 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg></button>
       </div>
