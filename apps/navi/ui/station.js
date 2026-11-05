@@ -2250,6 +2250,17 @@ function noteHeads(projects) {
   }
   if (moved) scheduleOverview(1200);
 }
+/* Voice commands carry no project, so the daemon falls back to the one this station
+ * shows: reported once per daemon boot; switchProject reports later changes. */
+let scopedBoot=null;
+function reportScope() {
+  const id=activeProjectId();
+  if (!id||!bootId||scopedBoot===bootId) return;
+  scopedBoot=bootId;
+  rpc('assistant_scope',{project_id:id})
+    .then(scope=>{ assistantScope=scope; updateProjectLine(); })
+    .catch(error=>record('warn','assistant scope failed: '+error.message));
+}
 function update(value) {
   if (!value||typeof value!=='object') return;
   /* Only a payload that carries `settings` is the full snapshot; a sectioned push or
@@ -2266,6 +2277,7 @@ function update(value) {
   updateProjectLine();
   syncProgressScope();
   noteHeads(payload.projects);
+  reportScope();
   applyVoice(payload.voice||{});
   const events=Array.isArray(payload.events)?payload.events:[];
   const openRequest=openReplayRequest(payload,events);

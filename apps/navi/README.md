@@ -425,18 +425,19 @@ model and without the assistant:
 
 | Say or type | Effect |
 | --- | --- |
-| "How far along is the project?", "what's left", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; naming one part ("how far is the voice part") answers for that part, "what's left" (or "what's next") lists every unfinished part and up to five open tasks, and "what changed today" (or "any progress today") sums up the last day: the newest estimate per part, task updates, and commits with the latest one's subject. The headline answer ends with how many commits landed since the last estimate, and "is the estimate up to date" (or "commits since the estimate") answers that directly, zero included. "Show …" (or "show me the graph") also opens the panel |
+| "How far along is the project?", "what's left", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; naming one part ("how far is the voice part") answers for that part, "what's left" (or "what's next") lists every unfinished part and up to five open tasks, and "what changed today" (or "any progress today") sums up the last day: the newest estimate per part, task updates, and commits with the latest one's subject. The headline answer ends with how many commits landed since the last estimate, and "is the estimate up to date" (or "commits since the estimate") answers that directly, zero included. "Show …" (or "show me the graph", "show the progress graph") also opens the panel |
 | "Close the progress", "hide the graph" | Closes the progress panel |
-| "Assess the project", "reassess acme-api", "reassess", "update the estimate", `/assess` | Runs the detector |
+| "Assess the project", "reassess acme-api", "reassess", "rescan the project", "update the estimate", `/assess` | Runs the detector |
 | "Set the UI to 80%", "put voice at 60 percent", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |
 | "Mark barge-in done", "check off barge-in", "reopen barge-in", `/mark barge-in in progress` | Sets a task's state as a user verdict; with no matching task, "mark <part> done" puts the part at 100% |
 | "Open Codex", `/open claude code` | Brings forward the Codex already open in the active project, else launches one; "open a new Codex" (or "… called X") always launches |
 | "Switch to acme-api", "go to acme-api", "open the acme-api project" | Makes that project active in the station (a session with that name wins) and speaks its headline. The reply is stored with the question, in the project it was asked in, and shows as a notice after the switch |
-| "Tell Codex to run the tests", "ask Claude what it changed", "continue in Codex: add a test", "tell this to …" | Types the prompt into that open session ("this" is the active one), as the voice route does. The prompt keeps its casing; a session busy with a command is not typed over |
-| "Stop Codex", "interrupt terminal number two", "close terminal #2", "quit Claude Code" | Interrupts (stop, interrupt, pause) or closes (close, quit, exit, kill, end) that one session. The words after the verb must name a single open session, so "stop opening Codex" is not read this way. With two candidates, a session in the active project wins, otherwise Navi asks which. A closed session stays under Recent |
+| "Tell Codex to run the tests", "ask Claude what it changed", "continue in Codex: add a test", "tell this to …" | Types the prompt into that open session ("this" is the active one), as the voice route does. The prompt keeps its casing; a session busy with a command is not typed over. When no session by that name is open but it names a harness ("ask Claude to fix the build" with Claude closed), Navi opens that harness in the active project and sends the prompt once it is ready |
+| "Stop Codex", "interrupt terminal number two", "close terminal #2", "quit Claude Code" | Interrupts (stop, interrupt, pause) or closes (close, quit, exit, kill, end) that one session. The words after the verb must name a single open session, so "stop opening Codex" is not read this way. With two candidates, a session in the active project wins, otherwise Navi asks which, naming the project when the names match ("Which one: Codex in Navi, Codex in acme-api?"); "close Codex in acme-api" answers it. A closed session stays under Recent |
 | "Which project am I in", "list projects" | Names the active project and every project with its percent |
 | "Reopen Codex", "resume terminal", "reopen Codex #2" | Reopens a finished session from Recent (newest first, this project first) under its old name; a harness that recorded its conversation id continues that conversation. Clicking a finished chip does the same. When nothing finished matches but that session is open, Navi says so; otherwise the words go on to "reopen <task>" |
 | "Help", "what can you do", `/help` | Lists what Navi answers without a model |
+| "Thanks", "never mind", "cancel", "forget it" | A short acknowledgement, without waking the assistant |
 | "Is Codex done?", "what is Claude doing", "what's running", "is anything busy", `/sessions`, "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them |
 
 Steps chain with "then" (or "and" when every half is one of these commands), at most
@@ -497,6 +498,11 @@ the assistant session, the re-hydrated transcript, and the status line. `assista
 owns; every turn carries the project, so the gateway reuses that directory's own session,
 while a turn that is already running keeps its binding for interrupt and permission
 replies. A session launched in another project makes that project active.
+
+Typed commands carry the active project. Voice commands carry none, so the daemon keeps
+the project the station last reported (on load, on each switch, with each typed command,
+and on a spoken "switch to …") and falls back to the project of the voice-targeted
+session. Naming a project in the command ("how far is acme-api") still wins.
 
 "Add project…" at the end of the switcher menu (or the switcher itself, while there is
 no project) opens a dialog: a folder, typed or picked with the window's native folder

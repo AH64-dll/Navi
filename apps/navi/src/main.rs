@@ -75,6 +75,9 @@ pub struct App {
     command_lock: Mutex<()>,
     command_queue: Mutex<VecDeque<Value>>,
     assistant_dir: Mutex<Option<String>>,
+    /// The project the station shows; commands without a `project_id`
+    /// (voice) default to it.
+    current_project: Mutex<Option<String>>,
     pub generation: AtomicU64,
     pub config_version: AtomicU64,
     workers: Mutex<Vec<(String, Child)>>,
@@ -378,6 +381,7 @@ impl App {
             command_lock: Mutex::new(()),
             command_queue: Mutex::new(VecDeque::new()),
             assistant_dir: Mutex::new(None),
+            current_project: Mutex::new(None),
             generation: AtomicU64::new(0),
             config_version: AtomicU64::new(0),
             workers: Mutex::new(Vec::new()),

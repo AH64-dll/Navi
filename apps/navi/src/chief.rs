@@ -653,6 +653,7 @@ impl App {
         if directory.is_empty() {
             return Err("Project has no directory".into());
         }
+        *self.current_project.lock().unwrap() = Some(id.clone());
         let session: Option<String> = {
             let state = self.state.lock().unwrap();
             state
@@ -1422,7 +1423,21 @@ impl App {
         if let Some(reference) = params["project_id"].as_str().filter(|value| !value.trim().is_empty())
             && let Ok(project) = self.resolve_project(reference)
         {
+            *self.current_project.lock().unwrap() = project["id"].as_str().map(str::to_string);
             return Ok(project);
+        }
+        // Voice sends no project: the one the station shows, else the
+        // project of the session voice targets.
+        let current = self.current_project.lock().unwrap().clone();
+        let active = self.settings()["active_session"].as_str().and_then(|id| {
+            self.sessions().ok()?.into_iter().find(|session| session["id"] == id)?["project_id"]
+                .as_str()
+                .map(str::to_string)
+        });
+        for id in [current, active].into_iter().flatten() {
+            if let Some(project) = projects.iter().find(|project| project["id"] == id.as_str()) {
+                return Ok(project.clone());
+            }
         }
         match projects.len() {
             1 => Ok(projects[0].clone()),
@@ -1711,11 +1726,30 @@ impl App {
         if let Some(space) = rest_lower.find([' ', ':', ',']) {
             candidates.push((space, space + 1));
         }
-        for (end, text_start) in candidates {
+        for &(end, text_start) in &candidates {
             let ids = find(&rest[..end]);
             let prompt = rest[text_start..].trim().trim_start_matches([':', ',']).trim();
             if !ids.is_empty() && !prompt.is_empty() {
                 return Ok(Some(json!({"kind":"harness_prompt","ids":ids,"text":prompt})));
+            }
+        }
+        // No open session by that name, but it names a harness ("ask Claude
+        // to fix the build" with Claude closed): open it with the prompt.
+        let settings = self.settings();
+        let profiles = settings["profiles"].as_array().cloned().unwrap_or_default();
+        for &(end, text_start) in &candidates {
+            let name = rest_lower[..end].trim().trim_end_matches([':', ',']);
+            let name = name.strip_prefix("the ").unwrap_or(name);
+            let prompt = rest[text_start..].trim().trim_start_matches([':', ',']).trim();
+            let profile = profiles.iter().find(|profile| {
+                profile["id"] != "terminal"
+                    && (profile["id"].as_str().is_some_and(|id| id.eq_ignore_ascii_case(name))
+                        || profile["name"].as_str().is_some_and(|label| label.eq_ignore_ascii_case(name))
+                        || (profile["id"] == "claude" && name == "claude code"))
+            });
+            if let Some(profile) = profile.filter(|_| !prompt.is_empty()) {
+                return Ok(Some(json!({"kind":"launch","profile":profile["id"],
+                    "name":profile["name"],"prompt":prompt})));
             }
         }
         Ok(None)
@@ -1781,8 +1815,23 @@ impl App {
             });
             return Ok(open.map(|label| json!({"kind":"session_reopen","ids":[],"open":label})));
         }
+        // "Close Codex in acme-api": the form a "Which one" reply offers.
+        let projects = self.projects()?;
+        let (object, within) = object
+            .rsplit_once(" in ")
+            .and_then(|(head, tail)| {
+                let project = projects.iter().find(|project| {
+                    project["name"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(tail.trim()))
+                })?;
+                Some((head.trim().to_string(), Some(project["id"].clone())))
+            })
+            .unwrap_or((object, None));
         let labels = session_labels(&sessions);
-        let running = || sessions.iter().filter(|session| session["running"] == true);
+        let running = || {
+            sessions.iter().filter(|session| {
+                session["running"] == true && within.as_ref().is_none_or(|id| &session["project_id"] == id)
+            })
+        };
         let mut ids: Vec<Value> = running()
             .filter(|session| {
                 labels
@@ -2108,10 +2157,7 @@ impl App {
                         format!("Sent to {}: “{prompt}”.", label(session))
                     }
                     [] => "That session is no longer open.".to_string(),
-                    many => format!(
-                        "Which one: {}?",
-                        many.iter().map(|session| label(session)).collect::<Vec<_>>().join(", ")
-                    ),
+                    many => format!("Which one: {}?", choice_list(many, &labels, &self.projects()?)),
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
@@ -2153,10 +2199,7 @@ impl App {
                         }
                     }
                     [] => "That session is no longer open.".to_string(),
-                    many => format!(
-                        "Which one: {}?",
-                        many.iter().map(|session| label(session)).collect::<Vec<_>>().join(", ")
-                    ),
+                    many => format!("Which one: {}?", choice_list(many, &labels, &self.projects()?)),
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
@@ -2291,6 +2334,7 @@ impl App {
                 // The active project is window state, so the reply carries the
                 // switch to the station; later steps of the command use it too.
                 let id = action["id"].as_str().ok_or("Missing project")?.to_string();
+                *self.current_project.lock().unwrap() = Some(id.clone());
                 let graph = self.graph_get(Some(&id))?;
                 let text = format!(
                     "Switched to {}. {}",
@@ -2316,11 +2360,11 @@ impl App {
                             [session] => session["id"].as_str().unwrap_or_default().to_string(),
                             _ => {
                                 let labels = session_labels(&sessions);
-                                let names: Vec<String> = ids
+                                let many: Vec<&Value> = sessions
                                     .iter()
-                                    .filter_map(|id| labels.get(id.as_str()?).cloned())
+                                    .filter(|session| ids.contains(&session["id"]))
                                     .collect();
-                                let text = format!("Which one: {}?", names.join(", "));
+                                let text = format!("Which one: {}?", choice_list(&many, &labels, &self.projects()?));
                                 return Ok(json!({"reply": reply(None, text, json!({}))}));
                             }
                         }
@@ -2334,7 +2378,8 @@ impl App {
                 let project = project?;
                 let id = project["id"].as_str().unwrap_or_default().to_string();
                 let path = project["path"].as_str().unwrap_or_default();
-                let name = literal_name(clause);
+                // A prompt's own words ("... named after the user") name nothing.
+                let name = if action["prompt"].is_string() { None } else { literal_name(clause) };
                 // "Open Codex" with Codex already open in this project brings
                 // that session forward; "a new Codex" or a name opens another.
                 let another = ["new", "another", "fresh", "second", "create", "one more"]
@@ -2363,7 +2408,7 @@ impl App {
                     }
                 }
                 let session = self.create_session(
-                    &json!({"profile":action["profile"],"cwd":path,"name":name}),
+                    &json!({"profile":action["profile"],"cwd":path,"name":name,"prompt":action["prompt"]}),
                 )?;
                 let harness = action["name"].as_str().unwrap_or("The harness");
                 let project_name = project["name"].as_str().unwrap_or("the project");
@@ -2372,6 +2417,14 @@ impl App {
                         "{harness} exited right after it started in {project_name}. {}",
                         session["error"].as_str().unwrap_or("")
                     )
+                } else if let Some(prompt) = action["prompt"].as_str() {
+                    match session["prompt"]["ok"].as_bool() {
+                        Some(true) => format!("Opened {harness} in {project_name} and sent it: “{prompt}”."),
+                        _ => format!(
+                            "Opened {harness} in {project_name}, but the prompt was not sent: {}",
+                            session["prompt"]["error"].as_str().unwrap_or("it did not become ready")
+                        ),
+                    }
                 } else {
                     format!("Opened {harness} in {project_name}.")
                 };
@@ -3271,6 +3324,36 @@ fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
         labels.insert(session["id"].as_str().unwrap_or_default().to_string(), label);
     }
     labels
+}
+
+/// "Which one: Codex in Navi, Codex in acme-api?": labels are numbered per
+/// project, so a label shared across projects gains its project's name.
+fn choice_list(chosen: &[&Value], labels: &HashMap<String, String>, projects: &[Value]) -> String {
+    let names: Vec<String> = chosen
+        .iter()
+        .map(|session| {
+            labels
+                .get(session["id"].as_str().unwrap_or_default())
+                .cloned()
+                .unwrap_or_else(|| session["name"].as_str().unwrap_or("the session").to_string())
+        })
+        .collect();
+    chosen
+        .iter()
+        .zip(&names)
+        .map(|(session, name)| {
+            if names.iter().filter(|other| *other == name).count() < 2 {
+                return name.clone();
+            }
+            let project = projects
+                .iter()
+                .find(|project| project["id"] == session["project_id"])
+                .and_then(|project| project["name"].as_str())
+                .unwrap_or("no project");
+            format!("{name} in {project}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Whether `object` (already through `spoken_numbers`) is this session's
