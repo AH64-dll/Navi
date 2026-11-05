@@ -451,7 +451,7 @@ reply.
   while an assessment runs.
 - The **progress HUD** beside the session strip shows the percent, a bar and its basis
   ("Estimate by Claude Code · 2h ago", "Across 4 parts"), plus an Assess button.
-  Clicking it opens the panel.
+  Clicking it opens the panel; Escape closes it.
 - The **project switcher** shows each project's headline percent.
 - The **progress panel** (the "Progress" pill) shows the headline, confidence, the
   task count with its verified share (left out when there are no tasks) and a trend line of whole-project estimates; each part's bar marks the

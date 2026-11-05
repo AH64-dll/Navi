@@ -1644,6 +1644,16 @@ addEventListener('keydown',event=>{
   switchProject(String(target.id||''));
 });
 
+/* Escape closes the progress panel when nothing nearer used the key: an open
+ * dialog, the slash menu, a confirm window and the terminal keep their own. */
+addEventListener('keydown',event=>{
+  if (event.key!=='Escape'||event.defaultPrevented||!graphOpen) return;
+  if (document.querySelector('dialog[open]')||event.target?.closest?.('#terminal-pane')) return;
+  event.preventDefault();
+  showGraph(false);
+  element('hud-open')?.focus();
+});
+
 function serialiseParts(parts) {
   return (parts||[]).map(part=>{
     if (part.type==='tool') {
