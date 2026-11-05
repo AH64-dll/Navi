@@ -259,9 +259,9 @@ def harness_target(transcript, status):
 
     Resolves the named session among running harnesses ('this'/'active' uses
     the active session). Returns None when the phrase or target is not a
-    harness route. The session `state` field, when the daemon reports it,
-    must be idle|needs-input — anything else reports busy instead of typing
-    over a running job.
+    harness route. A session whose terminal a child process owns (`busy`) or
+    that is still starting reports busy instead of being typed over; the same
+    rule as the daemon's typed "tell Codex to ..." route.
     """
     wanted = text = None
     for pattern in _HARNESS_PATTERNS:
@@ -287,7 +287,7 @@ def harness_target(transcript, status):
     if target is None:
         return None
     session_state = str(target.get("state") or "idle").lower()
-    if session_state not in ("idle", "needs-input", "needs_input"):
+    if session_state in ("busy", "starting", "created"):
         return {"busy": True, "target": target.get("name")}
     return {"id": target["id"], "name": target.get("name"), "text": text}
 
