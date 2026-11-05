@@ -2108,7 +2108,14 @@ impl App {
             }
             _ => return Ok(None),
         };
-        Ok(Some(json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]})))
+        // "Open Codex to fix the login bug", "start Claude Code in acme-api
+        // with the prompt review the diff": the words after the name.
+        let projects = self.projects()?;
+        let prompt = launch_prompt(&text, chosen, &projects);
+        Ok(Some(match prompt {
+            Some(prompt) => json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"],"prompt":prompt}),
+            None => json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]}),
+        }))
     }
 
     /// "Tell Codex to run the tests", "ask Claude what it changed", "continue
@@ -3451,6 +3458,12 @@ impl App {
                         .collect();
                     if let Some(session) = open.iter().max_by_key(|session| session["last_active"].as_i64()) {
                         let target = session["id"].as_str().unwrap_or_default();
+                        // "Open Codex to fix the bug" with Codex open: the prompt
+                        // goes to that session rather than being dropped.
+                        if let Some(prompt) = action["prompt"].as_str() {
+                            self.session_target(&json!({"id":target}))?;
+                            return self.run_fast(clause, &json!({"kind":"harness_prompt","ids":[target],"text":prompt}), params);
+                        }
                         self.session_target(&json!({"id":target}))?;
                         let label = session["name"].as_str().unwrap_or("The harness");
                         let harness = action["name"].as_str().unwrap_or("it");
@@ -5012,6 +5025,67 @@ fn join_names(names: &[String]) -> String {
         [one] => one.clone(),
         [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
+}
+
+/// The prompt a launch carries after the harness name: "open Codex to fix
+/// the login bug", "start Claude Code in acme-api with the prompt review the
+/// diff", "open pi: summarize the README". `None` when nothing follows.
+fn launch_prompt(text: &str, profile: &Value, projects: &[Value]) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    let mut names: Vec<String> = ["name", "id"]
+        .iter()
+        .filter_map(|key| profile[*key].as_str().map(str::to_ascii_lowercase))
+        .collect();
+    if profile["id"] == "claude" {
+        names.push("claude code".into());
+    }
+    // The end of the longest name mentioned as a whole word.
+    let end = names
+        .iter()
+        .filter(|name| !name.is_empty())
+        .filter_map(|name| {
+            lower.match_indices(name.as_str()).find_map(|(at, _)| {
+                let after = at + name.len();
+                let before_ok = at == 0 || !lower.as_bytes()[at - 1].is_ascii_alphanumeric();
+                let after_ok = lower.as_bytes().get(after).is_none_or(|byte| !byte.is_ascii_alphanumeric());
+                (before_ok && after_ok).then_some(after)
+            })
+        })
+        .max()?;
+    let mut rest = text[end..].trim_start();
+    // "#2" or a project phrase between the name and the prompt.
+    loop {
+        let rest_lower = rest.to_ascii_lowercase();
+        let skip = ["in ", "on ", "for "].iter().find_map(|word| {
+            let tail = rest_lower.strip_prefix(word)?;
+            let tail = tail.strip_prefix("the ").unwrap_or(tail);
+            projects.iter().filter_map(|project| project["name"].as_str()).find_map(|name| {
+                let name = name.to_ascii_lowercase();
+                tail.starts_with(&name).then(|| {
+                    let skipped = rest_lower.len() - tail.len() + name.len();
+                    rest_lower[skipped..].strip_prefix(" project").map_or(skipped, |_| skipped + 8)
+                })
+            })
+        });
+        match skip {
+            Some(skip) => rest = rest[skip..].trim_start(),
+            None => break,
+        }
+    }
+    let rest_lower = rest.to_ascii_lowercase();
+    let body = ["with the prompt ", "with prompt ", "and ask it to ", "and tell it to ", "to ", ": ", ":"]
+        .iter()
+        .find_map(|marker| rest_lower.starts_with(marker).then(|| &rest[marker.len()..]))?
+        .trim()
+        .trim_matches(['"', '“', '”'])
+        .trim()
+        .trim_end_matches(['.', '!']);
+    // "Open Codex to acme-api" names a place, not a task.
+    let place = projects
+        .iter()
+        .filter_map(|project| project["name"].as_str())
+        .any(|name| body.trim_start_matches("the ").eq_ignore_ascii_case(name));
+    (!body.is_empty() && !place && body.split_whitespace().count() <= 60).then(|| body.to_string())
 }
 
 #[cfg(test)]
