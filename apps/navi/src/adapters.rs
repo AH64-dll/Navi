@@ -318,7 +318,7 @@ pub fn resolve(executable: &str, launch_dirs: &[String]) -> Result<String> {
     let fail = |state: ExeState, searched: String| -> Result<String> {
         Err(match state {
             ExeState::NotFound => {
-                format!("{executable} is not installed or is absent from PATH (searched: {searched})")
+                format!("{executable} is not installed or is absent from PATH (searched: {searched}). Install it, or set its full path under Settings, Harness profiles.")
             }
             ExeState::NotExecutable => {
                 format!("{executable} was found but is not executable (searched: {searched})")

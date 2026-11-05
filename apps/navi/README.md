@@ -146,8 +146,9 @@ does not already say it, project), where an inline prompt field sends input stra
 into the harness. Clicking a finished chip reopens it (`session_restart`): same name,
 the harness's own conversation when one was recorded, and the old chip leaves Recent. The "+" chip opens a quick-launch menu: one click starts Codex,
 Claude Code, Pi, OpenCode, a terminal or a custom profile in the active project and
-attaches it; a harness whose binary is not on the launch PATH is listed as "not
-installed" and cannot be picked. "More options…" opens the full launcher dialog — any
+attaches it; a harness whose binary is not on the launch PATH, or whose profile names
+a full path that is not an executable file (`harness_list` reports these as
+`missing_paths`), is listed as "not installed" and cannot be picked. "More options…" opens the full launcher dialog — any
 registered profile (the first installed harness preselected), a project directory, and
 an optional first prompt that is injected once the harness is up. The settings gear
 also edits harness profiles (name, command, arguments written as shell words, so

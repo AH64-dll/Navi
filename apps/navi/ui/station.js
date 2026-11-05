@@ -3799,15 +3799,17 @@ function isTerminalProfile(profile) {
 /* Which harness binaries exist on the launch PATH, from `harness_list` (the
  * daemon caches it for 60 s). Until the first answer every profile counts as
  * available: unknown availability must never disable a launch. A profile with
- * an absolute executable is outside the probe and always counts as available. */
-let harnessFound=null, harnessAsked=0;
+ * a full path counts as available unless the daemon reports that path missing. */
+let harnessFound=null, harnessAsked=0, harnessMissingPaths=new Set();
 async function refreshHarnesses() {
   if (Date.now()-harnessAsked<30000) return;
   harnessAsked=Date.now();
   try {
-    const list=(await rpc('harness_list'))?.harnesses;
+    const result=await rpc('harness_list')||{};
+    const list=result.harnesses;
     if (!Array.isArray(list)) return;
     harnessFound=new Map(list.map(item=>[String(item.name),item.found===true]));
+    harnessMissingPaths=new Set(Array.isArray(result.missing_paths)?result.missing_paths.map(String):[]);
     if (launchOpen) renderLaunchMenu();
     if (snapshot) surfaceSettings(snapshot);
     if (dialog.open) noteProfiles();
@@ -3817,7 +3819,8 @@ async function refreshHarnesses() {
 function profileInstalled(profile) {
   if (!harnessFound||isTerminalProfile(profile)) return true;
   const executable=String(profile.executable||'');
-  if (!executable||executable.includes('/')) return true;
+  if (!executable) return true;
+  if (executable.includes('/')) return !harnessMissingPaths.has(executable);
   const name=executable.toLowerCase();
   return harnessFound.has(name)?harnessFound.get(name):true;
 }

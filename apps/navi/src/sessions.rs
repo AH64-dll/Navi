@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -2081,7 +2081,21 @@ impl App {
                 "profile_exists": profile_exists,
             }));
         }
-        let result = json!({"harnesses": out});
+        // Profiles that name a full path are outside the probe above: report
+        // the paths that are not an executable file, so a launch menu does not
+        // offer a harness that cannot start.
+        let missing_paths: BTreeSet<String> = profiles
+            .iter()
+            .filter_map(|profile| profile["executable"].as_str())
+            .filter(|exe| exe.contains('/'))
+            .filter(|exe| {
+                fs::metadata(exe)
+                    .map(|meta| !meta.is_file() || meta.permissions().mode() & 0o111 == 0)
+                    .unwrap_or(true)
+            })
+            .map(str::to_string)
+            .collect();
+        let result = json!({"harnesses": out, "missing_paths": missing_paths});
         *self.harness_cache.lock().unwrap() = Some((now(), result.clone()));
         *self.harness_seen.lock().unwrap() = seen_unprofiled;
         Ok(result)
