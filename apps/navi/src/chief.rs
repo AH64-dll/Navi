@@ -1889,6 +1889,24 @@ impl App {
         if short && let Some(status) = self.session_status_intent(&lower)? {
             return Ok(Some(status));
         }
+        // "Switch projects", "the other project": the next project in the list.
+        if matches!(bare, "switch projects" | "switch project" | "change project" | "change projects"
+            | "next project" | "the other project" | "other project" | "go to the other project"
+            | "switch to the other project" | "previous project" | "the next project" | "go to the next project")
+        {
+            return Ok(Some(json!({"kind":"project_cycle","back":bare.contains("previous")})));
+        }
+        // "I need a terminal", "give me another Codex": an open request.
+        let lower = ["i need another ", "give me another ", "get me another "]
+            .iter()
+            .find_map(|prefix| lower.strip_prefix(prefix).map(|rest| format!("open a new {rest}")))
+            .or_else(|| {
+                ["i need a ", "i need an ", "give me a ", "give me an ", "get me a ", "get me an ", "i want a ",
+                    "i want an "]
+                    .iter()
+                    .find_map(|prefix| lower.strip_prefix(prefix).map(|rest| format!("open a {rest}")))
+            })
+            .unwrap_or(lower);
         if !immediate_request(&lower) {
             return Ok(None);
         }
@@ -2135,6 +2153,7 @@ impl App {
             "stop" | "interrupt" | "pause" => "interrupt",
             "close" | "quit" | "exit" | "kill" | "end" | "terminate" => "kill",
             "reopen" | "resume" => "reopen",
+            "restart" | "reboot" | "relaunch" => "restart",
             _ => return Ok(None),
         };
         // The object must be the session and nothing more, so "stop opening
@@ -2150,7 +2169,7 @@ impl App {
         }
         // "Stop everything", "close all terminals": every open session here,
         // or those of one kind.
-        if op != "reopen" {
+        if matches!(op, "interrupt" | "kill") {
             let every = match object.as_str() {
                 "all" | "everything" | "all of them" | "every session" | "all sessions" | "all the sessions"
                 | "all harnesses" | "all the harnesses" | "all my sessions" => Some(String::new()),
@@ -2710,6 +2729,14 @@ impl App {
                         .unwrap_or_else(|| session["name"].as_str().unwrap_or("the session").to_string())
                 };
                 let text = match chosen.as_slice() {
+                    [session] if action["op"] == "restart" => {
+                        let result = self.session_restart(&json!({"id": session["id"]}))?;
+                        if result["native_id"].as_str().is_some_and(|id| !id.is_empty()) {
+                            format!("Restarted {}, continuing its conversation.", label(session))
+                        } else {
+                            format!("Restarted {}.", label(session))
+                        }
+                    }
                     [session] => {
                         let target = json!({"id": session["id"]});
                         if action["op"] == "kill" {
@@ -2912,6 +2939,20 @@ impl App {
                     Err(error) => format!("{error}."),
                 };
                 Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+            }
+            "project_cycle" => {
+                let projects = self.projects()?;
+                let current = project.ok();
+                let at = projects.iter().position(|project| current.as_ref().is_some_and(|here| here["id"] == project["id"]));
+                let step = if action["back"] == true { projects.len().saturating_sub(1) } else { 1 };
+                match projects.len() {
+                    0 | 1 => Ok(json!({"reply": reply(None,
+                        "There is only one project. Say “add a project” to add another.".into(), json!({}))})),
+                    count => {
+                        let next = &projects[(at.unwrap_or(0) + step) % count];
+                        self.run_fast(clause, &json!({"kind":"project_switch","id":next["id"],"name":next["name"]}), params)
+                    }
+                }
             }
             "undo" => {
                 let change = self.last_change.lock().unwrap().take();
@@ -3232,7 +3273,7 @@ impl App {
                 {
                     *self.pronoun_target.lock().unwrap() = Some(session.to_string());
                 }
-                if action["kind"] == "project_switch" {
+                if matches!(action["kind"].as_str(), Some("project_switch" | "project_cycle")) {
                     scope["project_id"] = result["project_id"].clone();
                     switched = result["project_id"].clone();
                 }
