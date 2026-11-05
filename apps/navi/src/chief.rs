@@ -2320,13 +2320,18 @@ impl App {
         }
         // The last step's reply may be about something else ("…then assess
         // the project"), so the switch travels in its own field.
-        // The reply belongs beside its question, in the project it was asked
-        // in; the station moves to the new project after storing it.
         if !switched.is_null() && reply.is_object() {
             reply["switch_project"] = switched;
-            if let Some(asked_in) = pid.as_deref() {
-                reply["project_id"] = json!(asked_in);
-            }
+        }
+        // The reply belongs beside its question, in the project it was asked
+        // in, even when it is about another one ("open Codex in acme-api");
+        // a switch moves the station only after the row is stored.
+        if let Some(asked_in) = pid.as_deref()
+            && reply.is_object()
+            && reply["project_id"].as_str() != Some(asked_in)
+        {
+            reply["about_project"] = reply["project_id"].clone();
+            reply["project_id"] = json!(asked_in);
         }
         // One reply per command reaches the chat: every step's answer joined,
         // unless the only answer was a model turn that already posted itself.
