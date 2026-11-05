@@ -3245,7 +3245,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”; a closed harness opens first), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
