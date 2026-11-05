@@ -407,9 +407,9 @@ pub fn assessment_prompt(adapter: &str, parts: &[String], facts: &str) -> String
     };
     let how = match adapter {
         "claude" | "codex" | "opencode" => {
-            "Record each part with the navi_report_progress tool (percent, part, evidence), then the whole project without a part.".to_string()
+            "Record each part with the navi_report_progress tool (percent, part, evidence), then the whole project without a part. For each part below 100%, add up to three concrete remaining tasks with navi_track_task (state todo, or in_progress/blocked when that is what you saw).".to_string()
         }
-        _ => "Record each part with `navid progress report <percent> \"<evidence>\" --part \"<part>\"`, then the whole project without --part.".to_string(),
+        _ => "Record each part with `navid progress report <percent> \"<evidence>\" --part \"<part>\"`, then the whole project without --part. For each part below 100%, add up to three concrete remaining tasks with `navid progress task todo \"<task>\" \"<why>\" --part \"<part>\"`.".to_string(),
     };
     let mut prompt = format!(
         "Navi progress check. Inspect this repository and judge how complete it is against its own goals (README, docs, issues, TODOs, tests). {parts_line} {how} Base every number on what you actually read or ran, keep it short, and do not change any files."

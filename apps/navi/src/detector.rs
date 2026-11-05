@@ -474,6 +474,47 @@ fn strip_word<'a>(text: &'a str, words: &[&str]) -> Option<&'a str> {
     })
 }
 
+/// `TASK "UI" todo "Add a settings page" | why`: a remaining task the
+/// assistant named during an assessment. Returns `(part, state, title,
+/// evidence)`; the state is one of todo, in_progress, done, blocked.
+pub fn parse_task_lines(text: &str) -> Vec<(String, &'static str, String, String)> {
+    fn quoted(text: &str) -> Option<(String, &str)> {
+        let text = text.trim_start();
+        let inner = text.strip_prefix('"').or_else(|| text.strip_prefix('“'))?;
+        let end = inner.find(['"', '”'])?;
+        let close = inner[end..].chars().next().map_or(1, char::len_utf8);
+        Some((inner[..end].trim().to_string(), &inner[end + close..]))
+    }
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line
+            .trim()
+            .trim_start_matches(['-', '*', '>', '`', ' '])
+            .trim_end_matches('`');
+        let Some(rest) = line.strip_prefix("TASK").or_else(|| line.strip_prefix("Task:")) else {
+            continue;
+        };
+        let rest = rest.trim_start_matches(':');
+        let (head, evidence) = match rest.split_once('|') {
+            Some((head, evidence)) => (head, evidence.trim().to_string()),
+            None => (rest, String::new()),
+        };
+        let Some((part, after)) = quoted(head) else { continue };
+        let after = after.trim_start();
+        let (state, after) = [("in progress", "in_progress"), ("in_progress", "in_progress"),
+            ("todo", "todo"), ("to do", "todo"), ("done", "done"), ("blocked", "blocked")]
+            .into_iter()
+            .find_map(|(word, state)| strip_word(after, &[word]).map(|tail| (state, tail)))
+            .unwrap_or(("todo", after));
+        let Some((title, _)) = quoted(after) else { continue };
+        if part.is_empty() || title.is_empty() {
+            continue;
+        }
+        out.push((part, state, title, evidence));
+    }
+    out
+}
+
 /// `PROGRESS overall 55 | evidence` / `PROGRESS part "UI" 60 | evidence`.
 /// Returns `(part, percent, evidence)`; part `None` is the whole project.
 pub fn parse_progress_lines(text: &str) -> Vec<(Option<String>, f64, String)> {
@@ -709,7 +750,7 @@ impl App {
             format!("Use these parts: {}.", parts.join(", "))
         };
         let prompt = format!(
-            "Progress check for {name}. Inspect the repository (read the README, docs, and the code; run nothing that changes files) and judge how complete it is against its own goals. {parts_line} Scan facts: {digest}. Reply with one short spoken sentence, then exactly one line per part and one overall line in this form:\nPROGRESS part \"<part>\" <percent> | <what you checked>\nPROGRESS overall <percent> | <what you checked>"
+            "Progress check for {name}. Inspect the repository (read the README, docs, and the code; run nothing that changes files) and judge how complete it is against its own goals. {parts_line} Scan facts: {digest}. Reply with one short spoken sentence, then exactly one line per part and one overall line in this form:\nPROGRESS part \"<part>\" <percent> | <what you checked>\nPROGRESS overall <percent> | <what you checked>\nThen, for each part below 100%, up to three concrete remaining tasks:\nTASK \"<part>\" todo \"<task>\" | <why it is needed>"
         );
         std::thread::spawn(move || {
             let outcome = app.assistant_assessment(&params, &prompt);
@@ -760,6 +801,19 @@ impl App {
             if result.is_ok() {
                 recorded += 1;
             }
+        }
+        // Remaining tasks follow the estimates; they never move a part an
+        // estimate leads, but they make "what's left" concrete.
+        for (part, state, title, evidence) in parse_task_lines(text) {
+            let _ = self.progress_report(&json!({
+                "project_id": project_id,
+                "aspect": part,
+                "task": title,
+                "state": state,
+                "evidence": if evidence.is_empty() { "assistant assessment".to_string() } else { evidence },
+                "confidence": 0.6,
+                "source": "navi",
+            }));
         }
         Ok(recorded)
     }

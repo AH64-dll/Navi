@@ -391,7 +391,11 @@ the project":
    lands as the harness reports it. With none, or with `via:"assistant"`, Navi's own
    assistant reads the project in the background and answers with lines of the form
    `PROGRESS part "<part>" <percent> | <evidence>` and `PROGRESS overall <percent> |
-   <evidence>`, recorded as estimates with confidence 0.6. When that assistant cannot
+   <evidence>`, recorded as estimates with confidence 0.6. Both routes also ask for up
+   to three remaining tasks per unfinished part (`navi_track_task`, `navid progress
+   task todo`, or `TASK "<part>" todo "<task>" | <why>` lines). These tasks feed
+   "what's left" but never move a part that an estimate leads. A part whose tasks are
+   all still open shows no task-derived marker. When that assistant cannot
    answer either (the gateway's `status` finds no OpenCode server and no `opencode`
    CLI to start one), Navi opens the first launch profile whose harness reports through
    the link and is installed, in the project, with the assessment request as its first

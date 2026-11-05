@@ -1151,10 +1151,11 @@ pub fn part_sentence(graph: &Value, aspect: &Value) -> String {
     let title = aspect["title"].as_str().unwrap_or("That part");
     let items = aspect["items"].as_array().cloned().unwrap_or_default();
     let done = items.iter().filter(|item| item["state"] == "done").count();
-    let tasks = if items.is_empty() {
-        String::new()
-    } else {
-        format!("{done} of {} tasks done", items.len())
+    let tasks = match (done, items.len()) {
+        (_, 0) => String::new(),
+        (0, 1) => "1 open task".to_string(),
+        (0, open) => format!("{open} open tasks"),
+        (done, total) => format!("{done} of {total} tasks done"),
     };
     let mut sentence = match aspect["percent"].as_f64() {
         None => format!("{title} has no estimate yet"),

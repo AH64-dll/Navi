@@ -3272,7 +3272,9 @@ function aspectRow(aspect) {
     renderGraph();
   });
   row.append(head);
-  const derived=aspect.basis==='estimate'?aspect.derived:null;
+  /* A task mean of 0 usually means the tasks list remaining work (an
+   * assessment adds them as todo), not that nothing is done: no marker then. */
+  const derived=aspect.basis==='estimate'&&Number(aspect.derived)>0?aspect.derived:null;
   const bar=meter(empty?null:aspect.percent,'aspect-bar','aspect-fill',derived);
   bar.setAttribute('role','img');
   bar.setAttribute('aria-label',`${title}: ${empty?'unknown':wholePercent(aspect.percent)}`);
