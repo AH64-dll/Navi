@@ -774,6 +774,24 @@ impl App {
         Ok(())
     }
 
+    /// "What's left", "the next task": the prompt that hands a harness the
+    /// open work Navi records for `project_id`, and how the reply names it.
+    /// Any other prompt is sent as spoken (`None`).
+    fn work_prompt_for(&self, prompt: &str, project_id: Option<&str>) -> Result<Option<(String, String)>> {
+        let Some(next_only) = work_request(prompt) else {
+            return Ok(None);
+        };
+        let graph = self.graph_get(project_id)?;
+        let name = graph["project"]["name"].as_str().unwrap_or("the project").to_string();
+        let summary = match (next_only, next_task(&graph).1) {
+            (false, _) => format!("the open work for {name}"),
+            (true, Some((title, part))) if !title.is_empty() => format!("the next task, {}", named_task(&title, &part)),
+            (true, Some((_, part))) => format!("the {part} part, which is furthest behind"),
+            (true, None) => format!("a request to find what {name} is missing"),
+        };
+        Ok(Some((work_prompt(&graph, next_only), summary)))
+    }
+
     /// The session "it" means: one this command just opened ("open a new
     /// Codex and tell it to …"), else the voice target.
     fn pronoun_session(&self) -> Option<String> {
@@ -1806,6 +1824,7 @@ impl App {
         .iter()
         .chain(BLOCKED_PHRASES.iter())
         .chain(DONE_PHRASES.iter())
+        .chain(TOPIC_PHRASES.iter().flat_map(|(_, phrases)| phrases.iter()))
         .chain(RECENT_PHRASES.iter())
         .chain(STALE_PHRASES.iter())
         .any(|phrase| lower.contains(phrase))
@@ -1878,8 +1897,14 @@ impl App {
         let refresh = ["update", "refresh", "recheck", "re-check", "recompute", "measure", "run"]
             .iter()
             .any(|word| mentioned(&lower, word));
+        // "When was the last estimate?" asks; it must not start an assessment.
+        let question = ["when ", "how ", "what", "why ", "which ", "who ", "where ", "is ", "are ", "was ",
+            "did ", "does ", "has "]
+            .iter()
+            .any(|word| lower.starts_with(word));
         if short
             && !asking
+            && !question
             && ((assess && whole) || (refresh && strong && whole) || lower.contains("progress check"))
         {
             return Ok(Some(json!({"kind":"detect"})));
@@ -1897,8 +1922,12 @@ impl App {
             let stale = STALE_PHRASES.iter().any(|phrase| lower.contains(phrase));
             let blocked = BLOCKED_PHRASES.iter().any(|phrase| lower.contains(phrase));
             let done = DONE_PHRASES.iter().any(|phrase| lower.contains(phrase));
+            let topic = TOPIC_PHRASES
+                .iter()
+                .find(|(_, phrases)| phrases.iter().any(|phrase| lower.contains(phrase)))
+                .map(|(topic, _)| *topic);
             return Ok(Some(json!({"kind":"progress","show":show,"left":left,"recent":recent,
-                "stale":stale,"blocked":blocked,"done":done})));
+                "stale":stale,"blocked":blocked,"done":done,"topic":topic})));
         }
         if short && let Some(status) = self.session_status_intent(&lower)? {
             return Ok(Some(status));
@@ -2035,7 +2064,7 @@ impl App {
                 return Ok(Some(action));
             }
         }
-        let rest_at = ["tell ", "ask ", "send ", "message ", "continue in ", "have ", "get "]
+        let rest_at = ["tell ", "ask ", "send ", "message ", "continue in ", "have ", "get ", "give "]
             .iter()
             .find_map(|verb| lower.starts_with(verb).then_some(verb.len()));
         // No verb: "Codex #1, run the tests" and "terminal: ls" address an
@@ -2063,13 +2092,22 @@ impl App {
         };
         if direct {
             candidates.extend(rest_lower.find([':', ',']).map(|mark| (mark, mark + 1)));
-        } else if let Some(space) = rest_lower.find([' ', ':', ',']) {
-            candidates.push((space, space + 1));
+        } else {
+            // No "to": the longest leading name that is a session ("tell
+            // Codex #1 what's left" is Codex #1, not Codex).
+            let mut splits: Vec<(usize, usize)> = rest_lower
+                .match_indices([' ', ':', ','])
+                .map(|(index, _)| (index, index + 1))
+                .collect();
+            splits.reverse();
+            candidates.extend(splits);
         }
         for &(end, text_start) in &candidates {
             let ids = find(&rest[..end]);
             let prompt = rest[text_start..].trim().trim_start_matches([':', ',']).trim();
-            if !ids.is_empty() && !prompt.is_empty() {
+            // "Give Codex the next task" hands over recorded work, nothing else.
+            let given = !lower.starts_with("give ") || work_request(prompt).is_some();
+            if !ids.is_empty() && !prompt.is_empty() && given {
                 return Ok(Some(json!({"kind":"harness_prompt","ids":ids,"text":prompt})));
             }
         }
@@ -2090,7 +2128,8 @@ impl App {
                         || profile["name"].as_str().is_some_and(|label| label.eq_ignore_ascii_case(name))
                         || (profile["id"] == "claude" && name == "claude code"))
             });
-            if let Some(profile) = profile.filter(|_| !prompt.is_empty()) {
+            let given = !lower.starts_with("give ") || work_request(prompt).is_some();
+            if let Some(profile) = profile.filter(|_| !prompt.is_empty() && given) {
                 return Ok(Some(json!({"kind":"launch","profile":profile["id"],
                     "name":profile["name"],"prompt":prompt})));
             }
@@ -2108,7 +2147,7 @@ impl App {
                 continue;
             };
             name = [" say last", " say", " saying", " print", " printing", " output", " show", " showing",
-                " reply", " answer", " write"]
+                " reply", " answer", " write", " asking me", " asking for", " asking"]
                 .iter()
                 .find_map(|tail| rest.strip_suffix(tail));
             if name.is_some() {
@@ -2271,7 +2310,8 @@ impl App {
     /// from their pane state instead of a model.
     fn session_status_intent(&self, lower: &str) -> Result<Option<Value>> {
         let waiting = ["need my input", "needs my input", "need input", "needs input",
-            "waiting for me", "waiting on me", "need me", "needs me"]
+            "waiting for me", "waiting on me", "need me", "needs me", "need my attention", "needs my attention",
+            "need attention", "needs attention", "waiting for input", "waiting for an answer"]
             .iter()
             .any(|phrase| lower.contains(phrase));
         let overview = ["anything busy", "anything running", "anyone busy", "what's busy",
@@ -2381,6 +2421,12 @@ impl App {
                     _ if action["recent"] == true => {
                         store::recent_sentence(&graph, crate::now().saturating_sub(86_400_000))
                     }
+                    _ if action["topic"] == "estimate" => estimate_sentence(&graph),
+                    _ if action["topic"] == "parts" => parts_sentence(&graph),
+                    _ if action["topic"] == "active" => active_sentence(&graph),
+                    _ if action["topic"] == "next" => next_task(&graph).0,
+                    _ if action["topic"] == "count" => count_sentence(&graph),
+                    _ if action["topic"] == "tasks" => store::remaining_sentence(&graph),
                     _ if action["blocked"] == true => store::blocked_sentence(&graph),
                     _ if action["done"] == true => store::done_sentence(&graph),
                     _ if action["left"] == true => store::remaining_sentence(&graph),
@@ -2633,16 +2679,26 @@ impl App {
                     Some(head) if shell && head.eq_ignore_ascii_case("run ") => spoken[4..].trim(),
                     _ => spoken,
                 };
+                // "Tell Codex what's left": the open work as Navi records it,
+                // for the session's own project.
+                let work = match chosen.as_slice() {
+                    [session] if !shell => self.work_prompt_for(prompt, session["project_id"].as_str().or(here.as_deref()))?,
+                    _ => None,
+                };
+                let (prompt, shown) = match &work {
+                    Some((text, summary)) => (text.as_str(), summary.clone()),
+                    None => (prompt, format!("“{prompt}”")),
+                };
                 let text = match chosen.as_slice() {
                     // A child process owns the terminal: typing would go to it.
                     [session] if matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) => {
                         let name = label(session);
                         self.deliver_when_free(session["id"].as_str().unwrap_or_default(), prompt, &name)?;
-                        format!("{name} is busy; I will send “{prompt}” when it is free.")
+                        format!("{name} is busy; I will send {shown} when it is free.")
                     }
                     [session] => {
                         self.inject(session["id"].as_str().unwrap_or_default(), prompt, true)?;
-                        format!("Sent to {}: “{prompt}”.", label(session))
+                        format!("Sent to {}: {shown}.", label(session))
                     }
                     [] => "That session is no longer open.".to_string(),
                     many => self.ask_which(action, many, &labels)?,
@@ -3169,8 +3225,13 @@ impl App {
                         return Ok(json!({"id":target,"reply":reply(Some(&id), text, json!({"session": target}))}));
                     }
                 }
+                let work = match action["prompt"].as_str() {
+                    Some(prompt) => self.work_prompt_for(prompt, Some(&id))?,
+                    None => None,
+                };
+                let prompt = work.as_ref().map_or(action["prompt"].clone(), |(text, _)| json!(text));
                 let session = self.create_session(
-                    &json!({"profile":action["profile"],"cwd":path,"name":name,"prompt":action["prompt"]}),
+                    &json!({"profile":action["profile"],"cwd":path,"name":name,"prompt":prompt}),
                 )?;
                 let harness = action["name"].as_str().unwrap_or("The harness");
                 let project_name = project["name"].as_str().unwrap_or("the project");
@@ -3180,8 +3241,9 @@ impl App {
                         session["error"].as_str().unwrap_or("")
                     )
                 } else if let Some(prompt) = action["prompt"].as_str() {
+                    let shown = work.as_ref().map_or(format!("“{prompt}”"), |(_, summary)| summary.clone());
                     match session["prompt"]["ok"].as_bool() {
-                        Some(true) => format!("Opened {harness} in {project_name} and sent it: “{prompt}”."),
+                        Some(true) => format!("Opened {harness} in {project_name} and sent it: {shown}."),
                         _ => format!(
                             "Opened {harness} in {project_name}, but the prompt was not sent: {}",
                             session["prompt"]["error"].as_str().unwrap_or("it did not become ready")
@@ -3667,6 +3729,195 @@ fn b64_decode(data: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Every task with its part title, open ones first by how far behind their
+/// part is: in progress, then to do, then blocked.
+fn open_tasks(graph: &Value) -> Vec<(String, String, f64, String)> {
+    let mut open: Vec<(String, String, f64, String)> = graph["aspects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|aspect| {
+            let part = aspect["title"].as_str().unwrap_or_default().to_string();
+            let percent = aspect["percent"].as_f64().unwrap_or(0.0);
+            aspect["items"].as_array().into_iter().flatten().map(move |item| (item.clone(), part.clone(), percent))
+        })
+        .chain(graph["unassigned"].as_array().into_iter().flatten().map(|item| (item.clone(), String::new(), 100.0)))
+        .filter(|(item, _, _)| item["state"] != "done")
+        .map(|(item, part, percent)| {
+            (item["title"].as_str().unwrap_or("Untitled").to_string(), part, percent,
+                item["state"].as_str().unwrap_or("todo").to_string())
+        })
+        .collect();
+    let rank = |state: &str| match state {
+        "in_progress" => 0,
+        "blocked" => 2,
+        _ => 1,
+    };
+    open.sort_by(|left, right| rank(&left.3).cmp(&rank(&right.3)).then(left.2.total_cmp(&right.2)));
+    open
+}
+
+fn named_task(title: &str, part: &str) -> String {
+    if part.is_empty() { format!("“{title}”") } else { format!("“{title}” in {part}") }
+}
+
+/// "What's the next task": the task to pick up, and that task (title, part)
+/// for a prompt.
+fn next_task(graph: &Value) -> (String, Option<(String, String)>) {
+    let open = open_tasks(graph);
+    match open.iter().find(|task| task.3 != "blocked") {
+        Some((title, part, _, state)) => {
+            let lead = if state == "in_progress" { "Already in progress" } else { "Next" };
+            (format!("{lead}: {}.", named_task(title, part)), Some((title.clone(), part.clone())))
+        }
+        None => {
+            let behind = graph["aspects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|aspect| Some((aspect["title"].as_str()?, aspect["percent"].as_f64()?)))
+                .filter(|(_, percent)| *percent < 100.0)
+                .min_by(|left, right| left.1.total_cmp(&right.1));
+            let blocked = if open.is_empty() { String::new() } else { format!(" {} blocked.", open.len()) };
+            match behind {
+                Some((part, percent)) => (
+                    format!("No open task to pick up.{blocked} The part furthest behind is {part} at {}%.", percent.round()),
+                    Some((String::new(), part.to_string())),
+                ),
+                None => (format!("No open task to pick up.{blocked}"), None),
+            }
+        }
+    }
+}
+
+/// "What's in progress": the tasks being worked on.
+fn active_sentence(graph: &Value) -> String {
+    let active: Vec<String> = open_tasks(graph)
+        .into_iter()
+        .filter(|task| task.3 == "in_progress")
+        .map(|(title, part, _, _)| named_task(&title, &part))
+        .collect();
+    match active.len() {
+        0 => "No task is marked in progress.".to_string(),
+        1 => format!("In progress: {}.", active[0]),
+        count => format!("{count} tasks in progress: {}.", active.join(", ")),
+    }
+}
+
+/// "How many tasks are left": the open count by state.
+fn count_sentence(graph: &Value) -> String {
+    let counts = &graph["tasks"];
+    let number = |key: &str| counts[key].as_u64().unwrap_or(0);
+    let total = number("total");
+    if total == 0 {
+        return "There are no tasks yet. Say “add a task called …” to add one.".to_string();
+    }
+    let open = total.saturating_sub(number("done"));
+    let mut sentence = format!("{open} of {total} tasks {} open", if open == 1 { "is" } else { "are" });
+    let detail: Vec<String> = [("in_progress", "in progress"), ("blocked", "blocked")]
+        .iter()
+        .filter(|(key, _)| number(key) > 0)
+        .map(|(key, name)| format!("{} {name}", number(key)))
+        .collect();
+    if !detail.is_empty() {
+        sentence.push_str(&format!(" ({})", detail.join(", ")));
+    }
+    sentence.push('.');
+    sentence
+}
+
+/// "List the parts": every part with its percent.
+fn parts_sentence(graph: &Value) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("This project");
+    let parts: Vec<String> = graph["aspects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|aspect| {
+            let title = aspect["title"].as_str().unwrap_or("Untitled");
+            match aspect["percent"].as_f64() {
+                Some(percent) => format!("{title} {}%", percent.round()),
+                None => format!("{title} (no estimate)"),
+            }
+        })
+        .collect();
+    match parts.len() {
+        0 => format!("{name} has no parts yet. Say “add a part called …” to add one."),
+        1 => format!("{name} has one part: {}.", parts[0]),
+        count => format!("{name} has {count} parts: {}.", parts.join(", ")),
+    }
+}
+
+/// "When was the last estimate", "how confident is it": where the headline
+/// comes from, the newest estimate, and the confidence.
+fn estimate_sentence(graph: &Value) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("This project");
+    let Some(percent) = graph["percent"].as_f64() else {
+        return format!("{name} has no estimate yet. Say “assess the project” and I will ask a harness to judge it.");
+    };
+    let mut sentence = format!("{name} is at {}%", percent.round());
+    match graph["basis"]["kind"].as_str() {
+        Some("parts") => sentence.push_str(" as the weighted mean of its parts"),
+        Some("estimate") => sentence.push_str(" from the newest whole-project estimate"),
+        _ => {}
+    }
+    sentence.push('.');
+    let estimate = &graph["estimate"];
+    if let (Some(value), Some(time)) = (estimate["percent"].as_f64(), estimate["time"].as_u64()) {
+        let who = match estimate["source"].as_str().unwrap_or("assistant") {
+            "user" => "You".to_string(),
+            source => store::source_name(source),
+        };
+        sentence.push_str(&format!(" {who} last put the whole project at {}%, {}", value.round(), relative_time(time)));
+        if let Some(evidence) = estimate["evidence"].as_str().map(str::trim).filter(|text| !text.is_empty()) {
+            let short: String = evidence.chars().take(120).collect();
+            sentence.push_str(&format!(" (“{short}”)"));
+        }
+        sentence.push('.');
+    }
+    if let Some(confidence) = graph["confidence"].as_f64() {
+        sentence.push_str(&format!(" Confidence is {}%.", (confidence * 100.0).round()));
+    }
+    match graph["commits_since"].as_i64().unwrap_or(0) {
+        0 => {}
+        1 => sentence.push_str(" 1 commit landed since; say “reassess” to update it."),
+        commits => sentence.push_str(&format!(" {commits} commits landed since; say “reassess” to update it.")),
+    }
+    sentence
+}
+
+/// Whether a prompt asks Navi to hand over the recorded work: `Some(true)`
+/// for the next task, `Some(false)` for everything open.
+fn work_request(prompt: &str) -> Option<bool> {
+    let text = loose_title(prompt);
+    let text = text.strip_prefix("to ").unwrap_or(&text);
+    let text = text.strip_suffix(" please").unwrap_or(text);
+    match text {
+        "what s left" | "what is left" | "whats left" | "what remains" | "what needs doing" | "what s left to do"
+        | "the open tasks" | "the open work" | "the remaining work" | "work on what s left" | "do what s left"
+        | "finish what s left" | "the todo list" | "the to do list" => Some(false),
+        "the next task" | "next task" | "do the next task" | "work on the next task" | "what to do next"
+        | "the next thing" | "do the next thing" | "start the next task" | "pick up the next task" => Some(true),
+        _ => None,
+    }
+}
+
+/// A prompt that hands a harness the open work, as Navi records it.
+fn work_prompt(graph: &Value, next_only: bool) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("this project");
+    let report = "Record progress as you go with the navi_track_task and navi_report_progress tools.";
+    if next_only {
+        return match next_task(graph).1 {
+            Some((title, part)) if !title.is_empty() => {
+                format!("Work on the task {} for {name}. {report}", named_task(&title, &part))
+            }
+            Some((_, part)) => format!("Work on the {part} part of {name}, which is furthest behind. {report}"),
+            None => format!("{name} has no open work recorded. Check what is missing and add tasks for it. {report}"),
+        };
+    }
+    format!("{} Pick the most important item and do it. {report}", store::remaining_sentence(graph))
+}
+
 /// "2 minutes ago" style activity stamp for the context block.
 fn relative_time(at: u64) -> String {
     let elapsed = now().saturating_sub(at) / 1000;
@@ -4130,6 +4381,20 @@ const STALE_PHRASES: [&str; 7] = [
     "commits since", "commits landed since", "up to date estimate",
 ];
 
+/// Progress questions with their own answer, checked in order.
+const TOPIC_PHRASES: [(&str, &[&str]); 6] = [
+    ("estimate", &["last estimate", "latest estimate", "newest estimate", "the estimate based", "how confident",
+        "confidence", "why is it", "why is the project", "why is navi", "where does the number",
+        "where does the percent", "what is it based on", "what's it based on", "how was it estimated"]),
+    ("next", &["next task", "next thing to do", "what to do next"]),
+    ("count", &["how many tasks", "how many open tasks", "number of tasks"]),
+    ("active", &["in progress", "being worked on", "who is working on", "what's being done", "currently working on"]),
+    ("parts", &["list the parts", "list parts", "what parts", "which parts are there", "the parts are",
+        "show me the parts", "all the parts", "every part"]),
+    ("tasks", &["open tasks", "list the tasks", "list tasks", "show me the tasks", "what tasks", "which tasks",
+        "the task list", "the checklist", "all the tasks"]),
+];
+
 /// "What's blocked": the blocked tasks.
 const BLOCKED_PHRASES: [&str; 11] = ["what's blocking", "what is blocking", "whats blocking",
     "what's blocked", "what is blocked", "whats blocked", "anything blocked", "any blockers",
@@ -4145,7 +4410,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “add a task called fix login to the daemon”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”, “stop everything”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “add a task called fix login to the daemon”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”, “give Codex the next task”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”, “stop everything”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();

@@ -441,6 +441,9 @@ model and without the assistant:
 | "Start working on barge-in", "I'm working on barge-in" | Marks that task in progress (only when such a task exists) |
 | "How is the daemon doing?", "what's the voice part at", "show me the voice part", "which part is furthest behind" | Answers for that part (or names the part furthest behind) |
 | "Compare the projects", "how are all my projects doing" | Every project with its percent |
+| "When was the last estimate?", "how confident is the estimate", "why is it 86 percent" | Where the headline comes from (parts or a whole-project estimate), who last estimated the project, when and on what evidence, the confidence, and commits since |
+| "List the parts", "list the tasks", "how many tasks are left", "what's in progress", "what's the next task" | Each part with its percent, the open tasks, the open count by state, the tasks in progress, or the task to pick up next (in progress first, then the part furthest behind) |
+| "Tell Codex what's left", "give Codex the next task", "tell Claude to do the next task" | Sends that session a prompt built from Navi's record: the unfinished parts and open tasks, or the next task, with a reminder to report through the progress tools. Voice leaves these to the same route |
 | "Undo", "take that back", "scratch that" | Takes back the last progress change made by a Navi command in the last ten minutes (a percent, a task state, an added task or part, a dropped task): its signals are removed and the task gets its previous state back |
 | "Assess the project", "reassess acme-api", "reassess", "rescan the project", "update the estimate", `/assess` | Runs the detector |
 | "Set the UI to 80%", "put voice at 60 percent", "bump the UI to 75", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |
@@ -460,8 +463,8 @@ model and without the assistant:
 | "Navi?", "hello", "um" | Only a wake word, greeting or filler: Navi asks what you need (spoken, so the answer needs no wake word) |
 | "Open settings", "add a project", "full screen" | Opens that dialog in the station window, or toggles full screen |
 | "Stop listening", "turn off the mic", "mute", "stop talking", "speak replies" | Turns the microphone off (or on, outside isolated mode) or the spoken replies off or on; muting also cuts a reply being read out |
-| "Is Codex done?", "what is Claude doing", "what's running", "is anything busy", `/sessions`, "does anything need my input", "list sessions" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them; "is Pi open" with no Pi says it is not open |
-| "What did Codex say?", "what's on the terminal's screen", "what does it say", "read me the last output" | Reads the last four lines with text on that session's screen ("it" or no name means the active session), without the borders, key hints and waiting prompt |
+| "Is Codex done?", "what is Claude doing", "what's running", "is anything busy", `/sessions`, "does anything need my input", "anything need my attention", "list sessions" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them; "is Pi open" with no Pi says it is not open |
+| "What did Codex say?", "what's Claude asking", "what's on the terminal's screen", "what does it say", "read me the last output" | Reads the last four lines with text on that session's screen ("it" or no name means the active session), without the borders, key hints and waiting prompt |
 
 Steps chain with "then" (or "and" when every half is one of these commands), at most
 four: "switch to acme-api then assess the project" assesses acme-api, because a step

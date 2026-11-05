@@ -254,6 +254,24 @@ _HARNESS_PATTERNS = (
 )
 
 
+# "Tell Codex what's left", "give Codex the next task": the daemon's typed
+# route expands these into the work Navi records, so voice leaves them to it.
+# Kept in step with `work_request` in src/chief.rs.
+_WORK_REQUESTS = frozenset({
+    "what s left", "what is left", "whats left", "what remains", "what needs doing", "what s left to do",
+    "the open tasks", "the open work", "the remaining work", "work on what s left", "do what s left",
+    "finish what s left", "the todo list", "the to do list", "the next task", "next task", "do the next task",
+    "work on the next task", "what to do next", "the next thing", "do the next thing", "start the next task",
+    "pick up the next task",
+})
+
+
+def work_request(text):
+    loose = " ".join(re.findall(r"[a-z0-9]+", (text or "").casefold()))
+    loose = loose.removeprefix("to ").removesuffix(" please")
+    return loose in _WORK_REQUESTS
+
+
 def harness_target(transcript, status):
     """BUG-065: 'tell Claude to run the tests' -> {id, text} for the prompt op.
 
@@ -270,7 +288,7 @@ def harness_target(transcript, status):
             wanted = match.group("target").strip().casefold()
             text = match.group("text").strip()
             break
-    if not wanted:
+    if not wanted or work_request(text):
         return None
     settings = status.get("settings", {})
     sessions = [s for s in status.get("sessions", []) if s.get("running")]
