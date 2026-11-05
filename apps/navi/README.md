@@ -232,7 +232,9 @@ talks to the running `opencode serve` HTTP API and exposes:
 - slash commands (`/help`, `/init`, `/review`, plugin commands) through OpenCode's
   command endpoint, with `/help` listing the live catalog without a model turn
   (pressing `/` outside a text field focuses the command box and opens the menu, and
-  ArrowUp in an empty box recalls this project's earlier commands);
+  ArrowUp in an empty box recalls this project's earlier commands; the settings
+  `shortcuts` keys, F10 and F11 by default, focus the command box and toggle full
+  screen);
 - the model and agent catalog, used by the settings selectors;
 - session reuse (`~/.local/share/navi/opencode-session`), rotation, and interrupt;
 - automatic `opencode serve` startup when the service is unreachable, unless

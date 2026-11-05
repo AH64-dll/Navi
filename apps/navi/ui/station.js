@@ -1709,6 +1709,33 @@ addEventListener('keydown',event=>{
   }
 });
 
+/* Settings `shortcuts`: "focus" (F10) puts the cursor in the command box and
+ * "fullscreen" (F11) toggles full screen. A binding is a key name with optional
+ * "Ctrl+", "Alt+" and "Shift+" in front. */
+function shortcutMatches(binding,event) {
+  const parts=String(binding||'').split('+').map(part=>part.trim().toLowerCase()).filter(Boolean);
+  const key=parts.pop();
+  if (!key) return false;
+  return event.key.toLowerCase()===key&&event.ctrlKey===parts.includes('ctrl')
+    &&event.altKey===parts.includes('alt')&&event.shiftKey===parts.includes('shift')&&!event.metaKey;
+}
+addEventListener('keydown',event=>{
+  if (event.defaultPrevented||document.querySelector('dialog[open]')) return;
+  const shortcuts=(snapshot&&snapshot.settings&&snapshot.settings.shortcuts)||{};
+  if (shortcutMatches(shortcuts.fullscreen,event)) {
+    event.preventDefault();
+    send({type:'fullscreen',mode:'toggle'});
+    return;
+  }
+  /* A harness in the terminal may use the key itself (F10 quits htop). */
+  if (shortcutMatches(shortcuts.focus,event)&&!event.target?.closest?.('#terminal-pane')) {
+    const input=commandInput();
+    if (!input||input.disabled) return;
+    event.preventDefault();
+    input.focus();
+  }
+});
+
 /* Escape closes the progress panel when nothing nearer used the key: an open
  * dialog, the slash menu, a confirm window and the terminal keep their own. */
 addEventListener('keydown',event=>{
