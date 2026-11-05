@@ -239,7 +239,7 @@
 .settings .actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:8px}
 /* Save stays reachable while the long settings form scrolls under it. */
 #settings-form .actions{position:sticky;bottom:-16px;z-index:2;margin:8px -22px -16px;padding:12px 22px 16px;
-  background:linear-gradient(#040b3600,#040b36f2 35%);}
+  background:#050c38;box-shadow:0 -12px 14px -4px #050c38;border-top:1px solid #8cacd722}
 .settings .actions .spacer{flex:1}
 .settings .primary{border-color:#8dffe0aa;color:#d9fff6;box-shadow:0 0 14px #4fd8c02e}
 /* Dialog buttons follow the 12 px field type, not the 16 px body default. */
