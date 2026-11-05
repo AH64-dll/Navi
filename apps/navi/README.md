@@ -215,6 +215,10 @@ muted during playback except for the wake detector, so Navi does not transcribe 
 own TTS output; after the interruption the rest of the command is captured without
 another wake word.
 
+When a spoken reply ends in a question ("Which one: Codex #1, Codex #2?"), Navi listens
+for the answer without the wake word: capture starts once the 0.6 s echo window after
+playback has passed and ends as no command if nobody speaks within 6 s.
+
 ### OpenCode client
 
 Navi is a real OpenCode client, not a one-shot chat bridge. `workers/opencode_gateway.py`

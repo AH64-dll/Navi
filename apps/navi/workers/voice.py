@@ -825,6 +825,7 @@ def listen(commands, playback=None, snapshot=None):
                 capture = CaptureBuffer(spotter)
                 stop_detector = StopDetector()
                 barge_in = False
+                was_speaking = follow_up = False
                 wake_hits = 0
                 wake_last = 0.0
                 last_gen = None
@@ -858,6 +859,7 @@ def listen(commands, playback=None, snapshot=None):
                         if stt_queue is not None:
                             stt_queue.remember(samples)
                         if playback.speaking():
+                            was_speaking = True
                             # BUG-060/061: while Navi talks, a wake must be
                             # confirmed by a second hit and a bare "stop"
                             # burst goes to STT as a stop-check.
@@ -892,6 +894,19 @@ def listen(commands, playback=None, snapshot=None):
                             capture.reset()
                             capture.start_recording()
                             continue
+                        if was_speaking:
+                            was_speaking = False
+                            follow_up = (playback.last_spoken.rstrip().endswith("?")
+                                         and not playback.cancel_event.is_set())
+                        # A spoken question ("Which one: Codex #1, Codex #2?")
+                        # takes its answer without another wake word, once the
+                        # echo of Navi's own voice has died down.
+                        if follow_up and not playback.recently_spoke():
+                            follow_up = False
+                            if capture.recording is None:
+                                capture.start_follow_up()
+                                clear_confirm()
+                                state("listening for your answer")
                         event = capture.feed(samples, quiet=quiet_now, overflow=overflow)
                         if event is None:
                             continue

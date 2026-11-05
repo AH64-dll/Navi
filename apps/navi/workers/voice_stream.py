@@ -167,6 +167,17 @@ class CaptureBuffer:
         self._begin()
         self._barge_in = True
 
+    def start_follow_up(self):
+        """Listen for the answer to a spoken question without a wake word.
+
+        Like a fresh wake, silence only counts against the grace window, so
+        an unanswered question ends as `no_command` instead of an empty
+        utterance.
+        """
+        self._begin()
+        self.awaiting_speech = True
+        self._barge_in = True
+
     @property
     def barge_in(self):
         return self._barge_in
