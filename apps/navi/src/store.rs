@@ -1386,6 +1386,23 @@ pub fn progress_text(graph: &Value) -> String {
             item["title"].as_str().unwrap_or("task")
         ));
     }
+    // What the newest estimate has not seen, by subject, so a harness can
+    // judge which parts moved (newest first; rows recorded with a subject).
+    let since = graph["basis"]["time"].as_u64().unwrap_or(u64::MAX);
+    let subjects: Vec<&str> = graph["signals"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|signal| signal["kind"] == "git_commit")
+        .filter(|signal| signal["time"].as_u64().is_some_and(|time| time > since))
+        .filter_map(|signal| signal["evidence"].as_str()?.strip_prefix("HEAD ")?.split_once(' '))
+        .map(|(_, subject)| subject.trim())
+        .filter(|subject| !subject.is_empty())
+        .take(5)
+        .collect();
+    if !subjects.is_empty() {
+        lines.push(format!("Recent commits: {}", subjects.join("; ")));
+    }
     for risk in graph["risks"].as_array().into_iter().flatten() {
         if let Some(risk) = risk.as_str() {
             lines.push(format!("Risk: {risk}"));
