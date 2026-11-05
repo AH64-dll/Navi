@@ -365,6 +365,8 @@ body.still .session-dot{animation:none}
   font-variant-numeric:tabular-nums;min-width:62px;text-align:right}
 .hud-percent[data-null="true"]{color:#8fb4d9}
 .hud-assess{font-size:10px;letter-spacing:.8px;padding:5px 11px}
+/* The open panel carries its own Reassess; the HUD keeps the space so it does not jump. */
+#hud-open[aria-expanded="true"]~.hud-assess{visibility:hidden}
 .hud-bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:#0a1740}
 .hud-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4fd8c0,#9fe6ff);
   box-shadow:0 0 8px #4fd8c0aa;transition:width .7s ease}
