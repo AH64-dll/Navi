@@ -4922,7 +4922,7 @@ fn named_sessions(sessions: &[Value], labels: &HashMap<String, String>, active: 
         .collect()
 }
 
-fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
+pub(crate) fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
     let mut live: Vec<&Value> = sessions.iter().filter(|session| session["running"] == true).collect();
     live.sort_by_key(|session| session["created"].as_i64().unwrap_or(0));
     let key = |session: &Value| format!("{}\u{0}{}", session["project_id"], session["name"]);

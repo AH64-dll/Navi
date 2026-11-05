@@ -338,7 +338,7 @@ def session_transitions(previous, sessions, now=None):
         if state == "busy":
             since = since if before == "busy" and since is not None else now
         states[sid] = (state, since if state == "busy" else None)
-        name = session.get("name") or "A harness"
+        name = session.get("label") or session.get("name") or "A harness"
         if before is not None and before != "needs_input" and state == "needs_input":
             waiting.append(name)
         elif before == "busy" and state == "idle" and since is not None and now - since >= DONE_AFTER:

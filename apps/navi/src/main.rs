@@ -1184,7 +1184,16 @@ impl App {
                 let mut payload = serde_json::Map::new();
                 let mut versions = serde_json::Map::new();
                 if wanted("sessions") {
-                    let sessions = Value::Array(self.sessions()?);
+                    // Each live session carries the label the strip and Navi's
+                    // replies use ("Codex #2"), so voice notices name it too.
+                    let mut sessions = self.sessions()?;
+                    let labels = chief::session_labels(&sessions);
+                    for session in &mut sessions {
+                        if let Some(label) = session["id"].as_str().and_then(|id| labels.get(id)) {
+                            session["label"] = json!(label);
+                        }
+                    }
+                    let sessions = Value::Array(sessions);
                     section(&mut payload, &mut versions, "sessions", sessions,
                         known_version("sessions"), selective);
                 }
