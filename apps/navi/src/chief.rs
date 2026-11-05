@@ -2079,8 +2079,10 @@ impl App {
         let named: Vec<&Value> = profiles
             .iter()
             .filter(|profile| {
-                mentioned(&lower, profile["name"].as_str().unwrap_or(""))
-                    || mentioned(&lower, profile["id"].as_str().unwrap_or(""))
+                // "Open two terminals", "three Codexes".
+                ["name", "id"].iter().filter_map(|key| profile[*key].as_str()).filter(|name| !name.is_empty()).any(|name| {
+                    mentioned(&lower, name) || mentioned(&lower, &format!("{name}s")) || mentioned(&lower, &format!("{name}es"))
+                })
                     // "open codex" contains the letters "open code".
                     || (profile["id"] == "opencode" && mentioned(&lower, "open code"))
             })
@@ -2112,10 +2114,31 @@ impl App {
         // with the prompt review the diff": the words after the name.
         let projects = self.projects()?;
         let prompt = launch_prompt(&text, chosen, &projects);
-        Ok(Some(match prompt {
-            Some(prompt) => json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"],"prompt":prompt}),
-            None => json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]}),
-        }))
+        // "Open two terminals", "open Codex twice": that many new sessions.
+        let words: Vec<&str> = lower.split_whitespace().collect();
+        let count = if words.contains(&"twice") {
+            2
+        } else {
+            words
+                .iter()
+                .position(|word| matches!(*word, "open" | "launch" | "start" | "create" | "spin" | "fire" | "boot"))
+                .and_then(|at| words.get(at + 1 + usize::from(matches!(words.get(at + 1), Some(&"up")))))
+                .and_then(|word| match *word {
+                    "two" | "2" => Some(2),
+                    "three" | "3" => Some(3),
+                    "four" | "4" => Some(4),
+                    _ => None,
+                })
+                .unwrap_or(1)
+        };
+        let mut action = json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]});
+        if let Some(prompt) = prompt {
+            action["prompt"] = json!(prompt);
+        }
+        if count > 1 {
+            action["count"] = json!(count);
+        }
+        Ok(Some(action))
     }
 
     /// "Tell Codex to run the tests", "ask Claude what it changed", "continue
@@ -2265,9 +2288,17 @@ impl App {
     /// last output": the last lines on that session's screen ("it" and a
     /// bare question mean the active session).
     fn screen_intent(&self, lower: &str) -> Result<Option<Value>> {
-        let mut name = None;
+        // "Read me what Codex said", "tell me what the terminal printed".
+        let reported = ["read me what ", "read what ", "tell me what ", "show me what "].iter().find_map(|lead| {
+            let rest = lower.strip_prefix(lead)?;
+            [" just said", " said", " printed", " wrote", " answered", " replied", " is saying", " is asking",
+                " says", " asked"]
+                .iter()
+                .find_map(|tail| rest.strip_suffix(tail))
+        });
+        let mut name = reported;
         for lead in ["what did ", "what does ", "what is ", "what's ", "whats "] {
-            let Some(rest) = lower.strip_prefix(lead) else {
+            let Some(rest) = lower.strip_prefix(lead).filter(|_| name.is_none()) else {
                 continue;
             };
             name = [" say last", " say", " saying", " print", " printing", " output", " show", " showing",
@@ -3435,6 +3466,30 @@ impl App {
                 let text = format!("Switched to {}.", action["name"].as_str().unwrap_or("the session"));
                 Ok(json!({"id":target,"reply":reply(None, text, json!({}))}))
             }
+            "launch" if action["count"].as_u64().is_some_and(|count| count > 1) => {
+                let count = action["count"].as_u64().unwrap_or(1).min(4);
+                let mut single = action.clone();
+                single.as_object_mut().map(|object| object.remove("count"));
+                single["new"] = json!(true);
+                let mut opened = 0;
+                let mut last = Value::Null;
+                for _ in 0..count {
+                    last = self.run_fast(clause, &single, params)?;
+                    if last["reply"]["session"].is_string() && last["error"].is_null() {
+                        opened += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if opened == count {
+                    let project_id = last["reply"]["project_id"].as_str().map(str::to_string);
+                    let harness = action["name"].as_str().unwrap_or("sessions");
+                    let project_name = project.as_ref().ok().and_then(|project| project["name"].as_str()).unwrap_or("the project");
+                    last["reply"] = reply(project_id.as_deref(), format!("Opened {count} {harness} sessions in {project_name}."),
+                        json!({"session": last["reply"]["session"]}));
+                }
+                Ok(last)
+            }
             "launch" => {
                 let project = project?;
                 let id = project["id"].as_str().unwrap_or_default().to_string();
@@ -3443,9 +3498,10 @@ impl App {
                 let name = if action["prompt"].is_string() { None } else { literal_name(clause) };
                 // "Open Codex" with Codex already open in this project brings
                 // that session forward; "a new Codex" or a name opens another.
-                let another = ["new", "another", "fresh", "second", "create", "one more"]
-                    .iter()
-                    .any(|word| mentioned(clause, word));
+                let another = action["new"] == true
+                    || ["new", "another", "fresh", "second", "create", "one more"]
+                        .iter()
+                        .any(|word| mentioned(clause, word));
                 if !another && name.is_none() && action["profile"] != "terminal" {
                     let sessions = self.sessions()?;
                     let open: Vec<&Value> = sessions
@@ -3548,6 +3604,20 @@ impl App {
         if clauses.len() > 4 {
             return Err("Use at most four explicit steps in one command".into());
         }
+        // Session ids are read before any step runs: closing Terminal #1
+        // renames Terminal #2 to "Terminal", and the second step must still
+        // find it. Other steps are read when they run ("open a new Codex and
+        // tell it …" needs the session the first step opened).
+        let early: Vec<Option<Value>> = clauses
+            .iter()
+            .map(|clause| {
+                (clauses.len() > 1)
+                    .then(|| self.fast_intent(clause).ok().flatten())
+                    .flatten()
+                    .filter(|action| action["kind"] == "session_control")
+                    .filter(|_| !["it", "this", "that"].iter().any(|word| mentioned(&clause.to_lowercase(), word)))
+            })
+            .collect();
         let pid = params["project_id"]
             .as_str()
             .and_then(|r| self.resolve_project(r).ok())
@@ -3606,7 +3676,10 @@ impl App {
         for (step, clause) in clauses.iter().map(String::as_str).enumerate() {
             let fast = match choice.take() {
                 Some(action) => Some(action),
-                None => self.fast_intent(clause)?,
+                None => match &early[step] {
+                    Some(action) => Some(action.clone()),
+                    None => self.fast_intent(clause)?,
+                },
             };
             if let Some(action) = fast {
                 let decision = json!({"selected":"fast","action":action});
