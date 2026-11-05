@@ -3514,9 +3514,27 @@ impl App {
         // "Open Claude and assess the project" is two fast steps. A clause is
         // split on "and" only when every half is a fast intent, so "write a
         // parser and its tests" still reaches the model whole.
-        let mut clauses: Vec<&str> = Vec::new();
+        let mut clauses: Vec<String> = Vec::new();
         for clause in text.split(" then ") {
-            let halves: Vec<&str> = clause.split(" and ").collect();
+            let mut halves: Vec<String> = clause.split(" and ").map(str::to_string).collect();
+            // "Close Codex #2 and Codex #1", "stop Codex and the terminal": a
+            // session verb carries over to the bare names after it.
+            if halves.len() > 1 {
+                let first = halves[0].trim_start().to_ascii_lowercase();
+                let verb = ["stop ", "interrupt ", "close ", "kill ", "quit ", "restart ", "reopen ", "resume "]
+                    .iter()
+                    .find(|verb| first.starts_with(**verb) || first.contains(&format!(" {verb}")));
+                if let Some(verb) = verb {
+                    for half in halves.iter_mut().skip(1) {
+                        if !matches!(self.fast_intent(half), Ok(Some(_))) {
+                            let carried = format!("{verb}{}", half.trim());
+                            if matches!(self.fast_intent(&carried), Ok(Some(ref action)) if action["kind"] == "session_control") {
+                                *half = carried;
+                            }
+                        }
+                    }
+                }
+            }
             if halves.len() > 1
                 && halves
                     .iter()
@@ -3524,7 +3542,7 @@ impl App {
             {
                 clauses.extend(halves);
             } else {
-                clauses.push(clause);
+                clauses.push(clause.to_string());
             }
         }
         if clauses.len() > 4 {
@@ -3559,7 +3577,7 @@ impl App {
         let mut choice = pending
             .as_ref()
             .filter(|_| steps == 1)
-            .and_then(|pending| resolve_choice(clauses[0], pending));
+            .and_then(|pending| resolve_choice(&clauses[0], pending));
         // "Switch to acme-api then assess the project": a step that switches
         // project rescopes the steps after it.
         let mut scope = params.clone();
@@ -3585,7 +3603,7 @@ impl App {
                 speech.push(reply["speech"].as_str().map_or(text, str::trim).to_string());
             }
         };
-        for (step, clause) in clauses.into_iter().enumerate() {
+        for (step, clause) in clauses.iter().map(String::as_str).enumerate() {
             let fast = match choice.take() {
                 Some(action) => Some(action),
                 None => self.fast_intent(clause)?,
