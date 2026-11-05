@@ -1335,6 +1335,15 @@ impl App {
                     "summary":store::progress_sentence(&graph),"graph":graph}))
             }
             "progress_overview" => self.progress_overview(),
+            "link_setup" => link::LINK_HARNESSES
+                .into_iter()
+                .map(|harness| {
+                    link::setup(harness).map(|(title, place, snippet)| {
+                        json!({"harness": harness, "title": title, "place": place, "snippet": snippet})
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(|harnesses| json!({"harnesses": harnesses})),
             "project_scan" => self.project_scan(p),
             "project_detect" => self.project_detect(p),
             "history" => self.history(p),
@@ -1703,6 +1712,14 @@ fn native() -> Result<()> {
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
+    // Client commands print and exit, so a closed pipe (`navid link | head`)
+    // should end them quietly; Rust's ignored SIGPIPE turns it into a panic.
+    // The daemons keep ignoring it so a vanished peer is an I/O error.
+    if !matches!(args.get(1).map(String::as_str), Some("serve" | "native")) {
+        unsafe {
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        }
+    }
     let result = match args.get(1).map(String::as_str) {
         Some("serve") => serve(),
         Some("native") => native(),

@@ -244,6 +244,15 @@
 /* Dialog buttons follow the 12 px field type, not the 16 px body default. */
 .settings button{font-size:12px;letter-spacing:.5px}
 .settings .actions button{padding:8px 16px}
+.link-outside{margin-top:12px;padding:8px 10px;border:1px solid #8cacd733;border-radius:4px;background:#02092c66}
+.link-outside>summary{cursor:pointer;font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4}
+.link-outside[open]>summary{margin-bottom:6px}
+.link-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.link-tabs button{padding:4px 10px}
+.link-tabs button[aria-pressed="true"]{border-color:#8dffe0aa;color:#d9fff6;box-shadow:0 0 10px #4fd8c02e}
+#link-snippet{margin:6px 0 8px;padding:8px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-all;
+  font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:var(--ice);background:#010622cc;border:1px solid #8cacd733;border-radius:3px}
+#link-snippet:empty{display:none}
 #diagnostics>b{display:block;font-size:10px;font-weight:400;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4}
 
 input,textarea{font:12px var(--type);color:var(--ice);background:#02092cbb;border:1px solid #8cacd766;border-radius:3px;padding:10px;min-width:0}

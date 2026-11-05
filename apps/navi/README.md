@@ -353,8 +353,11 @@ A harness started outside Navi has none of this until its own config names the s
 `navid link [claude|codex|opencode|pi]` prints that one-time setup with this binary's
 absolute path and the harness name in `NAVI_HARNESS`: a `claude mcp add` command, a
 `[mcp_servers.navi]` table for `~/.codex/config.toml`, an `mcp.navi` block for
-`opencode.json`, and the CLI instructions for Pi's `AGENTS.md`. It prints instead of
-editing those files. Started anywhere inside a registered project folder, the harness
+`opencode.json`, and the CLI instructions for Pi's `AGENTS.md`. Settings shows the same
+text under "Link a harness you start yourself", with a Copy button (daemon op
+`link_setup`). Navi prints the setup and never edits those files. A binary replaced while the
+daemon runs (an upgrade or rebuild) is named by its original path, not Linux's
+`navid (deleted)`, both here and in pane launches. Started anywhere inside a registered project folder, the harness
 then reports to that project, because the daemon resolves the project from the
 working directory.
 

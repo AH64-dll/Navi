@@ -125,7 +125,8 @@
              placeholder="en" aria-describedby="speech-note">
       <p class="hint" id="speech-note"></p>
       <label class="field" for="setting-prompt">System prompt</label>
-      <textarea id="setting-prompt" rows="6" spellcheck="false"></textarea>
+      <textarea id="setting-prompt" rows="6" spellcheck="false" aria-describedby="prompt-note"></textarea>
+      <p class="hint" id="prompt-note">The system prompt lives in OpenCode's <b>navi</b> agent and applies on the next turn. Another agent will use its own prompt instead.</p>
       <label class="field" for="setting-model">OpenCode model</label>
       <!-- A native select could blank the saved model when the catalog lacked it
            (BUG-044). This combobox searches locally, groups by provider and always
@@ -144,7 +145,14 @@
       <div id="profiles-editor" role="group" aria-labelledby="profiles-label"></div>
       <p class="hint" id="profiles-note"></p>
       <button type="button" id="profile-add">Add harness</button>
-      <p class="hint">The system prompt lives in OpenCode's <b>navi</b> agent and applies on the next turn. Another agent will use its own prompt instead.</p>
+      <details id="link-outside" class="link-outside">
+        <summary>Link a harness you start yourself</summary>
+        <p class="hint">Panes Navi opens are linked automatically. A harness started in your own terminal needs Navi in its config once; after that it reports progress to the project whose folder it runs in.</p>
+        <div class="link-tabs" id="link-tabs" role="group" aria-label="Harness"></div>
+        <p class="hint" id="link-place"></p>
+        <pre id="link-snippet" tabindex="0" aria-label="Setup snippet"></pre>
+        <button type="button" id="link-copy" disabled>Copy</button>
+      </details>
       <div class="actions">
         <button type="button" id="settings-new" title="Start a fresh OpenCode conversation for the assistant">New assistant session</button>
         <span class="spacer"></span>

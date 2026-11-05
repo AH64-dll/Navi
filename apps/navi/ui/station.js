@@ -4279,6 +4279,44 @@ element('profile-add').onclick=()=>{
   element('profiles-editor').append(row);
   row.querySelector('.profile-name').focus();
 };
+/* Setup for harnesses the user starts outside Navi: fetched once per open,
+ * since the snippets carry this daemon's binary path. */
+let linkSetups=[], linkChoice='';
+function showLinkSetup(harness) {
+  const setup=linkSetups.find(item=>item.harness===harness)||linkSetups[0];
+  if (!setup) return;
+  linkChoice=setup.harness;
+  for (const button of element('link-tabs').children) button.setAttribute('aria-pressed',String(button.dataset.harness===linkChoice));
+  element('link-place').textContent=setup.place;
+  element('link-snippet').textContent=setup.snippet;
+  element('link-copy').disabled=false;
+}
+async function fillLinkSetup() {
+  const tabs=element('link-tabs');
+  element('link-copy').disabled=true;
+  try {
+    linkSetups=(await rpc('link_setup')).harnesses||[];
+  } catch (error) {
+    linkSetups=[];
+    tabs.replaceChildren();
+    element('link-snippet').textContent='';
+    element('link-place').textContent='Could not read the setup: '+error.message;
+    return;
+  }
+  tabs.replaceChildren(...linkSetups.map(setup=>{
+    const button=document.createElement('button');
+    button.type='button'; button.dataset.harness=setup.harness; button.textContent=setup.title;
+    button.onclick=()=>showLinkSetup(setup.harness);
+    return button;
+  }));
+  const preferred=preferredProfile();
+  showLinkSetup(linkChoice||String(preferred?.executable||preferred?.id||'').split('/').pop());
+}
+element('link-outside').ontoggle=()=>{ if (element('link-outside').open) fillLinkSetup(); };
+element('link-copy').onclick=async()=>{
+  const text=element('link-snippet').textContent;
+  toast(text&&await copyText(text)?'Setup copied':'Could not copy the setup');
+};
 function openSettings() {
   if (!snapshot) { toast('Navi is still connecting'); return; }
   const settings=snapshot.settings;
@@ -4293,6 +4331,7 @@ function openSettings() {
   for (const profile of settings.profiles||[]) editor.append(profileRow(profile));
   noteProfiles();
   refreshHarnesses();
+  if (element('link-outside').open) fillLinkSetup();
   dialog.showModal();
   fillSettingsSelects(settings);
   fillDiagnostics();
@@ -4409,15 +4448,9 @@ async function fillDiagnostics() {
   const body=element('diagnostics-body');
   if (body) body.textContent=diagnosticsText();
 }
-function copyDiagnostics() {
+async function copyDiagnostics() {
   const text=`Navi diagnostics\n${diagnosticsText()}\n\n${JSON.stringify(window.navi.inspect(),null,2)}`;
-  const area=document.createElement('textarea');
-  area.value=text; area.setAttribute('readonly',''); area.style.cssText='position:fixed;top:-1000px';
-  document.body.append(area); area.select();
-  let copied=false;
-  try { copied=document.execCommand('copy'); } catch (error) { record('warn','copy diagnostics failed: '+error.message); }
-  area.remove();
-  toast(copied?'Diagnostics copied':'Could not copy diagnostics');
+  toast(await copyText(text)?'Diagnostics copied':'Could not copy diagnostics');
 }
 
 /* Panels that carry content the user reads; the stage is a measurement cell and

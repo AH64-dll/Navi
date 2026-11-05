@@ -952,7 +952,7 @@ impl App {
         // session, and harnesses that can are registered with `navid mcp`.
         // A profile opts out with `"link": false`.
         if profile["link"] != false
-            && let Ok(exe) = std::env::current_exe()
+            && let Ok(exe) = link::navid_path()
         {
             let mut link_env = BTreeMap::new();
             link_env.insert("NAVI_SESSION_ID".to_string(), target.clone());

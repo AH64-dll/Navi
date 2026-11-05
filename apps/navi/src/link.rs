@@ -12,7 +12,7 @@ use crate::{Result, rpc};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Newest MCP revision this server speaks; older ones it also accepts.
 const PROTOCOL: &str = "2025-06-18";
@@ -410,25 +410,37 @@ pub fn assessment_prompt(adapter: &str, parts: &[String], facts: &str) -> String
 
 const LINK_USAGE: &str = "navid link [claude|codex|opencode|pi]   print how to link a harness started outside Navi";
 
-/// `navid link`: the one-time setup that links a harness started outside
-/// Navi. Panes Navi opens are linked per launch; a harness started by hand
-/// needs Navi's MCP server in its own config. The daemon then resolves the
-/// project from the harness's working directory. This prints the snippets
-/// rather than editing config files, so nothing changes without the user.
-pub fn link(args: &[String]) -> Result<()> {
-    let wanted = args.first().map(String::as_str);
-    if matches!(wanted, Some("-h" | "--help")) {
-        println!("{LINK_USAGE}");
-        return Ok(());
-    }
-    let harnesses = ["claude", "codex", "opencode", "pi"];
-    if let Some(name) = wanted.filter(|name| !harnesses.contains(name)) {
-        return Err(format!("Unknown harness {name}\n{LINK_USAGE}"));
-    }
+/// This binary's path, for harness configs and pane environments. Linux
+/// reports a binary replaced while it runs (an upgrade, a rebuild) as
+/// "/path/navid (deleted)"; the replacement at the original path is the one
+/// to name, so the marker is dropped when that path still exists.
+pub fn navid_path() -> Result<PathBuf> {
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    if let Some(original) = exe.to_str().and_then(|text| text.strip_suffix(" (deleted)")) {
+        let original = PathBuf::from(original);
+        if original.is_file() {
+            return Ok(original);
+        }
+    }
+    Ok(exe)
+}
+
+/// Harnesses `navid link` knows how to set up.
+pub const LINK_HARNESSES: [&str; 4] = ["claude", "codex", "opencode", "pi"];
+
+/// The one-time setup that links a harness started outside Navi. Panes Navi
+/// opens are linked per launch; a harness started by hand needs Navi's MCP
+/// server in its own config, and the daemon then resolves the project from
+/// the harness's working directory. Returns (title, where the snippet goes,
+/// snippet). Nothing is written, so no config changes without the user.
+pub fn setup(harness: &str) -> Result<(String, String, String)> {
+    if !LINK_HARNESSES.contains(&harness) {
+        return Err(format!("Unknown harness {harness}\n{LINK_USAGE}"));
+    }
+    let exe = navid_path()?;
     let exe_text = exe.to_string_lossy().into_owned();
     // Only directory overrides in effect now; a default install needs none.
-    let station_env: BTreeMap<String, String> = ["NAVI_ISOLATED", "NAVI_DATA_DIR", "NAVI_RUNTIME_DIR"]
+    let mut env: BTreeMap<String, String> = ["NAVI_ISOLATED", "NAVI_DATA_DIR", "NAVI_RUNTIME_DIR"]
         .into_iter()
         .filter_map(|key| {
             std::env::var(key)
@@ -437,61 +449,75 @@ pub fn link(args: &[String]) -> Result<()> {
                 .map(|value| (key.to_string(), value))
         })
         .collect();
-    let env_for = |harness: &str| {
-        let mut env = station_env.clone();
-        env.insert("NAVI_HARNESS".to_string(), harness.to_string());
-        env
-    };
-    let mut sections = Vec::new();
-    for harness in harnesses.into_iter().filter(|name| wanted.is_none_or(|wanted| wanted == *name)) {
-        let env = env_for(harness);
-        let body = match harness {
-            "claude" => {
-                let flags = env
-                    .iter()
-                    .map(|(key, value)| format!("-e {key}={}", shell_word(value)))
-                    .collect::<Vec<_>>()
-                    .join(" ");
+    env.insert("NAVI_HARNESS".to_string(), harness.to_string());
+    Ok(match harness {
+        "claude" => {
+            let flags = env
+                .iter()
+                .map(|(key, value)| format!("-e {key}={}", shell_word(value)))
+                .collect::<Vec<_>>()
+                .join(" ");
+            (
+                "Claude Code".into(),
+                "Run once in a terminal, then allow the three tools under permissions.allow in ~/.claude/settings.json.".into(),
                 format!(
-                    "Claude Code: run once\n  claude mcp add --scope user navi {flags} -- {} mcp\nthen allow its tools in ~/.claude/settings.json under permissions.allow:\n  {}",
+                    "claude mcp add --scope user navi {flags} -- {} mcp\n\n\"{}\"",
                     shell_word(&exe_text),
-                    CLAUDE_TOOLS.replace(',', ", ")
-                )
-            }
-            "codex" => {
-                let table = env
-                    .iter()
-                    .map(|(key, value)| format!("{key} = {}", toml_string(value)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                    CLAUDE_TOOLS.replace(',', "\", \"")
+                ),
+            )
+        }
+        "codex" => {
+            let table = env
+                .iter()
+                .map(|(key, value)| format!("{key} = {}", toml_string(value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            (
+                "Codex".into(),
+                "Add to ~/.codex/config.toml.".into(),
                 format!(
-                    "Codex: add to ~/.codex/config.toml\n  [mcp_servers.navi]\n  command = {}\n  args = [\"mcp\"]\n  env = {{ {table} }}",
+                    "[mcp_servers.navi]\ncommand = {}\nargs = [\"mcp\"]\nenv = {{ {table} }}",
                     toml_string(&exe_text)
-                )
-            }
-            "opencode" => {
-                let config = json!({"mcp": {"navi": {
-                    "type": "local", "command": [exe_text, "mcp"], "environment": env, "enabled": true,
-                }}});
-                let pretty = serde_json::to_string_pretty(&config).unwrap_or_default();
-                format!(
-                    "OpenCode: merge into ~/.config/opencode/opencode.json\n{}",
-                    indent(&pretty)
-                )
-            }
-            _ => {
-                let mut cli: Vec<String> = env
-                    .iter()
-                    .map(|(key, value)| format!("{key}={}", shell_word(value)))
-                    .collect();
-                cli.push(shell_word(&exe_text));
-                format!(
-                    "Pi: Pi has no MCP; add this to the project's AGENTS.md (or ~/.pi/agent/AGENTS.md)\n{}",
-                    indent(&cli_instructions(&cli.join(" ")))
-                )
-            }
-        };
-        sections.push(body);
+                ),
+            )
+        }
+        "opencode" => {
+            let config = json!({"mcp": {"navi": {
+                "type": "local", "command": [exe_text, "mcp"], "environment": env, "enabled": true,
+            }}});
+            (
+                "OpenCode".into(),
+                "Merge into ~/.config/opencode/opencode.json.".into(),
+                serde_json::to_string_pretty(&config).unwrap_or_default(),
+            )
+        }
+        _ => {
+            let mut cli: Vec<String> = env
+                .iter()
+                .map(|(key, value)| format!("{key}={}", shell_word(value)))
+                .collect();
+            cli.push(shell_word(&exe_text));
+            (
+                "Pi".into(),
+                "Pi has no MCP. Add this to the project's AGENTS.md, or ~/.pi/agent/AGENTS.md for every project.".into(),
+                cli_instructions(&cli.join(" ")),
+            )
+        }
+    })
+}
+
+/// `navid link [harness]`: print `setup` for one harness or all of them.
+pub fn link(args: &[String]) -> Result<()> {
+    let wanted = args.first().map(String::as_str);
+    if matches!(wanted, Some("-h" | "--help")) {
+        println!("{LINK_USAGE}");
+        return Ok(());
+    }
+    let mut sections = Vec::new();
+    for harness in wanted.map_or(LINK_HARNESSES.to_vec(), |name| vec![name]) {
+        let (title, place, snippet) = setup(harness)?;
+        sections.push(format!("{title}: {place}\n{}", indent(&snippet)));
     }
     println!(
         "{}\n\nStart the harness inside a project Navi knows (or a folder below it); reports land on that project.",
