@@ -1680,6 +1680,17 @@ impl App {
         {
             return Ok(Some(json!({"kind":"ack","reply":"Okay."})));
         }
+        // The clock, read locally: a voice question that needs no model.
+        if matches!(bare, "what time is it" | "what's the time" | "whats the time" | "what is the time" | "time"
+            | "what time is it now" | "do you have the time")
+        {
+            return Ok(Some(json!({"kind":"ack","reply":clock_sentence(false)})));
+        }
+        if matches!(bare, "what's the date" | "whats the date" | "what is the date" | "what's today's date"
+            | "what day is it" | "what day is it today" | "what's the date today" | "what is today" | "date")
+        {
+            return Ok(Some(json!({"kind":"ack","reply":clock_sentence(true)})));
+        }
         // Station dialogs: the reply carries the action the window takes.
         let dialog = match bare {
             "settings" | "open settings" | "open the settings" | "show settings" | "show the settings"
@@ -3694,6 +3705,33 @@ fn routes_to_conversation(kind: &str) -> bool {
 // Strip a leading wake phrase before an utterance goes to the conversation
 // bridge: "hey navi, what is X" and "navi what is X" both become "what is X".
 // A bare wake word keeps the original text so the bridge still gets a request.
+/// "It's 4:05 PM." or "It's Thursday, November 5, 2026.", in local time.
+fn clock_sentence(date: bool) -> String {
+    let seconds = (now() / 1000) as libc::time_t;
+    // SAFETY: `localtime_r` writes only into the `tm` it is given.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&seconds, &mut tm) }.is_null() {
+        return "I cannot read the clock.".to_string();
+    }
+    if date {
+        const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August",
+            "September", "October", "November", "December"];
+        return format!(
+            "It's {}, {} {}, {}.",
+            DAYS[tm.tm_wday.clamp(0, 6) as usize],
+            MONTHS[tm.tm_mon.clamp(0, 11) as usize],
+            tm.tm_mday,
+            tm.tm_year + 1900
+        );
+    }
+    let hour = match tm.tm_hour % 12 {
+        0 => 12,
+        hour => hour,
+    };
+    format!("It's {hour}:{:02} {}.", tm.tm_min, if tm.tm_hour < 12 { "AM" } else { "PM" })
+}
+
 fn conversational_text(text: &str) -> String {
     // Wake words and spoken fillers lead the request: "Hey Navi. Stop Codex.",
     // "um, open a terminal", "okay Navi, what's left".

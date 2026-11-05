@@ -456,6 +456,7 @@ model and without the assistant:
 | "Reopen Codex", "resume terminal", "reopen Codex #2" | Reopens a finished session from Recent (newest first, this project first) under its old name; a harness that recorded its conversation id continues that conversation. Clicking a finished chip does the same. When nothing finished matches but that session is open, Navi says so; otherwise the words go on to "reopen <task>" |
 | "Help", "what can you do", `/help` | Lists what Navi answers without a model |
 | "Thanks", "never mind", "cancel", "forget it" | A short acknowledgement, without waking the assistant |
+| "What time is it", "what's the date" | The local time or date |
 | "Navi?", "hello", "um" | Only a wake word, greeting or filler: Navi asks what you need (spoken, so the answer needs no wake word) |
 | "Open settings", "add a project" | Opens that dialog in the station window |
 | "Stop listening", "turn off the mic", "mute", "stop talking", "speak replies" | Turns the microphone off (or on, outside isolated mode) or the spoken replies off or on; muting also cuts a reply being read out |
