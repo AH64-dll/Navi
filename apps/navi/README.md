@@ -394,7 +394,9 @@ number at once and adds one feed row ("Claude Code put Voice at 60% — evidence
 A percent outside 0–100 is refused rather than clamped (a slip such as `180` would
 otherwise read as finished), evidence must name something, and task states also
 accept `finished`/`complete` (done), `started`/`wip` (in progress), `open` (todo) and
-`stuck` (blocked).
+`stuck` (blocked). A part name matches loosely ("station-ui" and "Station UI part" are
+Station UI); a report that creates a new part says so and lists the existing ones, since a
+new part is often a misspelt old one.
 
 A harness started outside Navi has none of this until its own config names the server.
 `navid link [claude|codex|opencode|pi]` prints that one-time setup with this binary's

@@ -2235,6 +2235,29 @@ impl App {
         if let Some(found) = found {
             return Ok(Some(found));
         }
+        // "station-ui", "Station UI part", "Stations UI": the same part, so
+        // a harness's spelling does not split it in two.
+        let loose = |text: &str| {
+            let mut word: String = text.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+            if let Some(stem) = word.strip_suffix("part") {
+                word = stem.to_string();
+            }
+            word.trim_end_matches('s').to_string()
+        };
+        let wanted = loose(&name);
+        let mut statement = state
+            .db
+            .prepare("SELECT id,title FROM aspects WHERE project_id=?1 ORDER BY created")
+            .map_err(|error| error.to_string())?;
+        let close: Option<(String, String)> = statement
+            .query_map([project_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .map_err(|error| error.to_string())?
+            .filter_map(|row| row.ok())
+            .find(|(_, title)| !wanted.is_empty() && loose(title) == wanted);
+        drop(statement);
+        if let Some(found) = close {
+            return Ok(Some(found));
+        }
         if !create {
             return Err(format!("No part named “{name}”"));
         }
@@ -2259,6 +2282,20 @@ impl App {
             )
             .map_err(|error| error.to_string())?;
         Ok(Some((id, name)))
+    }
+
+    fn part_titles(&self, project_id: &str) -> Result<Vec<String>> {
+        let state = self.state.lock().unwrap();
+        let mut statement = state
+            .db
+            .prepare("SELECT title FROM aspects WHERE project_id=?1 ORDER BY created")
+            .map_err(|error| error.to_string())?;
+        let titles = statement
+            .query_map([project_id], |row| row.get(0))
+            .map_err(|error| error.to_string())?
+            .filter_map(|row| row.ok())
+            .collect();
+        Ok(titles)
     }
 
     /// Find a task by id or title (same part first), creating it when allowed.
@@ -2375,7 +2412,12 @@ impl App {
         {
             return Err("state must be todo, in_progress, done, or blocked".into());
         }
+        let parts_before = self.part_titles(&project_id)?;
         let aspect = self.progress_aspect(&project_id, p, create)?;
+        let created_part = aspect
+            .as_ref()
+            .filter(|(_, title)| !parts_before.iter().any(|known| known == title))
+            .map(|(_, title)| title.clone());
         let mut aspect_id = aspect.as_ref().map(|(id, _)| id.clone());
         let wants_task = [&p["task_id"], &p["task"]]
             .into_iter()
@@ -2504,6 +2546,14 @@ impl App {
         let mut result = details;
         result["recorded"] = json!(true);
         result["message"] = json!(message);
+        // A new part is often a misspelt old one: say so, and name the others.
+        if let Some(title) = created_part {
+            let others = if parts_before.is_empty() { "none".to_string() } else { parts_before.join(", ") };
+            result["note"] = json!(match result["note"].as_str() {
+                Some(note) => format!("{note}. This created a new part “{title}” (existing parts: {others})"),
+                None => format!("This created a new part “{title}” (existing parts: {others})"),
+            });
+        }
         result["summary"] = json!(progress_sentence(&graph));
         Ok(result)
     }
