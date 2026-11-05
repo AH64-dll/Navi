@@ -1496,7 +1496,11 @@ impl App {
         ]
         .iter()
         .chain(RECENT_PHRASES.iter())
-        .any(|phrase| lower.contains(phrase));
+        .any(|phrase| lower.contains(phrase))
+            // "Is the voice part done?" asks about one part.
+            || (lower.starts_with("is the ")
+                && mentioned(&lower, "part")
+                && ["done", "finished", "complete"].iter().any(|word| lower.ends_with(word)));
         let core = [" for ", " of ", " in ", " on "]
             .iter()
             .filter_map(|marker| lower.find(marker))
