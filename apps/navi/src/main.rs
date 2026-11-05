@@ -1,5 +1,7 @@
 mod adapters;
 mod chief;
+mod detector;
+mod link;
 mod sessions;
 mod store;
 
@@ -29,8 +31,9 @@ const TERMINAL_LIMIT: usize = 16;
 /// immediately instead of waiting for the next poll (BUG-098/099).
 const EVENT_PAGE: usize = 500;
 
-pub const DEFAULT_NAVI_PROMPT: &str = "You are Navi, the user's coding agent on their own machine. Your name is Navi; that is your only name. Begin every reply with one plain spoken sentence that says what you did or what you need — the voice system reads only that line aloud. After it, answer with readable markdown: fenced code blocks, diffs, and lists are all welcome. Work inside the project directory you are given and never touch files outside it. Use the tools OpenCode provides for real work: read, edit, run, verify. Never state a completion percentage and never claim progress you have not verified.";
-const LEGACY_NAVI_PROMPTS: [&str; 2] = [
+pub const DEFAULT_NAVI_PROMPT: &str = "You are Navi, the user's coding agent on their own machine. Your name is Navi; that is your only name. Begin every reply with one plain spoken sentence that says what you did or what you need — the voice system reads only that line aloud. After it, answer with readable markdown: fenced code blocks, diffs, and lists are all welcome. Work inside the project directory you are given and never touch files outside it. Use the tools OpenCode provides for real work: read, edit, run, verify. Navi tracks how complete each project is. When you are asked how far along the project is, or you finish work that changes it, inspect the code and give your honest estimate, then end the reply with one line per part and one overall line in exactly this form: PROGRESS part \"<part>\" <percent> | <what you checked> and PROGRESS overall <percent> | <what you checked>. Navi records those lines. Base every number on what you read or ran; untested or stubbed work is not done.";
+const LEGACY_NAVI_PROMPTS: [&str; 3] = [
+    "You are Navi, the user's coding agent on their own machine. Your name is Navi; that is your only name. Begin every reply with one plain spoken sentence that says what you did or what you need — the voice system reads only that line aloud. After it, answer with readable markdown: fenced code blocks, diffs, and lists are all welcome. Work inside the project directory you are given and never touch files outside it. Use the tools OpenCode provides for real work: read, edit, run, verify. Never state a completion percentage and never claim progress you have not verified.",
     "You are Navi, the user's voice assistant on their own machine. Your name is Navi; that is your only name. Answer directly and concisely — one to three short sentences unless the user asks for detail. Plain prose: no markdown, no code blocks, no emoji, because your replies may be spoken aloud. You run inside the Navi desktop app and OpenCode provides your tools; use them when a request needs real work on the machine.",
     "You are Navi, the user's voice assistant on their own machine. Your name is Navi; you are not Jarvis and have no other persona name. Answer directly and concisely — one to three short sentences unless the user asks for detail. Plain prose: no markdown, no code blocks, no emoji, because your replies may be spoken aloud. You run inside the Navi desktop app and OpenCode provides your tools; use them when a request needs real work on the machine.",
 ];
@@ -58,6 +61,8 @@ pub struct State {
 }
 
 pub struct App {
+    /// Weak self-reference so request handlers can start background work.
+    me: std::sync::Weak<App>,
     state: Mutex<State>,
     pub root: PathBuf,
     pub data: PathBuf,
@@ -210,6 +215,7 @@ impl App {
             "profiles":[{"id":"codex","name":"Codex","executable":"codex","args":[]},
                 {"id":"claude","name":"Claude Code","executable":"claude","args":[]},
                 {"id":"pi","name":"Pi","executable":"pi","args":[]},
+                {"id":"opencode","name":"OpenCode","executable":"opencode","args":[]},
                 {"id":"terminal","name":"Terminal","executable":"/bin/bash","args":[]}],
             "projects":[{"name":"Navi","path":PathBuf::from(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("Missing project root")?}],
             "favorites":[], "shortcuts":{"focus":"F10","fullscreen":"F11"}
@@ -297,7 +303,8 @@ impl App {
         let root = PathBuf::from(
             std::env::var("NAVI_APP_DIR").unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").into()),
         );
-        let app = Arc::new(Self {
+        let app = Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             state: Mutex::new(State {
                 db,
                 boot_id,
@@ -1275,6 +1282,16 @@ impl App {
             "plan_set" => self.set_plan(p),
             "checkpoint_add" => self.add_checkpoint(p),
             "progress_claim" => self.progress_claim(p),
+            "progress_report" => self.progress_report(p),
+            "progress_get" => {
+                let project_id = self.progress_project(p)?;
+                let graph = self.graph_get(Some(&project_id))?;
+                Ok(json!({"project_id":project_id,"text":store::progress_text(&graph),
+                    "summary":store::progress_sentence(&graph),"graph":graph}))
+            }
+            "progress_overview" => self.progress_overview(),
+            "project_scan" => self.project_scan(p),
+            "project_detect" => self.project_detect(p),
             "history" => self.history(p),
             "message_save" => self.save_message(p),
             "messages" => self.messages(p),
@@ -1625,6 +1642,8 @@ fn main() {
     let result = match args.get(1).map(String::as_str) {
         Some("serve") => serve(),
         Some("native") => native(),
+        Some("mcp") => link::mcp(),
+        Some("progress") => link::progress(&args[2..]),
         Some("rpc") => serde_json::from_str(
             args.get(2)
                 .map(String::as_str)
@@ -1634,7 +1653,7 @@ fn main() {
         .and_then(rpc)
         .map(|value| println!("{value}")),
         _ => {
-            println!("navid serve | native | rpc '<JSON request>'");
+            println!("navid serve | native | mcp | progress [report|task] | rpc '<JSON request>'");
             Ok(())
         }
     };

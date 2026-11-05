@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 /// Coalescing window for the live answer: at most one `reply_delta` per window,
@@ -13,6 +13,8 @@ use std::time::Duration;
 /// handful of replace-events instead of overflowing the client (BUG-098).
 const DELTA_FLUSH_MS: u64 = 120;
 const DELTA_FLUSH_CHARS: usize = 240;
+/// When the "decision model unavailable" warning was last shown.
+static CHIEF_FALLBACK_WARNED: AtomicU64 = AtomicU64::new(0);
 
 pub struct PersonaSwitch {
     pub name: String,
@@ -181,7 +183,6 @@ impl App {
     }
 
     pub fn decide(&self, text: &str, generation: u64) -> Result<Value> {
-        self.ensure_chief(generation)?;
         let settings = self.settings();
         let sessions = self.sessions()?;
         let (browser, desktop) = {
@@ -416,6 +417,13 @@ impl App {
                 }
             }
         }
+        // Nothing grounded to act on: the answer is conversation, and asking
+        // the local model would only add latency (or fail when it is absent).
+        if actions.is_empty() || frozen {
+            return Ok(json!({"selected":"noop","action":{"kind":"noop"},"elapsed_ms":0,
+                "raw":null,"skipped":true}));
+        }
+        self.ensure_chief(generation)?;
         questions.insert("noop".into(),json!({"type":"noul","instructions":"Is this a greeting, conversation, cancellation, negated request, or request to keep the current state, requiring no action?"}));
         // Plain text and bounded questions keep session identifiers, browser
         // content and screenshots out of ordinary launch/switch inference.
@@ -1209,13 +1217,19 @@ impl App {
                         turn.id.as_str(), session, &model_ref, &agent_ref,
                     );
                 }
+                // The assistant reports progress as PROGRESS lines; recording
+                // them here links every chat answer to the project graph.
+                let recorded = done["text"]
+                    .as_str()
+                    .map(|text| self.record_progress_lines(&turn.id, text).unwrap_or(0))
+                    .unwrap_or(0);
                 let reply = json!({"text":done["text"],"persona":persona,
                     "source":done["source"],"session":done["session"],
                     "usage":done["usage"],"session_usage":done["session_usage"],
                     "finish":done["finish"],"actual_model":done["actual_model"],
                     "actual_agent":done["actual_agent"],"warnings":done["warnings"],
                     "attachments":done["attachments"],"project_id":turn.id,
-                    "turn":done["turn"]});
+                    "turn":done["turn"],"progress_recorded":recorded});
                 self.event_for(
                     Some(turn.id.as_str()),
                     done["session"].as_str(),
@@ -1301,6 +1315,309 @@ impl App {
         }
     }
 
+    /// Background assessment by Navi's own assistant when no harness runs in
+    /// the project. It waits behind any running turn like a queued command;
+    /// `converse` records the reply's PROGRESS lines.
+    pub(crate) fn assistant_assessment(&self, params: &Value, prompt: &str) -> Result<()> {
+        let _lock = self
+            .command_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let generation = self.generation.load(Ordering::SeqCst);
+        let turn = self.assistant_turn(params)?;
+        self.event_for(
+            Some(turn.id.as_str()),
+            None,
+            "working",
+            "Assessing project progress",
+            json!({"text":"Assess project progress"}),
+        );
+        let reply = self.converse(prompt, &turn, generation)?;
+        if reply["stopped"] != true && reply["progress_recorded"].as_u64() == Some(0) {
+            self.event_for(
+                Some(turn.id.as_str()),
+                None,
+                "warning",
+                "The assistant answered without PROGRESS lines, so no estimate was recorded",
+                json!({}),
+            );
+        }
+        Ok(())
+    }
+
+    /// Which project a command is about: one it names, else the project
+    /// selected in the UI, else the only project.
+    fn command_project(&self, text: &str, params: &Value) -> Result<Value> {
+        let projects = self.projects()?;
+        let spoken = conversational_text(text).to_lowercase();
+        for marker in [" in ", " for ", " on ", " of "] {
+            let Some((_, suffix)) = spoken.rsplit_once(marker) else {
+                continue;
+            };
+            let target = suffix
+                .split(" called ")
+                .next()
+                .unwrap_or_default()
+                .split(" named ")
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .trim_end_matches(['.', ',', '!', '?'])
+                .trim_end_matches(" please")
+                .trim();
+            let target = target.strip_prefix("the ").unwrap_or(target);
+            let target = target.strip_suffix(" project").unwrap_or(target).trim();
+            if let Some(project) = projects.iter().find(|project| {
+                project["name"]
+                    .as_str()
+                    .is_some_and(|name| name.to_lowercase() == target)
+            }) {
+                return Ok(project.clone());
+            }
+        }
+        let named: Vec<&Value> = projects
+            .iter()
+            .filter(|project| mentioned(&spoken, project["name"].as_str().unwrap_or("")))
+            .collect();
+        if named.len() == 1 {
+            return Ok(named[0].clone());
+        }
+        if let Some(reference) = params["project_id"].as_str().filter(|value| !value.trim().is_empty())
+            && let Ok(project) = self.resolve_project(reference)
+        {
+            return Ok(project);
+        }
+        match projects.len() {
+            1 => Ok(projects[0].clone()),
+            0 => Err("Add a project first".into()),
+            _ => Err("Say which project, for example “in Navi”".into()),
+        }
+    }
+
+    /// Deterministic commands that need no decision model: open a harness,
+    /// switch to a session, ask for or set progress, run the detector. `None`
+    /// leaves the clause to the model and the conversation bridge.
+    fn fast_intent(&self, clause: &str) -> Result<Option<Value>> {
+        let text = conversational_text(clause);
+        let lower = text
+            .to_lowercase()
+            .trim()
+            .trim_end_matches(['.', '!', '?'])
+            .trim()
+            .to_string();
+        if lower.is_empty() || negated(&lower) {
+            return Ok(None);
+        }
+        let short = lower.split_whitespace().count() <= 14;
+        if short && let Some((part, percent)) = parse_set_progress(&lower) {
+            return Ok(Some(json!({"kind":"progress_set","part":part,"percent":percent})));
+        }
+        let asking = [
+            "how far along", "how far are we", "how far is", "how much is done", "how much of",
+            "how complete", "how close", "how much is left", "how much left", "what percent",
+            "what percentage", "progress report", "what's the progress", "what is the progress",
+            "whats the progress", "project status", "status of the project", "show progress",
+            "show the progress", "show me the progress", "open the progress", "open progress",
+            "check progress", "check the progress", "how is the project", "how's the project",
+            "how are we doing",
+        ]
+        .iter()
+        .any(|phrase| lower.contains(phrase));
+        let core = [" for ", " of ", " in ", " on "]
+            .iter()
+            .filter_map(|marker| lower.find(marker))
+            .min()
+            .map_or(lower.as_str(), |cut| &lower[..cut]);
+        let last = core.split_whitespace().last().unwrap_or_default();
+        let strong = ["progress", "completion", "percent", "percentage", "detector"]
+            .iter()
+            .any(|word| mentioned(&lower, word))
+            && progress_subject(&lower);
+        let whole = matches!(last, "project" | "repo" | "repository" | "codebase" | "progress"
+            | "completion" | "detector" | "percentage");
+        let assess = ["detect", "assess", "reassess", "re-assess", "evaluate", "analyze",
+            "analyse", "scan", "estimate", "re-estimate", "reestimate"]
+            .iter()
+            .any(|word| mentioned(&lower, word));
+        let refresh = ["update", "refresh", "recheck", "re-check", "recompute", "measure", "run"]
+            .iter()
+            .any(|word| mentioned(&lower, word));
+        if short
+            && !asking
+            && ((assess && whole) || (refresh && strong && whole) || lower.contains("progress check"))
+        {
+            return Ok(Some(json!({"kind":"detect"})));
+        }
+        if short && asking && progress_subject(&lower) {
+            let show = ["show", "open", "display"].iter().any(|word| mentioned(&lower, word));
+            return Ok(Some(json!({"kind":"progress","show":show})));
+        }
+        if !immediate_request(clause) {
+            return Ok(None);
+        }
+        let settings = self.settings();
+        let switching = ["switch", "go back", "return to", "select", "focus"]
+            .iter()
+            .any(|word| mentioned(&lower, word));
+        let resuming = ["resume", "continue", "existing"]
+            .iter()
+            .any(|word| mentioned(&lower, word));
+        let launching = ["open", "launch", "start", "create", "new", "fresh", "bring up"]
+            .iter()
+            .any(|word| mentioned(&lower, word));
+        if switching && !resuming {
+            let sessions = self.sessions()?;
+            let matched: Vec<&Value> = sessions
+                .iter()
+                .filter(|session| {
+                    session["running"] == true
+                        && mentioned(&lower, session["name"].as_str().unwrap_or(""))
+                })
+                .collect();
+            if matched.len() == 1 {
+                return Ok(Some(json!({"kind":"switch","id":matched[0]["id"],
+                    "name":matched[0]["name"]})));
+            }
+            return Ok(None);
+        }
+        if !launching || resuming {
+            return Ok(None);
+        }
+        let profiles = settings["profiles"].as_array().cloned().unwrap_or_default();
+        let named: Vec<&Value> = profiles
+            .iter()
+            .filter(|profile| {
+                mentioned(&lower, profile["name"].as_str().unwrap_or(""))
+                    || mentioned(&lower, profile["id"].as_str().unwrap_or(""))
+                    || (profile["id"] == "opencode" && lower.contains("open code"))
+            })
+            .collect();
+        let specific: Vec<&Value> = named
+            .iter()
+            .copied()
+            .filter(|profile| profile["id"] != "terminal")
+            .collect();
+        let chosen = match (specific.len(), named.len()) {
+            (1, _) => specific[0],
+            (0, 1) => named[0],
+            _ => return Ok(None),
+        };
+        Ok(Some(json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]})))
+    }
+
+    /// Run one fast intent and answer it the way a model reply would arrive:
+    /// a `reply` event for the chat and `result.reply` for voice.
+    fn run_fast(&self, clause: &str, action: &Value, params: &Value) -> Result<Value> {
+        let project = self.command_project(clause, params);
+        let reply = |project_id: Option<&str>, text: String, extra: Value| -> Value {
+            let (persona, _, _) = self.assistant_target();
+            let mut reply = json!({"text":text,"persona":persona,"source":"navi","project_id":project_id});
+            if let (Some(target), Some(extra)) = (reply.as_object_mut(), extra.as_object()) {
+                for (key, value) in extra {
+                    target.insert(key.clone(), value.clone());
+                }
+            }
+            self.event_for(project_id, None, "reply", &text, reply.clone());
+            reply
+        };
+        match action["kind"].as_str().unwrap_or_default() {
+            "progress" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let graph = self.graph_get(Some(&id))?;
+                let mut text = store::progress_sentence(&graph);
+                if graph["percent"].is_null() {
+                    text.push_str(" Say “assess the project” and I will ask a harness to judge it.");
+                }
+                let extra = json!({"action": if action["show"] == true { "show_graph" } else { "" },
+                    "percent": graph["percent"]});
+                Ok(json!({"reply": reply(Some(&id), text, extra)}))
+            }
+            "detect" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let result = self.project_detect(&json!({"project_id": id}))?;
+                let text = result["message"].as_str().unwrap_or("Assessment started.").to_string();
+                Ok(json!({"detect": {"via": result["via"], "started": result["started"]},
+                    "reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+            }
+            "progress_set" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let evidence: String = clause.trim().chars().take(200).collect();
+                let part = action["part"].as_str().filter(|part| {
+                    !project["name"]
+                        .as_str()
+                        .is_some_and(|name| name.eq_ignore_ascii_case(part))
+                });
+                let result = self.progress_report(&json!({
+                    "project_id": id,
+                    "aspect": part,
+                    "percent": action["percent"],
+                    "evidence": format!("user said: {evidence}"),
+                    "confidence": 1.0,
+                    "source": "user",
+                    "create": false,
+                }));
+                let text = match result {
+                    Ok(result) => {
+                        let target = result["aspect"].as_str().unwrap_or("The project");
+                        format!(
+                            "{target} is now at {}%. {}",
+                            action["percent"].as_f64().unwrap_or(0.0).round(),
+                            result["summary"].as_str().unwrap_or("")
+                        )
+                    }
+                    Err(error) => {
+                        let graph = self.graph_get(Some(&id))?;
+                        let parts: Vec<&str> = graph["aspects"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|aspect| aspect["title"].as_str())
+                            .collect();
+                        if parts.is_empty() {
+                            format!("{error}. This project has no parts yet.")
+                        } else {
+                            format!("{error}. Parts: {}.", parts.join(", "))
+                        }
+                    }
+                };
+                Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+            }
+            "switch" => {
+                let target = action["id"].as_str().ok_or("Missing session")?;
+                self.session_target(&json!({"id":target}))?;
+                let text = format!("Switched to {}.", action["name"].as_str().unwrap_or("the session"));
+                Ok(json!({"id":target,"reply":reply(None, text, json!({}))}))
+            }
+            "launch" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let path = project["path"].as_str().unwrap_or_default();
+                let name = literal_name(clause);
+                let session = self.create_session(
+                    &json!({"profile":action["profile"],"cwd":path,"name":name}),
+                )?;
+                let harness = action["name"].as_str().unwrap_or("The harness");
+                let project_name = project["name"].as_str().unwrap_or("the project");
+                let text = if session["ok"] == false {
+                    format!(
+                        "{harness} exited right after it started in {project_name}. {}",
+                        session["error"].as_str().unwrap_or("")
+                    )
+                } else {
+                    format!("Opened {harness} in {project_name}.")
+                };
+                let mut result = session.clone();
+                result["ok"] = json!(true);
+                result["reply"] = reply(Some(&id), text, json!({"session": session["id"]}));
+                Ok(result)
+            }
+            other => Err(format!("Unknown fast intent {other}")),
+        }
+    }
+
     pub fn run_command(&self, text: &str, params: &Value, dry: bool, generation: u64) -> Result<Value> {
         let clauses = text.split(" then ").collect::<Vec<_>>();
         if clauses.len() > 4 {
@@ -1320,7 +1637,46 @@ impl App {
         let mut trace = Vec::new();
         let mut reply = Value::Null;
         for clause in clauses {
-            let decision = self.decide(clause, generation)?;
+            if let Some(action) = self.fast_intent(clause)? {
+                let decision = json!({"selected":"fast","action":action});
+                if dry {
+                    trace.push(decision);
+                    continue;
+                }
+                let result = self.run_fast(clause, &action, params)?;
+                if let Some(r) = result.get("reply").filter(|r| !r.is_null()) {
+                    reply = r.clone();
+                }
+                self.event(
+                    "command",
+                    "Command completed",
+                    json!({"decision":decision,"result":result}),
+                );
+                trace.push(json!({"decision":decision,"result":result}));
+                continue;
+            }
+            let decision = match self.decide(clause, generation) {
+                Ok(decision) => decision,
+                // Without the local decision model the clause is answered as
+                // conversation; the fast path above still opens harnesses and
+                // handles progress. One warning per ten minutes says why.
+                Err(error)
+                    if !error.contains("stopped")
+                        && self.generation.load(Ordering::SeqCst) == generation =>
+                {
+                    let last = CHIEF_FALLBACK_WARNED.load(Ordering::SeqCst);
+                    if now().saturating_sub(last) > 600_000 {
+                        CHIEF_FALLBACK_WARNED.store(now(), Ordering::SeqCst);
+                        self.event(
+                            "warning",
+                            &format!("Local decision model unavailable ({error}). Navi answers as conversation and still opens harnesses and handles progress directly."),
+                            json!({"error":error}),
+                        );
+                    }
+                    json!({"selected":"noop","action":{"kind":"noop"},"fallback":error})
+                }
+                Err(error) => return Err(error),
+            };
             if self.generation.load(Ordering::SeqCst) != generation {
                 return Err("Command stopped before execution".into());
             }
@@ -1341,11 +1697,10 @@ impl App {
             } else {
                 match kind {
                     "launch" => {
-                        let settings = self.settings();
-                        let cwd = project_for(clause, &settings)?;
+                        let project = self.command_project(clause, params)?;
                         let name = literal_name(clause);
                         self.create_session(
-                            &json!({"profile":action["profile"],"cwd":cwd,"name":name}),
+                            &json!({"profile":action["profile"],"cwd":project["path"],"name":name}),
                         )?
                     }
                     "switch" => {
@@ -1842,6 +2197,79 @@ fn project_for(text: &str, settings: &Value) -> Result<Value> {
     } else {
         Ok(projects.first().ok_or("Add a project in settings")?["path"].clone())
     }
+}
+
+/// "progress" as the subject, not a modifier: "the progress of Navi" counts,
+/// "the progress bar" does not.
+fn progress_subject(lower: &str) -> bool {
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|word| !word.is_empty())
+        .collect();
+    words.iter().enumerate().all(|(index, word)| {
+        !matches!(*word, "progress" | "completion")
+            || words.get(index + 1).is_none_or(|next| {
+                matches!(
+                    *next,
+                    "of" | "on" | "for" | "in" | "so" | "now" | "today" | "overall" | "report"
+                        | "status" | "check" | "please" | "is" | "looks" | "look"
+                )
+            })
+    })
+}
+
+/// "set the UI to 80 percent", "mark voice at 40%", "the UI is 70 percent
+/// done", "put storage at 25%". Returns the part (`None` is the whole
+/// project) and the percent.
+fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
+    let words: Vec<&str> = lower.split_whitespace().collect();
+    let (index, number) = words.iter().enumerate().find_map(|(index, word)| {
+        let value: f64 = word.trim_end_matches('%').parse().ok()?;
+        let marked = word.ends_with('%')
+            || words
+                .get(index + 1)
+                .is_some_and(|next| next.starts_with("percent"));
+        (marked && (0.0..=100.0).contains(&value)).then_some((index, value))
+    })?;
+    let before = words[..index].join(" ");
+    let name = if let Some(rest) = before.strip_prefix("set ") {
+        rest.strip_suffix(" to")
+            .or_else(|| rest.strip_suffix(" at"))?
+    } else if let Some(rest) = before
+        .strip_prefix("mark ")
+        .or_else(|| before.strip_prefix("put "))
+    {
+        rest.strip_suffix(" at")
+            .or_else(|| rest.strip_suffix(" as"))
+            .or_else(|| rest.strip_suffix(" to"))
+            .unwrap_or(rest)
+    } else {
+        before
+            .strip_suffix(" is at")
+            .or_else(|| before.strip_suffix(" is"))
+            .or_else(|| before.strip_suffix(" are at"))
+            .or_else(|| before.strip_suffix(" are"))?
+    };
+    let name = name.trim();
+    let name = name.strip_prefix("the ").unwrap_or(name);
+    let name = ["progress of ", "progress for ", "completion of "]
+        .iter()
+        .find_map(|prefix| name.strip_prefix(prefix))
+        .unwrap_or(name);
+    let name = ["'s progress", " progress", " completion"]
+        .iter()
+        .find_map(|suffix| name.strip_suffix(suffix))
+        .unwrap_or(name);
+    let name = name.strip_prefix("the ").unwrap_or(name).trim();
+    if name.is_empty() || name.split_whitespace().count() > 5 {
+        return None;
+    }
+    let whole = matches!(
+        name,
+        "project" | "whole project" | "this project" | "overall" | "everything" | "it" | "this"
+            | "progress" | "completion" | "we" | "we're" | "i" | "us" | "all"
+    );
+    Some((if whole { None } else { Some(name.to_string()) }, number))
 }
 
 fn literal_name(text: &str) -> Option<String> {

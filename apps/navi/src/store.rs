@@ -490,7 +490,8 @@ pub fn insert_signal(
 }
 
 struct TaskScore {
-    aspect_id: Option<String>,
+    id: String,
+    title: String,
     state: String,
     weight: f64,
     score: f64,
@@ -498,10 +499,12 @@ struct TaskScore {
     verified: bool,
     covered: bool,
     unknown: bool,
+    kind: String,
+    source: String,
+    time: u64,
 }
 
 struct SignalRow {
-    _id: i64,
     kind: String,
     source: String,
     value: Option<f64>,
@@ -509,75 +512,207 @@ struct SignalRow {
     time: u64,
 }
 
-fn score_task(db: &Connection, task_id: &str, at: u64) -> Result<(TaskScore, String)> {
+/// Evidence that does not rest on a model's opinion: the user's own verdict, a
+/// test run, a commit, or a recorded checkpoint. Estimates move the number but
+/// never count as verified.
+fn verified_kind(kind: &str, source: &str) -> bool {
+    source != "assistant"
+        && matches!(
+            kind,
+            "verdict" | "test_pass" | "test_fail" | "commit" | "checkpoint" | "git_commit"
+        )
+}
+
+/// Ten-day half-life: old evidence fades instead of expiring.
+fn freshness_at(at: u64, time: u64) -> f64 {
+    0.5_f64.powf(at.saturating_sub(time) as f64 / 86_400_000.0 / 10.0)
+}
+
+fn round3(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
+}
+
+fn score_task(db: &Connection, task_id: &str, at: u64) -> Result<TaskScore> {
     let mut statement = db
         .prepare(
-            "SELECT id,kind,source,value,confidence,time FROM signals
+            "SELECT kind,source,value,confidence,time FROM signals
              WHERE task_id=?1 ORDER BY time DESC, id DESC",
         )
         .map_err(|error| error.to_string())?;
     let signals = statement
         .query_map([task_id], |row| {
             Ok(SignalRow {
-                _id: row.get(0)?,
-                kind: row.get(1)?,
-                source: row.get(2)?,
-                value: row.get(3)?,
-                confidence: row.get(4)?,
-                time: row.get(5)?,
+                kind: row.get(0)?,
+                source: row.get(1)?,
+                value: row.get(2)?,
+                confidence: row.get(3)?,
+                time: row.get(4)?,
             })
         })
         .map_err(|error| error.to_string())?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
+    let mut score = TaskScore {
+        id: task_id.to_string(),
+        title: String::new(),
+        state: String::new(),
+        weight: 1.0,
+        score: 0.0,
+        freshness: 0.0,
+        verified: false,
+        covered: false,
+        unknown: true,
+        kind: String::new(),
+        source: String::new(),
+        time: 0,
+    };
+    // The user's verdict is final; otherwise the newest signal decides.
     let verdict = signals
         .iter()
         .find(|signal| signal.kind == "verdict" && signal.source == "user");
-    let chosen = verdict.or_else(|| signals.first());
-    let Some(chosen) = chosen else {
-        return Ok((
-            TaskScore {
-                aspect_id: None,
-                state: String::new(),
-                weight: 1.0,
-                score: 0.0,
-                freshness: 0.0,
-                verified: false,
-                covered: false,
-                unknown: true,
-            },
-            String::new(),
-        ));
+    let Some(chosen) = verdict.or_else(|| signals.first()) else {
+        return Ok(score);
     };
     let age_days = at.saturating_sub(chosen.time) as f64 / 86_400_000.0;
-    let freshness = 0.5_f64.powf(age_days / 10.0);
-    let verified = chosen.source != "assistant"
-        && !matches!(chosen.kind.as_str(), "assistant_claim" | "touched");
-    let score = match chosen.kind.as_str() {
-        "verdict" => chosen.value.unwrap_or(0.0).clamp(0.0, 1.0),
+    let value = match chosen.kind.as_str() {
+        "verdict" | "estimate" => chosen.value.unwrap_or(0.0),
         "test_pass" | "test_fail" | "commit" | "checkpoint" | "git_commit" => {
-            chosen.value.unwrap_or(1.0).clamp(0.0, 1.0)
+            chosen.value.unwrap_or(1.0)
         }
+        // Legacy uncorroborated claim: half its confidence, halved after a week.
         "assistant_claim" => {
             let decay = if age_days > 7.0 { 0.5 } else { 1.0 };
             0.5 * chosen.confidence.clamp(0.0, 1.0) * decay
         }
         "touched" => 0.5 * chosen.confidence.clamp(0.0, 1.0),
-        _ => chosen.value.unwrap_or(0.0).clamp(0.0, 1.0),
+        _ => chosen.value.unwrap_or(0.0),
     };
+    score.score = value.clamp(0.0, 1.0);
+    score.freshness = freshness_at(at, chosen.time);
+    score.verified = verified_kind(&chosen.kind, &chosen.source);
+    score.covered = true;
+    score.unknown = false;
+    score.kind = chosen.kind.clone();
+    score.source = chosen.source.clone();
+    score.time = chosen.time;
+    Ok(score)
+}
+
+/// A stated completion for the whole project (no aspect) or for one aspect:
+/// what a harness model, the detector, or the user reported, with evidence.
+struct Estimate {
+    id: i64,
+    value: f64,
+    confidence: f64,
+    source: String,
+    evidence: String,
+    time: u64,
+}
+
+impl Estimate {
+    /// How much this estimate is worth today: its confidence, faded by age.
+    fn strength(&self, at: u64) -> f64 {
+        self.confidence.clamp(0.0, 1.0) * freshness_at(at, self.time)
+    }
+
+    fn json(&self) -> Value {
+        json!({
+            "signal": self.id,
+            "percent": percent(self.value),
+            "confidence": self.confidence,
+            "source": self.source,
+            "evidence": self.evidence,
+            "time": self.time,
+        })
+    }
+}
+
+type EstimateRow = (Option<String>, Estimate);
+
+fn estimate_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EstimateRow> {
     Ok((
-        TaskScore {
-            aspect_id: None,
-            state: String::new(),
-            weight: 1.0,
-            score: score.clamp(0.0, 1.0),
-            freshness,
-            verified,
-            covered: true,
-            unknown: false,
+        row.get(1)?,
+        Estimate {
+            id: row.get(0)?,
+            value: row.get::<_, f64>(2)?.clamp(0.0, 1.0),
+            confidence: row.get(3)?,
+            source: row.get(4)?,
+            evidence: row.get(5)?,
+            time: row.get(6)?,
         },
-        chosen.kind.clone(),
     ))
+}
+
+type Estimates = (Option<Estimate>, HashMap<String, Estimate>, Vec<Value>);
+
+/// The newest whole-project estimate, the newest estimate of each aspect, and
+/// the recent whole-project history (oldest first) for the trend line.
+fn load_estimates(db: &Connection, project_id: &str) -> Result<Estimates> {
+    let mut statement = db
+        .prepare(
+            "SELECT id,aspect_id,value,confidence,source,evidence,time FROM signals
+             WHERE project_id=?1 AND kind='estimate' AND task_id IS NULL
+               AND aspect_id IS NULL AND value IS NOT NULL
+             ORDER BY time DESC, id DESC LIMIT 24",
+        )
+        .map_err(|error| error.to_string())?;
+    let history = statement
+        .query_map([project_id], estimate_row)
+        .map_err(|error| error.to_string())?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let trend: Vec<Value> = history
+        .iter()
+        .rev()
+        .map(|(_, estimate)| {
+            json!({"time":estimate.time,"percent":percent(estimate.value),"source":estimate.source})
+        })
+        .collect();
+    let project = history.into_iter().next().map(|(_, estimate)| estimate);
+    let mut statement = db
+        .prepare(
+            "SELECT id,aspect_id,value,confidence,source,evidence,time FROM signals
+             WHERE id IN (SELECT MAX(id) FROM signals
+                 WHERE project_id=?1 AND kind='estimate' AND task_id IS NULL
+                   AND aspect_id IS NOT NULL AND value IS NOT NULL
+                 GROUP BY aspect_id)",
+        )
+        .map_err(|error| error.to_string())?;
+    let aspects = statement
+        .query_map([project_id], estimate_row)
+        .map_err(|error| error.to_string())?
+        .filter_map(|row| row.ok())
+        .filter_map(|(aspect, estimate)| aspect.map(|aspect| (aspect, estimate)))
+        .collect();
+    Ok((project, aspects, trend))
+}
+
+/// Weighted mean of one per-task quantity; zero weights fall back to a plain
+/// mean so a part never divides by zero.
+fn weighted(tasks: &[TaskScore], pick: impl Fn(&TaskScore) -> f64) -> f64 {
+    if tasks.is_empty() {
+        return 0.0;
+    }
+    let total: f64 = tasks.iter().map(|task| task.weight).sum();
+    if total > 0.0 {
+        tasks.iter().map(|task| pick(task) * task.weight).sum::<f64>() / total
+    } else {
+        tasks.iter().map(&pick).sum::<f64>() / tasks.len() as f64
+    }
+}
+
+fn task_item(task: &TaskScore) -> Value {
+    json!({
+        "id": task.id,
+        "title": task.title,
+        "state": task.state,
+        "weight": task.weight,
+        "percent": if task.unknown { Value::Null } else { json!(percent(task.score)) },
+        "verified": task.verified,
+        "kind": task.kind,
+        "source": task.source,
+        "time": if task.unknown { Value::Null } else { json!(task.time) },
+    })
 }
 
 fn percent(value: f64) -> f64 {
@@ -600,6 +735,22 @@ pub fn tail_hash(text: &str) -> String {
 /// distinct screens is more history than a review can use and still bounded.
 const TAIL_ROWS_PER_SESSION: i64 = 200;
 
+/// One aspect's contribution to the headline.
+struct Part {
+    weight: f64,
+    value: Option<f64>,
+    confidence: f64,
+    time: u64,
+    estimated: bool,
+}
+
+/// Completion of one project at time `at`.
+///
+/// Each aspect takes the latest estimate a harness model, the detector, or the
+/// user stated for it, unless verified task evidence is newer; then (or with no
+/// estimate) it is the weighted mean of its tasks. The headline is the newest of the latest whole-project estimate and
+/// the weighted mean of the aspects; an aspect with no value of its own uses
+/// the whole-project estimate as a stand-in. Nothing at all is `null`, never 0.
 fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
     let mut aspect_statement = db
         .prepare(
@@ -622,7 +773,10 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
     drop(aspect_statement);
 
     let mut task_statement = db
-        .prepare("SELECT id,aspect_id,title,state,weight FROM tasks WHERE project_id=?1")
+        .prepare(
+            "SELECT id,aspect_id,title,state,weight FROM tasks WHERE project_id=?1
+             ORDER BY created, id",
+        )
         .map_err(|error| error.to_string())?;
     let tasks = task_statement
         .query_map([project_id], |row| {
@@ -639,16 +793,18 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         .map_err(|error| error.to_string())?;
     drop(task_statement);
 
+    let (project_estimate, aspect_estimates, trend) = load_estimates(db, project_id)?;
+
     let mut grouped: HashMap<String, Vec<TaskScore>> = HashMap::new();
     let mut counts = json!({"total":0,"todo":0,"in_progress":0,"done":0,"blocked":0,"dropped":0});
-    let mut unassigned = 0;
+    let mut unassigned = Vec::new();
     let mut total_weight = 0.0;
     let mut verified_weight = 0.0;
     let mut covered_tasks = 0;
     let mut total_tasks = 0;
     let mut freshness_sum = 0.0;
     let mut unknown_tasks = 0;
-    for (id, aspect_id, _title, state, weight) in tasks {
+    for (id, aspect_id, title, state, weight) in tasks {
         if state == "dropped" {
             if let Some(count) = counts["dropped"].as_u64() {
                 counts["dropped"] = json!(count + 1);
@@ -669,14 +825,14 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         if let Some(count) = counts[key].as_u64() {
             counts[key] = json!(count + 1);
         }
-        let Some(aspect) = aspect_id else {
-            unassigned += 1;
-            continue;
-        };
-        let (mut score, selected_kind) = score_task(db, &id, at)?;
+        let mut score = score_task(db, &id, at)?;
+        score.title = title;
         score.state = state;
         score.weight = weight.max(0.0);
-        score.aspect_id = Some(aspect.clone());
+        let Some(aspect) = aspect_id else {
+            unassigned.push(task_item(&score));
+            continue;
+        };
         if score.unknown {
             unknown_tasks += 1;
         }
@@ -687,89 +843,175 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
                 verified_weight += score.weight;
             }
         }
-        let _ = selected_kind;
         grouped.entry(aspect).or_default().push(score);
     }
 
     let mut aspect_values = Vec::new();
-    let mut project_score = 0.0;
-    let mut project_weight = 0.0;
-    let mut contributing = 0;
+    let mut parts = Vec::new();
+    let mut stale_parts = 0;
     let has_aspects = !aspects.is_empty();
     for (id, key, title, kind, weight) in aspects {
         let scores = grouped.remove(&id).unwrap_or_default();
-        let tasks_weight: f64 = scores.iter().map(|task| task.weight).sum();
-        let aspect_score = if scores.is_empty() {
+        let count = scores.len();
+        let derived = (count > 0).then(|| weighted(&scores, |task| task.score));
+        let verified = weighted(&scores, |task| if task.verified { 1.0 } else { 0.0 });
+        let covered = scores.iter().filter(|task| task.covered).count();
+        let task_confidence = if count == 0 {
             0.0
         } else {
-            scores.iter().map(|task| task.score * task.weight).sum::<f64>() / tasks_weight
+            let freshness = scores.iter().map(|task| task.freshness).sum::<f64>() / count as f64;
+            freshness * covered as f64 / count as f64
         };
-        let aspect_verified = if scores.is_empty() {
-            0.0
-        } else {
-            scores
-                .iter()
-                .filter(|task| task.verified)
-                .map(|task| task.weight)
-                .sum::<f64>()
-                / tasks_weight
+        let derived_time = scores
+            .iter()
+            .filter(|task| task.covered)
+            .map(|task| task.time)
+            .max();
+        // Verified task evidence (a user verdict, a test, a commit) is what may
+        // overrule a stated estimate; a model ticking one task may not, or a
+        // single tracked task would replace its own judgment of the part.
+        let verified_time = scores
+            .iter()
+            .filter(|task| task.covered && task.verified)
+            .map(|task| task.time)
+            .max();
+        let estimate = aspect_estimates.get(&id);
+        let use_estimate = estimate.is_some_and(|estimate| {
+            derived.is_none() || verified_time.is_none_or(|time| estimate.time >= time)
+        });
+        let (value, basis, time, confidence) = match (estimate, derived) {
+            (Some(estimate), _) if use_estimate => (
+                Some(estimate.value),
+                "estimate",
+                Some(estimate.time),
+                estimate.strength(at),
+            ),
+            (_, Some(derived)) => (Some(derived), "tasks", derived_time, task_confidence),
+            _ => (None, "none", None, 0.0),
         };
-        let aspect_freshness = if scores.is_empty() {
-            0.0
-        } else {
-            scores.iter().map(|task| task.freshness).sum::<f64>() / scores.len() as f64
-        };
-        if !scores.is_empty() {
-            contributing += 1;
-            project_score += aspect_score * weight.max(0.0);
-            project_weight += weight.max(0.0);
+        if time.is_some_and(|time| at.saturating_sub(time) > 14 * 86_400_000) {
+            stale_parts += 1;
         }
+        parts.push(Part {
+            weight: weight.max(0.0),
+            value,
+            confidence,
+            time: time.unwrap_or(0),
+            estimated: basis == "estimate",
+        });
         aspect_values.push(json!({
             "id": id,
             "key": key,
             "title": title,
             "kind": kind,
             "weight": weight,
-            "percent": if scores.is_empty() { Value::Null } else { json!(percent(aspect_score)) },
-            "percent_null": scores.is_empty(),
-            "verified": percent(aspect_verified),
-            "confidence": (aspect_freshness * (scores.iter().filter(|task| task.covered).count() as f64 / scores.len().max(1) as f64)),
-            "tasks": scores.len(),
+            "percent": value.map(percent),
+            "percent_null": value.is_none(),
+            "basis": basis,
+            "estimate": estimate.map(Estimate::json),
+            "derived": derived.map(percent),
+            "time": time,
+            "verified": percent(verified),
+            "confidence": round3(confidence),
+            "tasks": count,
             "unknown": scores.iter().filter(|task| task.unknown).count(),
+            "items": scores.iter().map(task_item).collect::<Vec<_>>(),
         }));
     }
 
-    let percent_value = if project_weight > 0.0 {
-        percent(project_score / project_weight)
-    } else {
-        0.0
+    let newest_part = parts
+        .iter()
+        .filter(|part| part.value.is_some())
+        .map(|part| part.time)
+        .max();
+    let stand_in = project_estimate
+        .as_ref()
+        .map(|estimate| (estimate.value, estimate.strength(at)));
+    let mut sum = 0.0;
+    let mut weight_sum = 0.0;
+    let mut confidence_sum = 0.0;
+    let mut contributing = 0;
+    let mut standing_in = 0;
+    let mut uses_estimates = false;
+    if newest_part.is_some() {
+        for part in parts.iter().filter(|part| part.weight > 0.0) {
+            let (value, confidence) = match (part.value, stand_in) {
+                (Some(value), _) => (value, part.confidence),
+                (None, Some(stand_in)) => {
+                    standing_in += 1;
+                    stand_in
+                }
+                (None, None) => continue,
+            };
+            uses_estimates |= part.estimated;
+            contributing += 1;
+            sum += value * part.weight;
+            weight_sum += part.weight;
+            confidence_sum += confidence * part.weight;
+        }
+    }
+    uses_estimates |= standing_in > 0;
+    // Task-only projects keep the original measure: coverage × freshness.
+    let task_confidence = {
+        let coverage = if total_tasks > 0 {
+            covered_tasks as f64 / total_tasks as f64
+        } else {
+            0.0
+        };
+        let freshness = if covered_tasks > 0 {
+            freshness_sum / covered_tasks as f64
+        } else {
+            0.0
+        };
+        (coverage * freshness).clamp(0.0, 1.0)
+    };
+    let estimate_leads = project_estimate.as_ref().is_some_and(|estimate| {
+        weight_sum <= 0.0 || newest_part.is_none_or(|time| estimate.time >= time)
+    });
+    let (headline, confidence, basis) = match &project_estimate {
+        Some(estimate) if estimate_leads => {
+            (Some(estimate.value), estimate.strength(at), "estimate")
+        }
+        _ if weight_sum > 0.0 => (
+            Some(sum / weight_sum),
+            if uses_estimates {
+                confidence_sum / weight_sum
+            } else {
+                task_confidence
+            },
+            "parts",
+        ),
+        _ => (None, 0.0, "none"),
     };
     let verified = if total_weight > 0.0 {
         percent(verified_weight / total_weight)
     } else {
         0.0
     };
-    let coverage = if total_tasks > 0 {
-        covered_tasks as f64 / total_tasks as f64
-    } else {
-        0.0
-    };
-    let freshness = if covered_tasks > 0 {
-        freshness_sum / covered_tasks as f64
-    } else {
-        0.0
-    };
-    let confidence = (coverage * freshness).clamp(0.0, 1.0);
 
     let mut risks = Vec::new();
-    if !has_aspects {
+    if !has_aspects && project_estimate.is_none() {
         risks.push("No aspects defined".to_string());
+    }
+    if let Some(estimate) = &project_estimate
+        && basis == "estimate"
+        && at.saturating_sub(estimate.time) > 7 * 86_400_000
+    {
+        risks.push(format!(
+            "The newest estimate is {} days old",
+            at.saturating_sub(estimate.time) / 86_400_000
+        ));
+    }
+    if stale_parts > 0 {
+        risks.push(format!(
+            "{stale_parts} part(s) have no evidence from the last two weeks"
+        ));
     }
     if unknown_tasks > 0 {
         risks.push(format!("{unknown_tasks} task(s) have no evidence"));
     }
-    if unassigned > 0 {
-        risks.push(format!("{unassigned} task(s) have no aspect"));
+    if !unassigned.is_empty() {
+        risks.push(format!("{} task(s) have no aspect", unassigned.len()));
     }
     if counts["blocked"].as_u64().unwrap_or(0) > 0 {
         risks.push(format!(
@@ -777,6 +1019,35 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
             counts["blocked"].as_u64().unwrap_or(0)
         ));
     }
+    let (why, basis_value) = match (basis, &project_estimate) {
+        ("estimate", Some(estimate)) => (
+            format!(
+                "Whole-project estimate from {}: {}",
+                estimate.source, estimate.evidence
+            ),
+            json!({"kind":"estimate","source":estimate.source,"time":estimate.time,
+                "evidence":estimate.evidence,"confidence":estimate.confidence}),
+        ),
+        ("parts", _) => {
+            let mut text = format!(
+                "Weighted mean of {contributing} part(s); {covered_tasks} of {total_tasks} tasks carry evidence"
+            );
+            if standing_in > 0 {
+                text.push_str(&format!(
+                    "; {standing_in} part(s) without a value use the whole-project estimate"
+                ));
+            }
+            (
+                text,
+                json!({"kind":"parts","parts":contributing,"standing_in":standing_in,
+                    "time":newest_part}),
+            )
+        }
+        _ => (
+            "No estimate or evidence yet".to_string(),
+            json!({"kind":"none"}),
+        ),
+    };
     // Every number is derived from these rows, so the payload carries them:
     // a percentage whose evidence cannot be shown is a bug (BUG-084/089).
     let mut signal_statement = db
@@ -787,17 +1058,20 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         .map_err(|error| error.to_string())?;
     let signals = signal_statement
         .query_map([project_id], |row| {
+            let kind: String = row.get(3)?;
+            let source: String = row.get(4)?;
             Ok(json!({
                 "id": row.get::<_, i64>(0)?,
                 "task_id": row.get::<_, Option<String>>(1)?,
                 "aspect_id": row.get::<_, Option<String>>(2)?,
-                "kind": row.get::<_, String>(3)?,
-                "source": row.get::<_, String>(4)?,
+                "verified": verified_kind(&kind, &source),
+                "assistant": source == "assistant",
+                "kind": kind,
+                "source": source,
                 "value": row.get::<_, Option<f64>>(5)?,
                 "confidence": row.get::<_, f64>(6)?,
                 "evidence": row.get::<_, String>(7)?,
                 "time": row.get::<_, u64>(8)?,
-                "assistant": row.get::<_, String>(4)? == "assistant",
             }))
         })
         .map_err(|error| error.to_string())?
@@ -814,18 +1088,154 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
     let project = fetch_project(db, project_id)?;
     Ok(json!({
         "project": project,
-        "percent": if project_weight > 0.0 { json!(percent_value) } else { Value::Null },
-        "percent_null": project_weight <= 0.0,
+        "percent": headline.map(percent),
+        "percent_null": headline.is_none(),
         "verified": verified,
-        "confidence": (confidence * 1000.0).round() / 1000.0,
+        "confidence": round3(confidence),
         "as_of": at,
-        "why": format!("{covered_tasks} of {total_tasks} tasks carry evidence; {contributing} aspect(s) contribute"),
+        "why": why,
+        "basis": basis_value,
+        "estimate": project_estimate.as_ref().map(Estimate::json),
+        "trend": trend,
         "aspects": aspect_values,
+        "unassigned": unassigned,
         "tasks": counts,
         "risks": risks,
         "signals": signals,
         "signal_count": signal_count,
     }))
+}
+
+/// One line per project for a spoken answer or a harness tool result.
+pub fn progress_sentence(graph: &Value) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("This project");
+    let Some(value) = graph["percent"].as_f64() else {
+        return format!("{name} has no completion estimate yet.");
+    };
+    let mut sentence = format!("{name} is about {}% complete", value.round());
+    match graph["basis"]["kind"].as_str() {
+        Some("estimate") => {
+            match graph["basis"]["source"].as_str().unwrap_or("assistant") {
+                "user" => sentence.push_str(" by your estimate"),
+                source => sentence.push_str(&format!(" by {}'s estimate", source_name(source))),
+            }
+        }
+        Some("parts") => sentence.push_str(" across its parts"),
+        _ => {}
+    }
+    sentence.push('.');
+    let weakest = graph["aspects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|aspect| Some((aspect["title"].as_str()?, aspect["percent"].as_f64()?)))
+        .min_by(|left, right| left.1.total_cmp(&right.1));
+    if let Some((title, value)) = weakest
+        && graph["aspects"].as_array().is_some_and(|aspects| aspects.len() > 1)
+    {
+        sentence.push_str(&format!(" Furthest behind: {title} at {}%.", value.round()));
+    }
+    sentence
+}
+
+/// Full plain-text view of a graph for a harness tool result.
+pub fn progress_text(graph: &Value) -> String {
+    let mut lines = vec![progress_sentence(graph)];
+    if let Some(why) = graph["why"].as_str() {
+        lines.push(format!("Basis: {why}"));
+    }
+    let aspects = graph["aspects"].as_array().cloned().unwrap_or_default();
+    if aspects.is_empty() {
+        lines.push("No parts are defined yet. Report a part by name to create it.".into());
+    } else {
+        lines.push("Parts:".into());
+    }
+    for aspect in &aspects {
+        let title = aspect["title"].as_str().unwrap_or("part");
+        let value = aspect["percent"]
+            .as_f64()
+            .map(|value| format!("{}%", value.round()))
+            .unwrap_or_else(|| "unknown".into());
+        let basis = match aspect["basis"].as_str() {
+            Some("estimate") => format!(
+                "estimate by {}",
+                source_name(aspect["estimate"]["source"].as_str().unwrap_or("assistant"))
+            ),
+            Some("tasks") => format!("{} task(s)", aspect["tasks"]),
+            _ => "no evidence".into(),
+        };
+        lines.push(format!("- {title}: {value} ({basis})"));
+        for item in aspect["items"].as_array().into_iter().flatten().take(20) {
+            let mark = match item["state"].as_str() {
+                Some("done") => "x",
+                Some("in_progress") => "~",
+                Some("blocked") => "!",
+                _ => " ",
+            };
+            lines.push(format!(
+                "  - [{mark}] {}",
+                item["title"].as_str().unwrap_or("task")
+            ));
+        }
+    }
+    for item in graph["unassigned"].as_array().into_iter().flatten().take(20) {
+        lines.push(format!(
+            "- (no part) [{}] {}",
+            if item["state"] == "done" { "x" } else { " " },
+            item["title"].as_str().unwrap_or("task")
+        ));
+    }
+    for risk in graph["risks"].as_array().into_iter().flatten() {
+        if let Some(risk) = risk.as_str() {
+            lines.push(format!("Risk: {risk}"));
+        }
+    }
+    lines.join("\n")
+}
+
+/// Display name for a signal source: harness ids read as product names.
+pub fn source_name(source: &str) -> String {
+    match source {
+        "claude" => "Claude Code".into(),
+        "codex" => "Codex".into(),
+        "pi" => "Pi".into(),
+        "opencode" => "OpenCode".into(),
+        "agy" => "Antigravity".into(),
+        "navi" => "Navi".into(),
+        "detector" => "the detector".into(),
+        "user" => "you".into(),
+        "assistant" => "the assistant".into(),
+        other => other.to_string(),
+    }
+}
+
+/// A part or task name as a model wrote it: one line, no quotes, bounded.
+fn clean_label(text: &str, limit: usize) -> String {
+    let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    joined
+        .trim_matches(|c: char| matches!(c, '"' | '\'' | '`' | '“' | '”' | '‘' | '’'))
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(limit)
+        .collect()
+}
+
+/// Signal sources are short identifiers the UI can badge.
+fn source_label(source: Option<&str>) -> String {
+    let cleaned: String = source
+        .unwrap_or("assistant")
+        .trim()
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .take(32)
+        .collect();
+    if cleaned.is_empty() {
+        "assistant".into()
+    } else {
+        cleaned
+    }
 }
 
 pub fn graph_score(db: &Connection, project_id: &str) -> Result<Value> {
@@ -1259,26 +1669,384 @@ impl App {
         Ok(json!({"id":id}))
     }
 
+    /// Legacy assistant claim: now an `estimate` from the assistant that never
+    /// creates parts or tasks.
     pub fn progress_claim(&self, p: &Value) -> Result<Value> {
-        let project = self.resolve_project(p["project_id"].as_str().ok_or("Missing project")?)?;
-        let project_id = project["id"].as_str().ok_or("Missing project id")?;
-        let evidence = p["evidence"].as_str().unwrap_or_default().trim();
-        if evidence.is_empty() {
-            return Err("A progress claim needs evidence".into());
+        let mut params = p.clone();
+        params["source"] = json!("assistant");
+        params["create"] = json!(false);
+        if params["value"].is_null() && params["percent"].is_null() {
+            params["value"] = json!(0.5);
         }
-        let value = p["value"].as_f64().unwrap_or(0.5).clamp(0.0, 1.0);
-        let confidence = p["confidence"].as_f64().unwrap_or(0.5).clamp(0.0, 1.0);
-        let id = self.add_signal(
-            project_id,
-            p["task_id"].as_str(),
-            p["aspect_id"].as_str(),
-            "assistant_claim",
-            "assistant",
-            Some(value),
-            confidence,
-            evidence,
-        )?;
-        Ok(json!({"signal":id,"capped":0.5*confidence}))
+        self.progress_report(&params)
+    }
+
+    /// The project a progress call is about: an explicit id or name, else the
+    /// harness session's project, else the project that contains `cwd`, else
+    /// the only project.
+    pub fn progress_project(&self, p: &Value) -> Result<String> {
+        let explicit = [&p["project_id"], &p["project"]]
+            .into_iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .find(|value| !value.is_empty());
+        if let Some(reference) = explicit {
+            let project = self.resolve_project(reference)?;
+            return project["id"]
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "Missing project id".into());
+        }
+        {
+            let state = self.state.lock().unwrap();
+            if let Some(session) = p["session_id"].as_str().filter(|value| !value.is_empty()) {
+                let found: Option<Option<String>> = state
+                    .db
+                    .query_row(
+                        "SELECT project_id FROM sessions WHERE id=?1",
+                        [session],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|error| error.to_string())?;
+                if let Some(Some(project)) = found {
+                    return Ok(project);
+                }
+            }
+            if let Some(cwd) = p["cwd"].as_str().filter(|value| !value.is_empty()) {
+                let canonical = fs::canonicalize(cwd)
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|_| cwd.to_string());
+                if let Some(project) = project_id_for_path(&state.db, &canonical) {
+                    return Ok(project);
+                }
+            }
+        }
+        let projects = self.projects()?;
+        if projects.len() == 1 {
+            return projects[0]["id"]
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "Missing project id".into());
+        }
+        Err("No Navi project contains this directory; register it in Navi first".into())
+    }
+
+    /// Find a part by id, key, or title, creating it when allowed. Models name
+    /// parts in prose ("the UI"), so a slug match and a title match both count.
+    fn progress_aspect(
+        &self,
+        project_id: &str,
+        p: &Value,
+        create: bool,
+    ) -> Result<Option<(String, String)>> {
+        let state = self.state.lock().unwrap();
+        if let Some(id) = p["aspect_id"].as_str().filter(|value| !value.trim().is_empty()) {
+            let title: Option<String> = state
+                .db
+                .query_row(
+                    "SELECT title FROM aspects WHERE id=?1 AND project_id=?2",
+                    params![id, project_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            return title
+                .map(|title| Some((id.to_string(), title)))
+                .ok_or_else(|| "Unknown part".to_string());
+        }
+        let name = clean_label(p["aspect"].as_str().unwrap_or_default(), 120);
+        let name = name
+            .strip_prefix("the ")
+            .or_else(|| name.strip_prefix("The "))
+            .unwrap_or(&name)
+            .to_string();
+        if name.is_empty() || matches!(name.to_lowercase().as_str(), "project" | "overall" | "whole project" | "all") {
+            return Ok(None);
+        }
+        let key = slug(&name);
+        let found: Option<(String, String)> = state
+            .db
+            .query_row(
+                "SELECT id,title FROM aspects WHERE project_id=?1
+                 AND (key=?2 OR lower(title)=lower(?3)) ORDER BY created LIMIT 1",
+                params![project_id, key, name],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(found) = found {
+            return Ok(Some(found));
+        }
+        if !create {
+            return Err(format!("No part named “{name}”"));
+        }
+        let count: i64 = state
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM aspects WHERE project_id=?1",
+                [project_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if count >= 40 {
+            return Err("This project already has 40 parts; report against one of them".into());
+        }
+        let id = format!("asp-{}", &id()[..8]);
+        state
+            .db
+            .execute(
+                "INSERT INTO aspects(id,project_id,key,title,kind,weight,created)
+                 VALUES(?1,?2,?3,?4,'work',1.0,?5)",
+                params![id, project_id, key, name, now()],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(Some((id, name)))
+    }
+
+    /// Find a task by id or title (same part first), creating it when allowed.
+    /// Returns `(id, title, state, aspect_id)`.
+    fn progress_task(
+        &self,
+        project_id: &str,
+        aspect_id: Option<&str>,
+        p: &Value,
+        create: bool,
+    ) -> Result<(String, String, String, Option<String>)> {
+        let state = self.state.lock().unwrap();
+        if let Some(id) = p["task_id"].as_str().filter(|value| !value.trim().is_empty()) {
+            return state
+                .db
+                .query_row(
+                    "SELECT id,title,state,aspect_id FROM tasks WHERE id=?1 AND project_id=?2",
+                    params![id, project_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .map_err(|_| "Unknown task".to_string());
+        }
+        let title = clean_label(p["task"].as_str().unwrap_or_default(), 300);
+        if title.is_empty() {
+            return Err("Missing task title".into());
+        }
+        let found = state
+            .db
+            .query_row(
+                "SELECT id,title,state,aspect_id FROM tasks
+                 WHERE project_id=?1 AND lower(title)=lower(?2) AND state!='dropped'
+                 ORDER BY (aspect_id IS ?3) DESC, created LIMIT 1",
+                params![project_id, title, aspect_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some(found) = found {
+            return Ok(found);
+        }
+        if !create {
+            return Err(format!("No task named “{title}”"));
+        }
+        let count: i64 = state
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE project_id=?1",
+                [project_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if count >= 400 {
+            return Err("This project already has 400 tasks".into());
+        }
+        let id = format!("tsk-{}", &id()[..8]);
+        state
+            .db
+            .execute(
+                "INSERT INTO tasks(id,project_id,aspect_id,title,state,weight,created,updated)
+                 VALUES(?1,?2,?3,?4,'todo',1.0,?5,?5)",
+                params![id, project_id, aspect_id, title, now()],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok((id, title, "todo".into(), aspect_id.map(str::to_string)))
+    }
+
+    /// `progress_report`: a harness model, the detector, or the user states how
+    /// complete the whole project, one part (`aspect`), or one task is. The
+    /// value is stored as an `estimate` signal with its evidence. It moves the
+    /// percentage at once and stays unverified until a test, a commit, or the
+    /// user agrees. Unknown parts and tasks are created unless `create=false`.
+    pub fn progress_report(&self, p: &Value) -> Result<Value> {
+        let project_id = self.progress_project(p)?;
+        let evidence = clean_label(p["evidence"].as_str().unwrap_or_default(), 1200);
+        if evidence.is_empty() {
+            return Err("Progress needs evidence: say what you checked".into());
+        }
+        let value = match (p["percent"].as_f64(), p["value"].as_f64()) {
+            (Some(percent), _) => Some(percent / 100.0),
+            (None, Some(value)) => Some(value),
+            _ => None,
+        }
+        .filter(|value| value.is_finite())
+        .map(|value| value.clamp(0.0, 1.0));
+        let confidence = p["confidence"]
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .unwrap_or(0.7)
+            .clamp(0.05, 1.0);
+        let source = source_label(p["source"].as_str());
+        let create = p["create"].as_bool().unwrap_or(true);
+        let next_state = p["state"]
+            .as_str()
+            .map(|state| state.trim().replace([' ', '-'], "_").to_lowercase())
+            .filter(|state| !state.is_empty());
+        if let Some(state) = next_state.as_deref()
+            && !matches!(state, "todo" | "in_progress" | "done" | "blocked")
+        {
+            return Err("state must be todo, in_progress, done, or blocked".into());
+        }
+        let aspect = self.progress_aspect(&project_id, p, create)?;
+        let mut aspect_id = aspect.as_ref().map(|(id, _)| id.clone());
+        let wants_task = [&p["task_id"], &p["task"]]
+            .into_iter()
+            .filter_map(Value::as_str)
+            .any(|value| !value.trim().is_empty());
+        let mut task = None;
+        let mut note = None;
+        let value = if wants_task {
+            let (id, title, old_state, task_aspect) =
+                self.progress_task(&project_id, aspect_id.as_deref(), p, create)?;
+            if aspect_id.is_none() {
+                aspect_id = task_aspect;
+            }
+            if let Some(state) = next_state.as_deref()
+                && state != old_state
+            {
+                let guard = self.state.lock().unwrap();
+                let db = &guard.db;
+                let user_owned: Option<i64> = db
+                    .query_row(
+                        "SELECT 1 FROM signals WHERE task_id=?1 AND kind='verdict' AND source='user' LIMIT 1",
+                        [&id],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|error| error.to_string())?;
+                // The user's verdict is final; a model may not overwrite it.
+                if user_owned.is_some() && source != "user" {
+                    note = Some("The user set this task's state, so it was left unchanged");
+                } else {
+                    db.execute(
+                        "UPDATE tasks SET state=?1,updated=?2 WHERE id=?3",
+                        params![state, now(), id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+            }
+            task = Some((id, title));
+            value.or(match next_state.as_deref() {
+                Some("done") => Some(1.0),
+                Some("todo") => Some(0.0),
+                Some("in_progress") => Some(0.5),
+                _ => None,
+            })
+        } else {
+            value
+        };
+        let signal = match value {
+            Some(value) => Some(self.add_signal(
+                &project_id,
+                task.as_ref().map(|(id, _)| id.as_str()),
+                aspect_id.as_deref(),
+                "estimate",
+                &source,
+                Some(value),
+                confidence,
+                &evidence,
+            )?),
+            None if task.is_some() => None,
+            None => return Err("Give a percent from 0 to 100".into()),
+        };
+        let graph = {
+            let state = self.state.lock().unwrap();
+            graph_score(&state.db, &project_id)?
+        };
+        let aspect_title = aspect_id.as_ref().and_then(|id| {
+            graph["aspects"]
+                .as_array()?
+                .iter()
+                .find(|item| item["id"] == id.as_str())
+                .and_then(|item| item["title"].as_str())
+                .map(str::to_string)
+        });
+        let aspect_percent = aspect_id.as_ref().and_then(|id| {
+            graph["aspects"]
+                .as_array()?
+                .iter()
+                .find(|item| item["id"] == id.as_str())
+                .map(|item| item["percent"].clone())
+        });
+        let who = source_name(&source);
+        let message = match (&task, next_state.as_deref(), value) {
+            (Some((_, title)), Some(state), _) => format!(
+                "{who} marked “{title}” {}",
+                match state {
+                    "in_progress" => "in progress",
+                    "todo" => "to do",
+                    other => other,
+                }
+            ),
+            (Some((_, title)), None, Some(value)) => {
+                format!("{who} put “{title}” at {}%", percent(value).round())
+            }
+            (None, _, Some(value)) => match &aspect_title {
+                Some(title) => format!("{who} put {title} at {}%", percent(value).round()),
+                None => format!("{who} put the project at {}%", percent(value).round()),
+            },
+            _ => format!("{who} updated progress"),
+        };
+        let session = p["session_id"].as_str().filter(|value| !value.is_empty());
+        let details = json!({
+            "project_id": project_id,
+            "aspect_id": aspect_id,
+            "aspect": aspect_title,
+            "task_id": task.as_ref().map(|(id, _)| id),
+            "task": task.as_ref().map(|(_, title)| title),
+            "state": next_state,
+            "value": value.map(percent),
+            "percent": graph["percent"],
+            "aspect_percent": aspect_percent,
+            "basis": graph["basis"]["kind"],
+            "source": source,
+            "evidence": evidence,
+            "confidence": confidence,
+            "signal": signal,
+            "note": note,
+        });
+        self.event_for(Some(&project_id), session, "progress", &message, details.clone());
+        let mut result = details;
+        result["recorded"] = json!(true);
+        result["message"] = json!(message);
+        result["summary"] = json!(progress_sentence(&graph));
+        Ok(result)
+    }
+
+    /// `progress_overview`: the headline of every project, for the switcher.
+    pub fn progress_overview(&self) -> Result<Value> {
+        let projects = self.projects()?;
+        let state = self.state.lock().unwrap();
+        let mut rows = Vec::new();
+        for project in projects {
+            let Some(id) = project["id"].as_str() else {
+                continue;
+            };
+            let graph = graph_score(&state.db, id)?;
+            rows.push(json!({
+                "project_id": id,
+                "percent": graph["percent"],
+                "basis": graph["basis"]["kind"],
+                "confidence": graph["confidence"],
+                "verified": graph["verified"],
+            }));
+        }
+        Ok(json!({"projects": rows}))
     }
 
     #[allow(clippy::too_many_arguments)]

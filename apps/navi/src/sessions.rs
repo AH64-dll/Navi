@@ -2,7 +2,7 @@
 //! native-id capture, pipe logging, readiness-aware prompt injection, resume,
 //! external discovery, and honest state (BUG-069..082).
 
-use crate::{App, Result, adapters, id, now, store};
+use crate::{App, Result, adapters, id, link, now, store};
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -926,11 +926,6 @@ impl App {
             argv.insert(1, "-C".to_string());
             argv.insert(2, cwd.to_string());
         }
-        let launch_path = dirs.join(":");
-        let env = self.compose_env(&profile["env"], &launch_path)?;
-        let env_keys: Vec<String> = env.keys().cloned().collect();
-        let cols = profile["size"]["cols"].as_u64().unwrap_or(120).clamp(20, 500);
-        let rows_size = profile["size"]["rows"].as_u64().unwrap_or(32).clamp(8, 200);
         let path = std::fs::canonicalize(cwd)
             .map_err(|e| format!("Invalid project directory: {e}"))?;
         if !path.is_dir() {
@@ -945,6 +940,43 @@ impl App {
             }
         };
         let target = format!("navi-{}", id());
+        let launch_path = dirs.join(":");
+        let mut env = self.compose_env(&profile["env"], &launch_path)?;
+        // The progress link (see link.rs): every pane knows its project and
+        // session, and harnesses that can are registered with `navid mcp`.
+        // A profile opts out with `"link": false`.
+        if profile["link"] != false
+            && let Ok(exe) = std::env::current_exe()
+        {
+            let mut link_env = BTreeMap::new();
+            link_env.insert("NAVI_SESSION_ID".to_string(), target.clone());
+            link_env.insert("NAVI_HARNESS".to_string(), adapter.to_string());
+            link_env.insert("NAVI_DATA_DIR".to_string(), self.data.to_string_lossy().into_owned());
+            link_env.insert(
+                "NAVI_RUNTIME_DIR".to_string(),
+                self.runtime.to_string_lossy().into_owned(),
+            );
+            link_env.insert("NAVI_BIN".to_string(), exe.to_string_lossy().into_owned());
+            if let Some(project) = project_id.as_deref() {
+                link_env.insert("NAVI_PROJECT_ID".to_string(), project.to_string());
+            }
+            let registration = link::registration(adapter, &exe, &link_env, &env);
+            for (offset, arg) in registration.argv.into_iter().enumerate() {
+                argv.insert(1 + offset, arg);
+            }
+            // `navid progress` must resolve inside the pane (Pi calls it).
+            let current = env.get("PATH").cloned().unwrap_or_default();
+            if let Some(dir) = exe.parent().map(|dir| dir.to_string_lossy().into_owned())
+                && !current.split(':').any(|entry| entry == dir)
+            {
+                env.insert("PATH".to_string(), format!("{current}:{dir}"));
+            }
+            env.extend(link_env);
+            env.extend(registration.env);
+        }
+        let env_keys: Vec<String> = env.keys().cloned().collect();
+        let cols = profile["size"]["cols"].as_u64().unwrap_or(120).clamp(20, 500);
+        let rows_size = profile["size"]["rows"].as_u64().unwrap_or(32).clamp(8, 200);
         let native_id = spec.preseed_id.clone().or(native_hint);
         let snapshot = if adapters::capture_roots(Path::new(
             &std::env::var("HOME").unwrap_or_default(),
@@ -1140,7 +1172,7 @@ impl App {
                 );
                 drop(state);
                 self.log_event(&target, "native_captured", json!({"native_id":captured}));
-            } else if adapter != "other" {
+            } else if matches!(adapter, "claude" | "codex" | "agy") {
                 warnings.push("native_id_not_captured".into());
                 self.log_event(&target, "native_captured", json!({"native_id":null,"pending":true}));
             }

@@ -19,7 +19,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-pub const KNOWN_HARNESSES: [&str; 4] = ["claude", "codex", "agy", "pi"];
+pub const KNOWN_HARNESSES: [&str; 5] = ["claude", "codex", "agy", "pi", "opencode"];
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(4);
 const CAPTURE_POLL: Duration = Duration::from_millis(150);
 const VERSION_TIMEOUT: Duration = Duration::from_millis(800);
@@ -67,6 +67,8 @@ pub fn adapter_for(harness: &str) -> &'static str {
         "claude" | "claude-code" | "claude_code" => "claude",
         "codex" | "codex-cli" => "codex",
         "agy" | "antigravity" | "antigravity-cli" => "agy",
+        "pi" | "pi-coding-agent" => "pi",
+        "opencode" | "opencode-ai" => "opencode",
         other => {
             if other.contains("claude") {
                 "claude"
@@ -74,6 +76,8 @@ pub fn adapter_for(harness: &str) -> &'static str {
                 "codex"
             } else if other.contains("agy") || other.contains("antigravity") {
                 "agy"
+            } else if other.contains("opencode") {
+                "opencode"
             } else {
                 "other"
             }
@@ -109,6 +113,20 @@ pub fn caps(harness: &str) -> Caps {
                 "conversation id approximated from last_conversations.json",
                 "structured prompt channel probed, not used over tmux",
             ],
+        },
+        "pi" => Caps {
+            preseed_id: false,
+            resume_id: true,
+            resume_last: true,
+            structured_prompt: false,
+            unknowns: &["native id not captured; resume by session file or id prefix"],
+        },
+        "opencode" => Caps {
+            preseed_id: false,
+            resume_id: true,
+            resume_last: true,
+            structured_prompt: false,
+            unknowns: &["native id not captured; resume uses --continue or --session"],
         },
         _ => Caps {
             unknowns: &["generic harness: only the tmux fallback applies"],
@@ -185,6 +203,15 @@ pub fn launch_spec(
             argv.push("--conversation".into());
             argv.push(id.clone());
         }
+        ("pi" | "opencode", Resume::Last) => {
+            kind = "resume_last";
+            argv.push("--continue".into());
+        }
+        ("pi" | "opencode", Resume::Id(id)) => {
+            kind = "resume";
+            argv.push("--session".into());
+            argv.push(id.clone());
+        }
         (_, Resume::Last) => {
             kind = "resume_last";
         }
@@ -210,6 +237,8 @@ pub fn prompt_glyphs(harness: &str) -> &'static [&'static str] {
         "claude" => &["❯", ">", "│", "╰", "esc to interrupt"],
         "codex" => &["›", ">", "codex>"],
         "agy" => &["❯", ">", "esc to cancel"],
+        "pi" => &[">", "❯", "›"],
+        "opencode" => &[">", "┃", "❯"],
         _ => &["$", "#", ">", "❯", "%", "›"],
     }
 }
@@ -240,7 +269,7 @@ pub fn needs_input(harness: &str, tail: &str) -> bool {
 /// Interrupt keys: soft interrupts a turn, hard interrupts the harness.
 pub fn interrupt_keys(harness: &str) -> (&'static [&'static str], &'static [&'static str]) {
     match adapter_for(harness) {
-        "claude" | "codex" | "agy" => (&["Escape"], &["C-c"]),
+        "claude" | "codex" | "agy" | "pi" | "opencode" => (&["Escape"], &["C-c"]),
         _ => (&["C-c"], &["C-c"]),
     }
 }
