@@ -1990,9 +1990,12 @@ impl App {
         // "Switch projects", "the other project": the next project in the list.
         if matches!(bare, "switch projects" | "switch project" | "change project" | "change projects"
             | "next project" | "the other project" | "other project" | "go to the other project"
-            | "switch to the other project" | "previous project" | "the next project" | "go to the next project")
+            | "switch to the other project" | "previous project" | "the next project" | "go to the next project"
+            | "the previous project" | "go to the previous project" | "go back to the previous project"
+            | "back to the previous project" | "switch to the previous project" | "last project"
+            | "the last project" | "go back to the last project" | "switch to the next project")
         {
-            return Ok(Some(json!({"kind":"project_cycle","back":bare.contains("previous")})));
+            return Ok(Some(json!({"kind":"project_cycle","back":bare.contains("previous") || bare.contains("last")})));
         }
         // "I need a terminal", "give me another Codex": an open request.
         let lower = ["i need another ", "give me another ", "get me another "]
@@ -2116,6 +2119,19 @@ impl App {
             // Only an open session: "send the error log to Claude" must not
             // start Claude with "the error log" as its prompt.
             if let Some(action) = self.harness_prompt_intent(&reordered)?.filter(|action| action["kind"] == "harness_prompt") {
+                return Ok(Some(action));
+            }
+        }
+        // "Let Codex know the build is fixed": news for an open session.
+        if let Some(body) = trimmed.get(4..).filter(|_| lower.starts_with("let "))
+            && let Some(at) = body.to_ascii_lowercase().find(" know ")
+        {
+            let prompt = body[at + 6..].trim();
+            let prompt = prompt.get(5..).filter(|_| prompt.to_ascii_lowercase().starts_with("that ")).unwrap_or(prompt);
+            let reordered = format!("tell {}: {}", body[..at].trim(), prompt.trim());
+            if !prompt.trim().is_empty()
+                && let Some(action) = self.harness_prompt_intent(&reordered)?.filter(|action| action["kind"] == "harness_prompt")
+            {
                 return Ok(Some(action));
             }
         }
@@ -4118,10 +4134,11 @@ fn clock_sentence(date: bool) -> String {
 
 fn conversational_text(text: &str) -> String {
     // Wake words and spoken fillers lead the request: "Hey Navi. Stop Codex.",
-    // "um, open a terminal", "okay Navi, what's left".
-    const LEADS: [&str; 19] = ["hey navi", "okay navi", "ok navi", "navi", "umm", "um", "uhh",
+    // "um, open a terminal", "okay Navi, what's left", "could you tell Codex
+    // to run the tests".
+    const LEADS: [&str; 24] = ["hey navi", "okay navi", "ok navi", "navi", "umm", "um", "uhh",
         "uh", "erm", "hmm", "okay", "ok", "alright", "well", "so", "now", "right", "go ahead and",
-        "and"];
+        "and", "please", "can you", "could you", "would you", "will you"];
     let separator = |c: char| c.is_whitespace() || matches!(c, ',' | ':' | '.' | '!');
     let mut current = text.trim();
     'strip: loop {
@@ -4615,6 +4632,11 @@ fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
         ((marked || bare) && (0.0..=100.0).contains(&value)).then_some((index, value))
     })?;
     let before = words[..index].join(" ");
+    // "The daemon is about 70% done": a hedge before the number.
+    let before = [" about", " around", " roughly", " approximately", " nearly", " almost", " maybe"]
+        .iter()
+        .find_map(|hedge| before.strip_suffix(hedge))
+        .unwrap_or(&before);
     let name = if let Some(rest) = before.strip_prefix("set ") {
         rest.strip_suffix(" to")
             .or_else(|| rest.strip_suffix(" at"))?
@@ -4631,7 +4653,16 @@ fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
             .strip_suffix(" is at")
             .or_else(|| before.strip_suffix(" is"))
             .or_else(|| before.strip_suffix(" are at"))
-            .or_else(|| before.strip_suffix(" are"))?
+            .or_else(|| before.strip_suffix(" are"))
+            // "We're about 85% done", "we're at 85%": the whole project, when
+            // nothing or a completion word follows ("it's 50% slower" is not).
+            .or_else(|| {
+                let after = words[index + 1..].iter().find(|word| !word.starts_with("percent"));
+                let finished = after.is_none_or(|word| {
+                    matches!(word.trim_end_matches([',', '.']), "done" | "complete" | "completed" | "finished" | "there" | "of")
+                });
+                (finished && matches!(before, "we're" | "we are" | "we're at" | "we are at" | "it's" | "it's at")).then_some("we")
+            })?
     };
     let name = name.trim();
     let name = name.strip_prefix("the ").unwrap_or(name);
@@ -4639,7 +4670,7 @@ fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
         .iter()
         .find_map(|prefix| name.strip_prefix(prefix))
         .unwrap_or(name);
-    let name = ["'s progress", " progress", " completion"]
+    let name = ["'s progress", " progress", " completion", " part"]
         .iter()
         .find_map(|suffix| name.strip_suffix(suffix))
         .unwrap_or(name);
