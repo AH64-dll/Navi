@@ -388,6 +388,11 @@ model and without the assistant:
 | "Set the UI to 80%", "put voice at 60 percent", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |
 | "Mark barge-in done", "check off barge-in", "reopen barge-in", `/mark barge-in in progress` | Sets a task's state as a user verdict; with no matching task, "mark <part> done" puts the part at 100% |
 | "Open Codex", `/open claude code` | Launches the harness in the active project |
+| "Switch to acme-api", "go back to the Navi project" | Makes that project active in the station (a session with that name wins) and speaks its headline |
+
+Steps chain with "then" (or "and" when every half is one of these commands), at most
+four: "switch to acme-api then assess the project" assesses acme-api, because a step
+that switches project rescopes the steps after it.
 
 Task names match loosely ("barge in" finds "Barge-in"); an ambiguous name lists the
 candidates instead of guessing. With **Speak replies** on, the voice worker speaks the

@@ -1109,12 +1109,23 @@ function replyDone(event) {
     warningRow('Attachments: '+details.attachments.length+' file'+(details.attachments.length===1?'':'s')+' used for this turn');
   }
   finishRequest(requestId);
-  saveMessage(message);
+  const saved=saveMessage(message);
   clearAttention();
   bump(message);
   /* A spoken "show the progress" opens the panel; any answer about progress
    * may have moved it, so the HUD re-reads. */
   if (!event.replayed) {
+    /* "Switch to acme-api": the active project is window state, so the reply
+     * carries the switch. The row is stored first, because switching re-reads
+     * the transcript of the project it moves to. */
+    const target=typeof details.switch_project==='string'?details.switch_project:'';
+    if (target&&target!==activeProjectId()) {
+      Promise.resolve(saved).finally(()=>{
+        switchProject(target);
+        if (details.action==='show_graph') showGraph(true);
+      });
+      return;
+    }
     if (details.action==='show_graph') showGraph(true);
     if (details.action==='show_graph'||details.progress_recorded>0) scheduleGraph(300);
     const project=String(details.project_id||'');
@@ -1632,7 +1643,7 @@ function saveMessage(message) {
     project_id:message.meta?.project_id||activeProjectId()||undefined,
     session_id:message.meta?.session||undefined,
   };
-  rpc('message_save',payload).catch(error=>record('warn','message save failed: '+error.message));
+  return rpc('message_save',payload).catch(error=>record('warn','message save failed: '+error.message));
 }
 function oldestLoadedCursor() {
   let cursor=null;

@@ -563,6 +563,11 @@ impl App {
             return Ok(None);
         };
         let mut settings = self.settings();
+        // Switching to the persona already in use changes nothing, so the
+        // words are left to the commands: "switch to Navi" names the project.
+        if settings["persona"].as_str() == Some(name.as_str()) {
+            return Ok(None);
+        }
         settings["persona"] = json!(name);
         self.save_settings(settings, false)?;
         self.event("persona", "Persona switched", json!({"persona":name}));
@@ -1523,6 +1528,16 @@ impl App {
                 return Ok(Some(json!({"kind":"switch","id":matched[0]["id"],
                     "name":matched[0]["name"]})));
             }
+            // No session by that name: "switch to acme-api" names a project.
+            let projects = self.projects()?;
+            let named: Vec<&Value> = projects
+                .iter()
+                .filter(|project| mentioned(&lower, project["name"].as_str().unwrap_or("")))
+                .collect();
+            if named.len() == 1 {
+                return Ok(Some(json!({"kind":"project_switch","id":named[0]["id"],
+                    "name":named[0]["name"]})));
+            }
             return Ok(None);
         }
         if !launching || resuming {
@@ -1748,6 +1763,19 @@ impl App {
                 };
                 Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
             }
+            "project_switch" => {
+                // The active project is window state, so the reply carries the
+                // switch to the station; later steps of the command use it too.
+                let id = action["id"].as_str().ok_or("Missing project")?.to_string();
+                let graph = self.graph_get(Some(&id))?;
+                let text = format!(
+                    "Switched to {}. {}",
+                    action["name"].as_str().unwrap_or("the project"),
+                    store::progress_sentence(&graph)
+                );
+                Ok(json!({"project_id": id,
+                    "reply": reply(Some(&id), text, json!({"action":"switch_project"}))}))
+            }
             "switch" => {
                 let target = action["id"].as_str().ok_or("Missing session")?;
                 self.session_target(&json!({"id":target}))?;
@@ -1817,6 +1845,10 @@ impl App {
         }
         let (persona, _, _) = self.assistant_target();
         let steps = clauses.len();
+        // "Switch to acme-api then assess the project": a step that switches
+        // project rescopes the steps after it.
+        let mut scope = params.clone();
+        let mut switched = Value::Null;
         let mut trace = Vec::new();
         let mut reply = Value::Null;
         // How many steps answered, and whether any answer has not reached the
@@ -1841,7 +1873,11 @@ impl App {
                     trace.push(decision);
                     continue;
                 }
-                let result = self.run_fast(clause, &action, params)?;
+                let result = self.run_fast(clause, &action, &scope)?;
+                if action["kind"] == "project_switch" {
+                    scope["project_id"] = result["project_id"].clone();
+                    switched = result["project_id"].clone();
+                }
                 if let Some(r) = result.get("reply").filter(|r| !r.is_null()) {
                     say(r);
                     if r["action"].as_str().is_some_and(|action| !action.is_empty()) {
@@ -1900,13 +1936,13 @@ impl App {
             // no reply is ever synthesized for a failure (BUG-014).
             let kind = action["kind"].as_str().unwrap_or("");
             let result = if routes_to_conversation(kind) {
-                let turn = self.assistant_turn(params)?;
+                let turn = self.assistant_turn(&scope)?;
                 let reply = self.converse(&conversational_text(clause), &turn, generation)?;
                 json!({"message":"No action requested","reply":reply})
             } else {
                 match kind {
                     "launch" => {
-                        let project = self.command_project(clause, params)?;
+                        let project = self.command_project(clause, &scope)?;
                         let name = literal_name(clause);
                         self.create_session(
                             &json!({"profile":action["profile"],"cwd":project["path"],"name":name}),
@@ -1991,6 +2027,11 @@ impl App {
             && reply["action"].as_str().is_none_or(str::is_empty)
         {
             reply["action"] = shown_action;
+        }
+        // The last step's reply may be about something else ("…then assess
+        // the project"), so the switch travels in its own field.
+        if !switched.is_null() && reply.is_object() {
+            reply["switch_project"] = switched;
         }
         // One reply per command reaches the chat: every step's answer joined,
         // unless the only answer was a model turn that already posted itself.
