@@ -319,7 +319,7 @@ basis{kind: estimate|parts|none, source, time}, estimate, trend[{time, percent,
 source}], aspects[], unassigned[], tasks{total, todo, in_progress, done, blocked,
 dropped}, risks[], signals[], signal_count}`. Each part carries `percent`,
 `percent_null`, `basis` (`estimate`, `tasks` or `none`), its `estimate`, the `derived`
-task mean, `verified`, `confidence` and its task `items[]`. The newest 40 signals
+task mean, `verified`, `confidence` and its task `items[]`. The newest 40 signals (working-tree clean/dirty flips collapsed to the current one)
 travel with the payload, so every number can be explained by the rows behind it.
 `progress_overview` returns the headline of every project for the switcher.
 
@@ -407,7 +407,7 @@ model and without the assistant:
 
 | Say or type | Effect |
 | --- | --- |
-| "How far along is the project?", "what's left", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; naming one part ("how far is the voice part") answers for that part, and "what's left" lists every unfinished part and up to five open tasks. "Show …" (or "show me the graph") also opens the panel |
+| "How far along is the project?", "what's left", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; naming one part ("how far is the voice part") answers for that part, "what's left" lists every unfinished part and up to five open tasks, and "what changed today" (or "any progress today") sums up the last day: the newest estimate per part, task updates and commits. "Show …" (or "show me the graph") also opens the panel |
 | "Close the progress", "hide the graph" | Closes the progress panel |
 | "Assess the project", "reassess acme-api", `/assess` | Runs the detector |
 | "Set the UI to 80%", "put voice at 60 percent", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |

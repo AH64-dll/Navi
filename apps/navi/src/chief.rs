@@ -1495,6 +1495,7 @@ impl App {
             "are we done", "are we finished", "are we there yet",
         ]
         .iter()
+        .chain(RECENT_PHRASES.iter())
         .any(|phrase| lower.contains(phrase));
         let core = [" for ", " of ", " in ", " on "]
             .iter()
@@ -1531,7 +1532,8 @@ impl App {
                 "what is remaining", "how much is left", "how much left", "how much remains"]
                 .iter()
                 .any(|phrase| lower.contains(phrase));
-            return Ok(Some(json!({"kind":"progress","show":show,"left":left})));
+            let recent = RECENT_PHRASES.iter().any(|phrase| lower.contains(phrase));
+            return Ok(Some(json!({"kind":"progress","show":show,"left":left,"recent":recent})));
         }
         if short && let Some(status) = self.session_status_intent(&lower)? {
             return Ok(Some(status));
@@ -1741,6 +1743,9 @@ impl App {
                     .collect();
                 let mut text = match named.as_slice() {
                     [aspect] => store::part_sentence(&graph, aspect),
+                    _ if action["recent"] == true => {
+                        store::recent_sentence(&graph, crate::now().saturating_sub(86_400_000))
+                    }
                     _ if action["left"] == true => store::remaining_sentence(&graph),
                     _ => store::progress_sentence(&graph),
                 };
@@ -2850,6 +2855,11 @@ fn action_summary(kind: &str, action: &Value, result: &Value) -> Option<String> 
 
 /// Navi's own slash commands (answered by the fast path, never sent to the
 /// assistant), as the usage line shown when one cannot be read.
+/// "What changed today": progress questions about the last day.
+const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has changed", "what's new",
+    "whats new", "progress today", "today's progress", "what happened today", "what did we do today",
+    "what got done", "since yesterday", "any progress"];
+
 /// What Navi answers itself, without a model; spoken too, so it stays short.
 const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”), report progress (“how far along is the project”, “what's left”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), stop or close one (“stop Codex”, “close terminal 2”), and show or close the progress panel. Anything else goes to the assistant.";
 

@@ -6,7 +6,7 @@
 use crate::{App, Result, id, now};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -1051,10 +1051,16 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
     };
     // Every number is derived from these rows, so the payload carries them:
     // a percentage whose evidence cannot be shown is a bug (BUG-084/089).
+    // Working-tree flips (git_dirty/git_clean) feed no number and arrive with
+    // every save during active work; only the newest, the current state, is
+    // listed, so they do not push estimates out of the 40 rows.
     let mut signal_statement = db
         .prepare(
             "SELECT id,task_id,aspect_id,kind,source,value,confidence,evidence,time
-             FROM signals WHERE project_id=?1 ORDER BY time DESC, id DESC LIMIT 40",
+             FROM signals WHERE project_id=?1
+               AND (kind NOT IN ('git_dirty','git_clean') OR id=(SELECT MAX(id) FROM signals
+                    WHERE project_id=?1 AND kind IN ('git_dirty','git_clean')))
+             ORDER BY time DESC, id DESC LIMIT 40",
         )
         .map_err(|error| error.to_string())?;
     let signals = signal_statement
@@ -1171,6 +1177,73 @@ pub fn part_sentence(graph: &Value, aspect: &Value) -> String {
         sentence.push_str(&format!(" The project overall is at {}%.", value.round()));
     }
     sentence
+}
+
+/// "What changed today": the estimates, task updates and commits recorded
+/// since `since` (from the graph's newest signals), then the headline.
+pub fn recent_sentence(graph: &Value, since: u64) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("this project");
+    let signals: Vec<&Value> = graph["signals"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|signal| signal["time"].as_u64().is_some_and(|time| time >= since))
+        .collect();
+    let titles: BTreeMap<&str, &str> = graph["aspects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|aspect| Some((aspect["id"].as_str()?, aspect["title"].as_str()?)))
+        .collect();
+    // Newest estimate per target, newest first.
+    let mut seen = BTreeSet::new();
+    let mut estimates = Vec::new();
+    for signal in signals.iter().filter(|signal| signal["kind"] == "estimate") {
+        let target = signal["aspect_id"].as_str();
+        if !seen.insert(target) {
+            continue;
+        }
+        let who = match signal["source"].as_str().unwrap_or("assistant") {
+            "user" => "you".to_string(),
+            source => source_name(source),
+        };
+        let what = target.and_then(|id| titles.get(id).copied()).unwrap_or("the project");
+        let value = signal["value"].as_f64().unwrap_or(0.0) * 100.0;
+        estimates.push(format!("{who} put {what} at {}%", value.round()));
+    }
+    let tasks = signals
+        .iter()
+        .filter_map(|signal| signal["task_id"].as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let commits = signals.iter().filter(|signal| signal["kind"] == "git_commit").count();
+    let mut changes = Vec::new();
+    if !estimates.is_empty() {
+        let shown = estimates.iter().take(4).cloned().collect::<Vec<_>>().join(", ");
+        changes.push(capitalise(&shown));
+    }
+    if tasks > 0 {
+        changes.push(format!("{tasks} task{} updated", if tasks == 1 { "" } else { "s" }));
+    }
+    if commits > 0 {
+        changes.push(format!("{commits} commit{}", if commits == 1 { "" } else { "s" }));
+    }
+    if changes.is_empty() {
+        return format!("Nothing was recorded on {name} in the last day.");
+    }
+    let mut sentence = format!("In the last day on {name}: {}.", changes.join("; "));
+    if let Some(value) = graph["percent"].as_f64() {
+        sentence.push_str(&format!(" It is now about {}% complete.", value.round()));
+    }
+    sentence
+}
+
+fn capitalise(text: &str) -> String {
+    let mut characters = text.chars();
+    characters
+        .next()
+        .map(|first| first.to_uppercase().chain(characters).collect())
+        .unwrap_or_default()
 }
 
 /// "What's left": the headline, every unfinished part from furthest behind,
