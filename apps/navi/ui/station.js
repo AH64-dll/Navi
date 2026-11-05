@@ -1176,12 +1176,13 @@ function warningEvent(event) {
   if (assessing&&project===assessing.project&&/assessment|PROGRESS lines/i.test(message)) endAssessment(project);
 }
 /* A progress report is one compact row: who moved what, and on what evidence.
- * Reports for another project only refresh that project's switcher entry. */
+ * The user's own changes get no row (the panel or the spoken reply already
+ * shows them), and reports for another project only refresh its switcher. */
 function progressEvent(event) {
   const details=event.details||{};
   const project=String(details.project_id||event.project_id||'');
   const active=activeProjectId();
-  if (!event.replayed&&(!project||project===active)) {
+  if (!event.replayed&&details.source!=='user'&&(!project||project===active)) {
     const message=capitalise(String(event.message||'Progress updated'));
     const evidence=details.scan===true||details.assessment?'':String(details.evidence||'').trim();
     const line=evidence?`${message} — ${evidence}`:message;
@@ -1884,10 +1885,15 @@ function invalidateCatalogs() {
   for (const entry of Object.values(catalogs)) { entry.list=null; entry.at=0; }
   slashCommands=null;
 }
+/* A failure is never cached, but it is not retried on every keystroke either:
+ * without the assistant, typing "/progress" would make nine failing calls. */
+const CATALOG_RETRY=5000;
+let commandsFailedAt=0;
 async function commandCatalog() {
   if (slashCommands&&Date.now()-catalogs.commands.at<CATALOG_TTL) return slashCommands;
+  if (Date.now()-commandsFailedAt<CATALOG_RETRY) return slashCommands||[];
   try { await catalog('commands','oc_commands'); }
-  catch { slashCommands=null; }   // a failure is reported by the caller, never cached
+  catch { slashCommands=null; commandsFailedAt=Date.now(); }
   return slashCommands||[];
 }
 const slashList=()=>element('slash-list'), commandInput=()=>element('command');
@@ -1902,9 +1908,20 @@ function applySlash(command) {
 function pickSlash(index) {
   if (slashMatches[index]) applySlash(slashMatches[index].name);
 }
+/* Navi's own commands, answered by the daemon's fast path without a model;
+ * the assistant's commands follow them when its catalog is available. */
+const NAVI_COMMANDS=[
+  {name:'progress',description:'How far along the active project is, and its parts'},
+  {name:'assess',description:'Scan the project and ask a harness to estimate each part'},
+  {name:'open',description:'Open a harness in the active project: /open claude code'},
+  {name:'mark',description:'Set a task’s state: /mark barge-in done'},
+  {name:'set',description:'Set a part’s percent: /set voice to 80%'},
+];
 function renderSlash(prefix) {
   slashPrefix=prefix;
-  slashMatches=(slashCommands||[]).filter(c=>!prefix||c.name.startsWith(prefix)).slice(0,12);
+  const own=new Set(NAVI_COMMANDS.map(command=>command.name));
+  slashMatches=[...NAVI_COMMANDS,...(slashCommands||[]).filter(command=>!own.has(command.name))]
+    .filter(c=>!prefix||c.name.startsWith(prefix)).slice(0,12);
   if (!slashMatches.length) { hideSlash(); return; }
   slashIndex=Math.min(slashIndex,slashMatches.length-1);
   const list=slashList(); list.replaceChildren();

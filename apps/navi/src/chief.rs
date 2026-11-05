@@ -1089,7 +1089,7 @@ impl App {
     /// emit `working` once, and reply through events (BUG-016/018).
     pub fn run_request(&self, params: &Value, generation: u64) -> Result<Value> {
         let text = params["text"].as_str().unwrap_or_default();
-        if text.trim_start().starts_with('/') {
+        if text.trim_start().starts_with('/') && navi_slash(text).is_none() {
             return self.run_slash(text.trim(), params, generation);
         }
         self.run_command(text, params, false, generation)
@@ -1405,12 +1405,25 @@ impl App {
             .trim_end_matches(['.', '!', '?'])
             .trim()
             .to_string();
+        // Navi's own slash commands read as the sentence they stand for; any
+        // other slash command belongs to the assistant.
+        let lower = match lower.split_once(' ').map_or((lower.as_str(), ""), |(head, rest)| (head, rest)) {
+            ("/progress", _) => "show the progress".to_string(),
+            ("/assess", _) => "assess the project".to_string(),
+            ("/open" | "/mark" | "/set" | "/reopen", rest) if !rest.trim().is_empty() => {
+                lower.trim_start_matches('/').to_string()
+            }
+            _ => lower,
+        };
         if lower.is_empty() || negated(&lower) {
             return Ok(None);
         }
         let short = lower.split_whitespace().count() <= 14;
         if short && let Some((part, percent)) = parse_set_progress(&lower) {
             return Ok(Some(json!({"kind":"progress_set","part":part,"percent":percent})));
+        }
+        if short && let Some((task, state)) = parse_task_state(&lower) {
+            return Ok(Some(json!({"kind":"task_state","task":task,"state":state})));
         }
         let asking = [
             "how far along", "how far are we", "how far is", "how much is done", "how much of",
@@ -1452,7 +1465,7 @@ impl App {
             let show = ["show", "open", "display"].iter().any(|word| mentioned(&lower, word));
             return Ok(Some(json!({"kind":"progress","show":show})));
         }
-        if !immediate_request(clause) {
+        if !immediate_request(&lower) {
             return Ok(None);
         }
         let settings = self.settings();
@@ -1585,6 +1598,123 @@ impl App {
                 };
                 Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
             }
+            "task_state" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let graph = self.graph_get(Some(&id))?;
+                let tasks: Vec<&Value> = graph["aspects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|aspect| aspect["items"].as_array().into_iter().flatten())
+                    .chain(graph["unassigned"].as_array().into_iter().flatten())
+                    .collect();
+                let spoken = action["task"].as_str().unwrap_or_default();
+                let wanted = loose_title(spoken);
+                // Speech rarely reproduces a title exactly ("barge in" for
+                // "Barge-in"): an exact loose match wins, else one task whose
+                // title contains the words (or is contained in them).
+                let exact: Vec<&Value> = tasks
+                    .iter()
+                    .copied()
+                    .filter(|task| loose_title(task["title"].as_str().unwrap_or("")) == wanted)
+                    .collect();
+                let partial: Vec<&Value> = tasks
+                    .iter()
+                    .copied()
+                    .filter(|task| {
+                        let title = loose_title(task["title"].as_str().unwrap_or(""));
+                        !title.is_empty() && (title.contains(&wanted) || wanted.contains(&title))
+                    })
+                    .collect();
+                let chosen = match (exact.len(), partial.len()) {
+                    (1, _) => Some(exact[0]),
+                    (0, 1) => Some(partial[0]),
+                    _ => None,
+                };
+                let state = action["state"].as_str().unwrap_or("done");
+                let text = match chosen {
+                    Some(task) => {
+                        let title = task["title"].as_str().unwrap_or(spoken);
+                        let evidence: String = clause.trim().chars().take(200).collect();
+                        match self.progress_report(&json!({
+                            "project_id": id,
+                            "task_id": task["id"],
+                            "state": state,
+                            "evidence": format!("user said: {evidence}"),
+                            "confidence": 1.0,
+                            "source": "user",
+                            "create": false,
+                        })) {
+                            Ok(result) => format!(
+                                "Marked “{title}” {}. {}",
+                                match state {
+                                    "in_progress" => "in progress",
+                                    "todo" => "to do",
+                                    other => other,
+                                },
+                                result["summary"].as_str().unwrap_or("")
+                            ),
+                            Err(error) => error,
+                        }
+                    }
+                    // "Mark the detector done" names a part, not a task: the
+                    // part is finished.
+                    None if state == "done" && exact.is_empty() && partial.is_empty() && graph["aspects"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|aspect| loose_title(aspect["title"].as_str().unwrap_or("")) == wanted) =>
+                    {
+                        let part = graph["aspects"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .find(|aspect| loose_title(aspect["title"].as_str().unwrap_or("")) == wanted)
+                            .cloned()
+                            .unwrap_or_default();
+                        let evidence: String = clause.trim().chars().take(200).collect();
+                        match self.progress_report(&json!({
+                            "project_id": id,
+                            "aspect_id": part["id"],
+                            "percent": 100.0,
+                            "evidence": format!("user said: {evidence}"),
+                            "confidence": 1.0,
+                            "source": "user",
+                            "create": false,
+                        })) {
+                            Ok(result) => format!(
+                                "{} is now at 100%. {}",
+                                part["title"].as_str().unwrap_or(spoken),
+                                result["summary"].as_str().unwrap_or("")
+                            ),
+                            Err(error) => error,
+                        }
+                    }
+                    None => {
+                        let candidates = if exact.len() + partial.len() > 1 {
+                            exact.iter().chain(partial.iter()).copied().collect::<Vec<_>>()
+                        } else {
+                            tasks.clone()
+                        };
+                        let names: Vec<&str> = candidates
+                            .iter()
+                            .filter_map(|task| task["title"].as_str())
+                            .collect::<std::collections::BTreeSet<_>>()
+                            .into_iter()
+                            .take(8)
+                            .collect();
+                        if tasks.is_empty() {
+                            "This project has no tasks yet. A harness adds them as it reports, or add one in the progress panel.".to_string()
+                        } else if exact.len() + partial.len() > 1 {
+                            format!("More than one task matches “{spoken}”: {}.", names.join(", "))
+                        } else {
+                            format!("No task matches “{spoken}”. Tasks: {}.", names.join(", "))
+                        }
+                    }
+                };
+                Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+            }
             "switch" => {
                 let target = action["id"].as_str().ok_or("Missing session")?;
                 self.session_target(&json!({"id":target}))?;
@@ -1619,7 +1749,22 @@ impl App {
     }
 
     pub fn run_command(&self, text: &str, params: &Value, dry: bool, generation: u64) -> Result<Value> {
-        let clauses = text.split(" then ").collect::<Vec<_>>();
+        // "Open Claude and assess the project" is two fast steps. A clause is
+        // split on "and" only when every half is a fast intent, so "write a
+        // parser and its tests" still reaches the model whole.
+        let mut clauses: Vec<&str> = Vec::new();
+        for clause in text.split(" then ") {
+            let halves: Vec<&str> = clause.split(" and ").collect();
+            if halves.len() > 1
+                && halves
+                    .iter()
+                    .all(|half| matches!(self.fast_intent(half), Ok(Some(_))))
+            {
+                clauses.extend(halves);
+            } else {
+                clauses.push(clause);
+            }
+        }
         if clauses.len() > 4 {
             return Err("Use at most four explicit steps in one command".into());
         }
@@ -1636,6 +1781,16 @@ impl App {
         );
         let mut trace = Vec::new();
         let mut reply = Value::Null;
+        // Each step posts its own reply to the chat; voice speaks them as one.
+        let mut spoken: Vec<String> = Vec::new();
+        let mut say = |reply: &Value| {
+            if let Some(text) = reply["text"].as_str().map(str::trim).filter(|text| !text.is_empty())
+                // A step's summary often ends the previous step's reply too.
+                && !spoken.iter().any(|earlier| earlier.contains(text))
+            {
+                spoken.push(text.to_string());
+            }
+        };
         for clause in clauses {
             if let Some(action) = self.fast_intent(clause)? {
                 let decision = json!({"selected":"fast","action":action});
@@ -1645,6 +1800,7 @@ impl App {
                 }
                 let result = self.run_fast(clause, &action, params)?;
                 if let Some(r) = result.get("reply").filter(|r| !r.is_null()) {
+                    say(r);
                     reply = r.clone();
                 }
                 self.event(
@@ -1654,6 +1810,11 @@ impl App {
                 );
                 trace.push(json!({"decision":decision,"result":result}));
                 continue;
+            }
+            // A Navi slash command the fast path could not read gets its usage,
+            // not a model's guess.
+            if let Some(usage) = navi_slash(clause) {
+                return Err(usage.into());
             }
             let decision = match self.decide(clause, generation) {
                 Ok(decision) => decision,
@@ -1755,6 +1916,7 @@ impl App {
                 return Err(result["error"].as_str().unwrap_or("Action failed").into());
             }
             if let Some(r) = result.get("reply").filter(|r| !r.is_null()) {
+                say(r);
                 reply = r.clone();
             }
             self.event(
@@ -1763,6 +1925,9 @@ impl App {
                 json!({"decision":decision,"result":result}),
             );
             trace.push(json!({"decision":decision,"result":result}));
+        }
+        if !spoken.is_empty() && reply.is_object() {
+            reply["text"] = json!(spoken.join(" "));
         }
         Ok(json!({"trace":trace,"dry_run":dry,"reply":reply}))
     }
@@ -2216,6 +2381,74 @@ fn progress_subject(lower: &str) -> bool {
                 )
             })
     })
+}
+
+/// "mark barge-in done", "mark the streaming TTS task as in progress",
+/// "check off barge-in", "reopen barge-in": a task title as spoken and the
+/// state the user gave it.
+fn parse_task_state(lower: &str) -> Option<(String, &'static str)> {
+    let text = lower.trim();
+    let (title, state) = if let Some(rest) = text.strip_prefix("check off ") {
+        (rest, "done")
+    } else if let Some(rest) = text.strip_prefix("reopen ") {
+        (rest, "todo")
+    } else {
+        let rest = text.strip_prefix("mark ")?;
+        // Longer suffixes first: "not done" also ends in "done".
+        const STATES: [(&str, &str); 20] = [
+            (" as not done", "todo"),
+            (" not done", "todo"),
+            (" as to do", "todo"),
+            (" to do", "todo"),
+            (" as todo", "todo"),
+            (" todo", "todo"),
+            (" as in progress", "in_progress"),
+            (" in progress", "in_progress"),
+            (" as started", "in_progress"),
+            (" started", "in_progress"),
+            (" as blocked", "blocked"),
+            (" blocked", "blocked"),
+            (" as done", "done"),
+            (" done", "done"),
+            (" as completed", "done"),
+            (" completed", "done"),
+            (" as complete", "done"),
+            (" complete", "done"),
+            (" as finished", "done"),
+            (" finished", "done"),
+        ];
+        STATES
+            .iter()
+            .find_map(|(suffix, state)| rest.strip_suffix(suffix).map(|title| (title, *state)))?
+    };
+    let title = title.trim();
+    let title = title.strip_prefix("the ").unwrap_or(title);
+    let title = title.strip_suffix(" task").unwrap_or(title);
+    let title = title.trim().trim_matches(['"', '“', '”', '\'']).trim();
+    (!title.is_empty() && title.split_whitespace().count() <= 8).then(|| (title.to_string(), state))
+}
+
+/// Navi's own slash commands (answered by the fast path, never sent to the
+/// assistant), as the usage line shown when one cannot be read.
+fn navi_slash(text: &str) -> Option<&'static str> {
+    let head = text.split_whitespace().next()?.to_lowercase();
+    Some(match head.as_str() {
+        "/progress" => "Use /progress to see how far along the active project is",
+        "/assess" => "Use /assess to scan the project and ask a harness to estimate it",
+        "/open" => "Use /open <harness>, for example /open claude code",
+        "/mark" | "/reopen" => "Use /mark <task> done, in progress, blocked or todo",
+        "/set" => "Use /set <part> to <percent>%, for example /set voice to 80%",
+        _ => return None,
+    })
+}
+
+/// A title reduced to lowercase words, so "Barge-in" and "barge in" match.
+fn loose_title(text: &str) -> String {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// "set the UI to 80 percent", "mark voice at 40%", "the UI is 70 percent

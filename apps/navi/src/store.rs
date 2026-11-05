@@ -1955,12 +1955,19 @@ impl App {
         } else {
             value
         };
+        // A user's word on a task's state is a verdict, the same as ticking its
+        // box in the panel: verified, and final against later model reports.
+        let kind = if source == "user" && task.is_some() && next_state.is_some() {
+            "verdict"
+        } else {
+            "estimate"
+        };
         let signal = match value {
             Some(value) => Some(self.add_signal(
                 &project_id,
                 task.as_ref().map(|(id, _)| id.as_str()),
                 aspect_id.as_deref(),
-                "estimate",
+                kind,
                 &source,
                 Some(value),
                 confidence,
