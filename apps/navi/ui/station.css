@@ -609,9 +609,11 @@ body[data-dock="max"] #shell{grid-template-columns:minmax(0,1fr) auto;
 body[data-dock="max"] #stage-region{display:none}
 body[data-dock="max"] .terminal-pane{grid-area:stage;margin-left:0;width:auto;height:auto}
 
-/* Short windows: the composer collapses to one line and scrolls (BUG-021). */
+/* Short windows (down to the 560 px floor): the stage gives way so the latest
+ * reply stays readable instead of collapsing to one line (BUG-021). */
 @media(max-height:640px){
-  #chat-log{min-height:var(--composer-line);max-height:var(--composer-line)}
+  .chat{--composer-max:min(38vh,240px)}
+  #chat-log{min-height:var(--composer-line)}
 }
 
 /* Short windows: the first-run block keeps its buttons and drops its prose. */
