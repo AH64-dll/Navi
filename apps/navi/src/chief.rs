@@ -1696,6 +1696,7 @@ impl App {
         let op = match verb {
             "stop" | "interrupt" | "pause" => "interrupt",
             "close" | "quit" | "exit" | "kill" | "end" | "terminate" => "kill",
+            "reopen" | "resume" => "reopen",
             _ => return Ok(None),
         };
         // The object must be the session and nothing more, so "stop opening
@@ -1710,6 +1711,44 @@ impl App {
             return Ok(None);
         }
         let sessions = self.sessions()?;
+        if op == "reopen" {
+            // A finished session, by its Recent label ("Codex #2") or name,
+            // newest first. Nothing finished matches: not a session command,
+            // so "reopen barge-in" still reaches the task intent.
+            let finished = finished_labels(&sessions);
+            let named = |session: &&Value| {
+                finished
+                    .get(session["id"].as_str().unwrap_or_default())
+                    .is_some_and(|label| spoken_numbers(label) == object)
+                    || ["name", "profile", "harness"].iter().any(|key| {
+                        session[*key].as_str().is_some_and(|value| spoken_numbers(value) == object)
+                    })
+                    || (session["profile"] == "claude" && object == "claude code")
+            };
+            let mut matches: Vec<&Value> = sessions
+                .iter()
+                .filter(|session| finished.contains_key(session["id"].as_str().unwrap_or_default()))
+                .filter(named)
+                .collect();
+            matches.sort_by_key(|session| std::cmp::Reverse(session["last_active"].as_u64().unwrap_or(0)));
+            let ids: Vec<Value> = matches.iter().map(|session| session["id"].clone()).collect();
+            if !ids.is_empty() {
+                return Ok(Some(json!({"kind":"session_reopen","ids":ids})));
+            }
+            // "Reopen Codex" while Codex runs: say so rather than look for a task.
+            let labels = session_labels(&sessions);
+            let open = sessions.iter().filter(|session| session["running"] == true).find_map(|session| {
+                let label = labels.get(session["id"].as_str().unwrap_or_default())?;
+                if spoken_numbers(label) == object {
+                    return Some(label.clone());
+                }
+                let same = ["name", "profile", "harness"].iter().any(|key| {
+                    session[*key].as_str().is_some_and(|value| spoken_numbers(value) == object)
+                }) || (session["profile"] == "claude" && object == "claude code");
+                same.then(|| session["name"].as_str().unwrap_or("That session").to_string())
+            });
+            return Ok(open.map(|label| json!({"kind":"session_reopen","ids":[],"open":label})));
+        }
         let labels = session_labels(&sessions);
         let running = || sessions.iter().filter(|session| session["running"] == true);
         let mut ids: Vec<Value> = running()
@@ -2084,6 +2123,38 @@ impl App {
                         "Which one: {}?",
                         many.iter().map(|session| label(session)).collect::<Vec<_>>().join(", ")
                     ),
+                };
+                Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
+            }
+            "session_reopen" => {
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                let sessions = self.sessions()?;
+                let finished = finished_labels(&sessions);
+                let ids = action["ids"].as_array().cloned().unwrap_or_default();
+                // Newest first; one in this project wins over one elsewhere.
+                let candidates: Vec<&Value> = ids
+                    .iter()
+                    .filter_map(|id| sessions.iter().find(|session| &session["id"] == id))
+                    .filter(|session| finished.contains_key(session["id"].as_str().unwrap_or_default()))
+                    .collect();
+                let chosen = candidates
+                    .iter()
+                    .find(|session| session["project_id"].as_str() == here.as_deref())
+                    .or(candidates.first());
+                let text = match chosen {
+                    Some(session) => {
+                        let result = self.session_restart(&json!({"id": session["id"]}))?;
+                        let name = session["name"].as_str().unwrap_or("the session");
+                        if result["native_id"].as_str().is_some_and(|id| !id.is_empty()) {
+                            format!("Reopened {name}, continuing its conversation.")
+                        } else {
+                            format!("Reopened {name}.")
+                        }
+                    }
+                    None => match action["open"].as_str() {
+                        Some(label) => format!("{label} is already open."),
+                        None => "That session was already reopened or removed.".to_string(),
+                    },
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
@@ -2988,7 +3059,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”), stop or close one (“stop Codex”, “close terminal 2”), and show or close the progress panel. Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
@@ -3080,6 +3151,31 @@ fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut labels = HashMap::new();
     for session in live {
+        let name = session["name"].as_str().unwrap_or("session");
+        let index = seen.entry(key(session)).or_default();
+        *index += 1;
+        let label = if counts[&key(session)] > 1 { format!("{name} #{index}") } else { name.to_string() };
+        labels.insert(session["id"].as_str().unwrap_or_default().to_string(), label);
+    }
+    labels
+}
+
+/// Finished, not-yet-reopened sessions' labels as the Recent group shows
+/// them: numbered "#n" newest first when one project has several of a name.
+fn finished_labels(sessions: &[Value]) -> HashMap<String, String> {
+    let mut finished: Vec<&Value> = sessions
+        .iter()
+        .filter(|session| session["running"] != true && session["replaced_by"].is_null())
+        .collect();
+    finished.sort_by_key(|session| std::cmp::Reverse(session["last_active"].as_u64().unwrap_or(0)));
+    let key = |session: &Value| format!("{}\u{0}{}", session["project_id"], session["name"]);
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for session in &finished {
+        *counts.entry(key(session)).or_default() += 1;
+    }
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut labels = HashMap::new();
+    for session in finished {
         let name = session["name"].as_str().unwrap_or("session");
         let index = seen.entry(key(session)).or_default();
         *index += 1;

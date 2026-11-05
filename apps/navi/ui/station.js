@@ -3665,15 +3665,19 @@ function updateSessionChip(node,session,label) {
   const stateText=node.querySelector('.session-state');
   stateText.textContent=live?(SESSION_WORDS[session.state]||String(session.state||'running')):'exited';
   node.dataset.harness=String(session.harness||'');
-  node.title=[profileLabel(session.profile),session.cwd||'','last active '+relativeTime(session.last_active)].filter(Boolean).join(' · ');
+  const reopen=live?'':session.native_id?'Click to reopen and continue its conversation':'Click to reopen';
+  node.title=[profileLabel(session.profile),session.cwd||'','last active '+relativeTime(session.last_active),reopen].filter(Boolean).join(' · ');
+  /* A finished chip reopens its session in place: same name, and the harness's
+   * own conversation when one was recorded (session_restart). */
+  const activate=()=>live?openTerminal(session):reopenSession(session,label);
   node.onclick=event=>{
     if (event.target.closest('.session-drop')) return;
-    openTerminal(session);
+    activate();
   };
   node.onkeydown=event=>{
     if (event.key!=='Enter'&&event.key!==' ') return;
     event.preventDefault();
-    openTerminal(session);
+    activate();
   };
   /* Dead rows can be pruned on request; a live row keeps its terminal. */
   const drop=node.querySelector('.session-drop');
@@ -3693,6 +3697,16 @@ function updateSessionChip(node,session,label) {
   }
   button.title='Remove this finished session';
   button.setAttribute('aria-label','Remove session '+label);
+}
+const reopening=new Set();
+function reopenSession(session,label) {
+  if (reopening.has(session.id)) return;
+  reopening.add(session.id);
+  toast('Reopening '+label+'…');
+  rpc('session_restart',{id:session.id})
+    .then(result=>{ if (result?.id) openTerminal(result); })
+    .catch(error=>surfaceFailure(error.message))
+    .finally(()=>reopening.delete(session.id));
 }
 function removeSession(session) {
   rpc('session_remove',{id:session.id})
@@ -3902,7 +3916,8 @@ function renderSessions(list) {
   const elsewhere=session=>!!activeId&&!!session.project_id&&session.project_id!==activeId;
   const live=sessions.filter(session=>session.running===true)
     .sort((a,b)=>Number(elsewhere(a))-Number(elsewhere(b))||(Number(a.created)||0)-(Number(b.created)||0));
-  const dead=sessions.filter(session=>session.running!==true)
+  /* A finished row that was reopened lives on as its replacement. */
+  const dead=sessions.filter(session=>session.running!==true&&!session.replaced_by)
     .sort((a,b)=>(Number(b.last_active)||0)-(Number(a.last_active)||0));
   const labels=new Map();
   for (const group of [live,dead]) {

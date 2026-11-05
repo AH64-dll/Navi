@@ -143,7 +143,8 @@ last activity, numbers duplicate names within a project ("Codex #2"), drops the 
 word rather than wrapping when the strip is crowded, and is reconciled in place; clicking one attaches an xterm terminal pane to its live tmux
 session, titled like its chip (`Terminal #2 · Navi`: session, harness when the name
 does not already say it, project), where an inline prompt field sends input straight
-into the harness. The "+" chip opens a quick-launch menu: one click starts Codex,
+into the harness. Clicking a finished chip reopens it (`session_restart`): same name,
+the harness's own conversation when one was recorded, and the old chip leaves Recent. The "+" chip opens a quick-launch menu: one click starts Codex,
 Claude Code, Pi, OpenCode, a terminal or a custom profile in the active project and
 attaches it; a harness whose binary is not on the launch PATH is listed as "not
 installed" and cannot be picked. "More options…" opens the full launcher dialog — any
@@ -425,6 +426,7 @@ model and without the assistant:
 | "Switch to acme-api", "go to acme-api", "open the acme-api project" | Makes that project active in the station (a session with that name wins) and speaks its headline. The reply is stored with the question, in the project it was asked in, and shows as a notice after the switch |
 | "Tell Codex to run the tests", "ask Claude what it changed", "continue in Codex: add a test", "tell this to …" | Types the prompt into that open session ("this" is the active one), as the voice route does. The prompt keeps its casing; a session busy with a command is not typed over |
 | "Stop Codex", "interrupt terminal number two", "close terminal #2", "quit Claude Code" | Interrupts (stop, interrupt, pause) or closes (close, quit, exit, kill, end) that one session. The words after the verb must name a single open session, so "stop opening Codex" is not read this way. With two candidates, a session in the active project wins, otherwise Navi asks which. A closed session stays under Recent |
+| "Reopen Codex", "resume terminal", "reopen Codex #2" | Reopens a finished session from Recent (newest first, this project first) under its old name; a harness that recorded its conversation id continues that conversation. Clicking a finished chip does the same. When nothing finished matches but that session is open, Navi says so; otherwise the words go on to "reopen <task>" |
 | "Help", "what can you do", `/help` | Lists what Navi answers without a model |
 | "Is Codex done?", "what is Claude doing", "what's running", `/sessions`, "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them |
 
