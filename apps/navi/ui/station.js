@@ -2225,6 +2225,23 @@ function openReplayRequest(payload,events) {
 /* `update` is the single entry point for the daemon payload: settings, sessions,
  * voice and every event. The host can also push a payload straight in (`navi.push`)
  * and a partial payload is merged over the last snapshot instead of replacing it. */
+/* A new commit changes "N commits since" without a progress event, so a moved
+ * HEAD refreshes the graph (active project) and the switcher's overview. */
+const seenHeads=new Map();
+function noteHeads(projects) {
+  if (!Array.isArray(projects)) return;
+  let moved=false;
+  for (const project of projects) {
+    if (!project?.id) continue;
+    const id=String(project.id), head=String(project.git_head||'');
+    if (seenHeads.has(id)&&seenHeads.get(id)!==head) {
+      moved=true;
+      if (id===activeProjectId()) scheduleGraph(600);
+    }
+    seenHeads.set(id,head);
+  }
+  if (moved) scheduleOverview(1200);
+}
 function update(value) {
   if (!value||typeof value!=='object') return;
   /* Only a payload that carries `settings` is the full snapshot; a sectioned push or
@@ -2240,6 +2257,7 @@ function update(value) {
   renderProjectSwitcher();
   updateProjectLine();
   syncProgressScope();
+  noteHeads(payload.projects);
   applyVoice(payload.voice||{});
   const events=Array.isArray(payload.events)?payload.events:[];
   const openRequest=openReplayRequest(payload,events);
