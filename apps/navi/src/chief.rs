@@ -1,7 +1,7 @@
 use crate::{App, Result, now, store};
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
@@ -1452,6 +1452,11 @@ impl App {
             }
             _ => lower,
         };
+        // Before the negation guard, which reads any "stop" as one: this only
+        // takes a verb followed by exactly one session's name.
+        if let Some(control) = self.session_control_intent(&lower)? {
+            return Ok(Some(control));
+        }
         if lower.is_empty() || negated(&lower) {
             return Ok(None);
         }
@@ -1594,6 +1599,56 @@ impl App {
             _ => return Ok(None),
         };
         Ok(Some(json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]})))
+    }
+
+    /// "Stop Codex", "close terminal 2": interrupt or close one open session.
+    /// Sessions are named as the strip names them, so "#2" (or "two") picks
+    /// one of several same-named panes.
+    fn session_control_intent(&self, lower: &str) -> Result<Option<Value>> {
+        let mut command = lower;
+        for prefix in ["please ", "can you ", "could you ", "would you "] {
+            command = command.strip_prefix(prefix).unwrap_or(command);
+        }
+        let (verb, object) = command.split_once(' ').unwrap_or((command, ""));
+        let op = match verb {
+            "stop" | "interrupt" | "pause" => "interrupt",
+            "close" | "quit" | "exit" | "kill" | "end" | "terminate" => "kill",
+            _ => return Ok(None),
+        };
+        // The object must be the session and nothing more, so "stop opening
+        // Codex" or "close the progress" are not read as session commands.
+        let mut object = object.trim();
+        object = object.strip_prefix("the ").unwrap_or(object);
+        for suffix in [" please", " now", " session", " pane", " tab"] {
+            object = object.strip_suffix(suffix).unwrap_or(object);
+        }
+        let object = spoken_numbers(object);
+        if object.is_empty() {
+            return Ok(None);
+        }
+        let sessions = self.sessions()?;
+        let labels = session_labels(&sessions);
+        let running = || sessions.iter().filter(|session| session["running"] == true);
+        let mut ids: Vec<Value> = running()
+            .filter(|session| {
+                labels
+                    .get(session["id"].as_str().unwrap_or_default())
+                    .is_some_and(|label| spoken_numbers(label) == object)
+            })
+            .map(|session| session["id"].clone())
+            .collect();
+        if ids.is_empty() {
+            ids = running()
+                .filter(|session| {
+                    ["name", "profile", "harness"]
+                        .iter()
+                        .any(|key| session[*key].as_str().is_some_and(|value| spoken_numbers(value) == object))
+                        || (session["profile"] == "claude" && object == "claude code")
+                })
+                .map(|session| session["id"].clone())
+                .collect();
+        }
+        Ok((!ids.is_empty()).then(|| json!({"kind":"session_control","op":op,"ids":ids})))
     }
 
     /// "Is Codex done?", "what is Claude doing", "what's running", "does
@@ -1840,11 +1895,57 @@ impl App {
                 };
                 Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
             }
+            "session_control" => {
+                let sessions = self.sessions()?;
+                let labels = session_labels(&sessions);
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                let ids = action["ids"].as_array().cloned().unwrap_or_default();
+                let mut chosen: Vec<&Value> = sessions
+                    .iter()
+                    .filter(|session| session["running"] == true && ids.contains(&session["id"]))
+                    .collect();
+                // "Close Codex" with a Codex here and one elsewhere means this one.
+                if chosen.len() > 1 {
+                    let local: Vec<&Value> = chosen
+                        .iter()
+                        .copied()
+                        .filter(|session| session["project_id"].as_str() == here.as_deref())
+                        .collect();
+                    if local.len() == 1 {
+                        chosen = local;
+                    }
+                }
+                let label = |session: &Value| {
+                    labels
+                        .get(session["id"].as_str().unwrap_or_default())
+                        .cloned()
+                        .unwrap_or_else(|| session["name"].as_str().unwrap_or("the session").to_string())
+                };
+                let text = match chosen.as_slice() {
+                    [session] => {
+                        let target = json!({"id": session["id"]});
+                        if action["op"] == "kill" {
+                            self.session_kill(&target)?;
+                            format!("Closed {}. It stays under Recent.", label(session))
+                        } else {
+                            self.session_interrupt(&target)?;
+                            format!("Interrupted {}.", label(session))
+                        }
+                    }
+                    [] => "That session is no longer open.".to_string(),
+                    many => format!(
+                        "Which one: {}?",
+                        many.iter().map(|session| label(session)).collect::<Vec<_>>().join(", ")
+                    ),
+                };
+                Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
+            }
             "progress_hide" => Ok(json!({"reply": reply(None, "Closed the progress panel.".into(),
                 json!({"action":"hide_graph"}))})),
             "session_status" => {
                 let sessions = self.sessions()?;
                 let projects = self.projects()?;
+                let labels = session_labels(&sessions);
                 let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
                 let chosen: Vec<&Value> = sessions
                     .iter()
@@ -1865,22 +1966,10 @@ impl App {
                         "starting" | "created" => "is starting",
                         _ => "is open",
                     };
-                    // Numbered as the session strip numbers live sessions:
-                    // by creation, among same-named ones of one project.
-                    let name = session["name"].as_str().unwrap_or("A session");
-                    let mut twins: Vec<&Value> = sessions
-                        .iter()
-                        .filter(|other| {
-                            other["running"] == true
-                                && other["name"] == session["name"]
-                                && other["project_id"] == session["project_id"]
-                        })
-                        .collect();
-                    twins.sort_by_key(|other| other["created"].as_i64().unwrap_or(0));
-                    let label = match twins.iter().position(|other| other["id"] == session["id"]) {
-                        Some(index) if twins.len() > 1 => format!("{name} #{}", index + 1),
-                        _ => name.to_string(),
-                    };
+                    let label = labels
+                        .get(session["id"].as_str().unwrap_or_default())
+                        .cloned()
+                        .unwrap_or_else(|| session["name"].as_str().unwrap_or("A session").to_string());
                     let mut line = format!("{label} {state}");
                     // A session from another project says where it is.
                     if let Some(project_id) = session["project_id"].as_str()
@@ -2808,6 +2897,51 @@ fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
             | "progress" | "completion" | "we" | "we're" | "i" | "us" | "all"
     );
     Some((if whole { None } else { Some(name.to_string()) }, number))
+}
+
+/// Live sessions' labels as the session strip shows them: the name, numbered
+/// "#n" by creation when one project has several of that name.
+fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
+    let mut live: Vec<&Value> = sessions.iter().filter(|session| session["running"] == true).collect();
+    live.sort_by_key(|session| session["created"].as_i64().unwrap_or(0));
+    let key = |session: &Value| format!("{}\u{0}{}", session["project_id"], session["name"]);
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for session in &live {
+        *counts.entry(key(session)).or_default() += 1;
+    }
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut labels = HashMap::new();
+    for session in live {
+        let name = session["name"].as_str().unwrap_or("session");
+        let index = seen.entry(key(session)).or_default();
+        *index += 1;
+        let label = if counts[&key(session)] > 1 { format!("{name} #{index}") } else { name.to_string() };
+        labels.insert(session["id"].as_str().unwrap_or_default().to_string(), label);
+    }
+    labels
+}
+
+/// Lowercase words with "#", "number" and spoken digits normalised, so
+/// "terminal number two" and "Terminal #2" compare equal.
+fn spoken_numbers(text: &str) -> String {
+    text.to_lowercase()
+        .replace('#', " ")
+        .split_whitespace()
+        .filter(|word| *word != "number")
+        .map(|word| match word {
+            "one" => "1",
+            "two" => "2",
+            "three" => "3",
+            "four" => "4",
+            "five" => "5",
+            "six" => "6",
+            "seven" => "7",
+            "eight" => "8",
+            "nine" => "9",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn literal_name(text: &str) -> Option<String> {
