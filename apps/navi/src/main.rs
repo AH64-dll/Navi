@@ -80,6 +80,8 @@ pub struct App {
     current_project: Mutex<Option<String>>,
     /// A "Which one" question from the last command and its choices.
     pending_choice: Mutex<Option<Value>>,
+    /// Prompts waiting for a busy session to free up, in order, per session.
+    held_prompts: Mutex<HashMap<String, Vec<String>>>,
     pub generation: AtomicU64,
     pub config_version: AtomicU64,
     workers: Mutex<Vec<(String, Child)>>,
@@ -385,6 +387,7 @@ impl App {
             assistant_dir: Mutex::new(None),
             current_project: Mutex::new(None),
             pending_choice: Mutex::new(None),
+            held_prompts: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             config_version: AtomicU64::new(0),
             workers: Mutex::new(Vec::new()),

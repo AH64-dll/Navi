@@ -661,53 +661,88 @@ impl App {
             })
     }
 
-    /// "Tell Codex to …" while Codex is busy: wait (up to ten minutes) for the
-    /// pane to free up, then type the prompt. Stop cancels the wait.
+    /// "Tell Codex to …" while Codex is busy: hold the prompt until the pane
+    /// is free (up to ten minutes of waiting), then type it. Several held
+    /// prompts for one session go one at a time, in order. Stop drops them.
     fn deliver_when_free(&self, id: &str, prompt: &str, label: &str) -> Result<()> {
+        {
+            let mut held = self.held_prompts.lock().unwrap();
+            let queue = held.entry(id.to_string()).or_default();
+            queue.push(prompt.to_string());
+            // A waiter already runs for this session; it sends this one next.
+            if queue.len() > 1 {
+                return Ok(());
+            }
+        }
         let app = self.me.upgrade().ok_or("Navi is shutting down")?;
-        let (id, prompt, label) = (id.to_string(), prompt.to_string(), label.to_string());
+        let (id, label) = (id.to_string(), label.to_string());
         let generation = self.generation.load(Ordering::SeqCst);
         std::thread::spawn(move || {
-            let started = now();
-            let outcome = loop {
-                std::thread::sleep(Duration::from_secs(2));
-                if app.generation.load(Ordering::SeqCst) != generation {
-                    break Err("Stop was pressed".to_string());
-                }
-                if now().saturating_sub(started) > 600_000 {
-                    break Err("it stayed busy for ten minutes".to_string());
-                }
-                let Ok(sessions) = app.sessions() else { continue };
-                let Some(session) = sessions.iter().find(|session| session["id"] == id.as_str()) else {
-                    break Err("the session is gone".to_string());
-                };
-                if session["running"] != true {
-                    break Err(format!("{label} closed"));
-                }
-                if !matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) {
-                    break app.inject(&id, &prompt, true).map(|_| ());
-                }
+            let project = || {
+                app.sessions().ok().and_then(|sessions| {
+                    sessions.iter().find(|session| session["id"] == id.as_str())?["project_id"]
+                        .as_str()
+                        .map(str::to_string)
+                })
             };
-            let project = app.sessions().ok().and_then(|sessions| {
-                sessions.iter().find(|session| session["id"] == id.as_str())?["project_id"]
-                    .as_str()
-                    .map(str::to_string)
-            });
-            match outcome {
-                Ok(()) => app.event_for(
-                    project.as_deref(),
-                    Some(&id),
-                    "delivered",
-                    &format!("Sent to {label}: “{prompt}”"),
-                    json!({"id":id,"name":label}),
-                ),
-                Err(reason) => app.event_for(
-                    project.as_deref(),
-                    Some(&id),
-                    "warning",
-                    &format!("Did not send “{prompt}” to {label}: {reason}."),
-                    json!({"id":id}),
-                ),
+            let mut waiting_since = now();
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                let session = app
+                    .sessions()
+                    .ok()
+                    .and_then(|sessions| sessions.into_iter().find(|session| session["id"] == id.as_str()));
+                let failure = if app.generation.load(Ordering::SeqCst) != generation {
+                    Some("Stop was pressed".to_string())
+                } else if now().saturating_sub(waiting_since) > 600_000 {
+                    Some("it stayed busy for ten minutes".to_string())
+                } else {
+                    match &session {
+                        None => Some("the session is gone".to_string()),
+                        Some(session) if session["running"] != true => Some(format!("{label} closed")),
+                        _ => None,
+                    }
+                };
+                if let Some(reason) = failure {
+                    let dropped = app.held_prompts.lock().unwrap().remove(&id).unwrap_or_default();
+                    let project = project();
+                    for prompt in dropped {
+                        app.event_for(
+                            project.as_deref(),
+                            Some(&id),
+                            "warning",
+                            &format!("Did not send “{prompt}” to {label}: {reason}."),
+                            json!({"id":id}),
+                        );
+                    }
+                    return;
+                }
+                if session.is_some_and(|session| {
+                    matches!(session["state"].as_str(), Some("busy" | "starting" | "created"))
+                }) {
+                    continue;
+                }
+                let Some(prompt) = app.held_prompts.lock().unwrap().get(&id).and_then(|queue| queue.first().cloned())
+                else {
+                    return;
+                };
+                let (kind, text) = match app.inject(&id, &prompt, true) {
+                    Ok(_) => ("delivered", format!("Sent to {label}: “{prompt}”")),
+                    Err(error) => ("warning", format!("Did not send “{prompt}” to {label}: {error}")),
+                };
+                app.event_for(project().as_deref(), Some(&id), kind, &text, json!({"id":id,"name":label}));
+                {
+                    let mut held = app.held_prompts.lock().unwrap();
+                    let Some(queue) = held.get_mut(&id) else { return };
+                    queue.remove(0);
+                    if queue.is_empty() {
+                        held.remove(&id);
+                        return;
+                    }
+                }
+                // The next prompt waits for this one to take the pane.
+                std::thread::sleep(Duration::from_secs(3));
+                waiting_since = now();
             }
         });
         Ok(())
