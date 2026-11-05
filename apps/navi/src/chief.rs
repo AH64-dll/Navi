@@ -774,6 +774,16 @@ impl App {
         Ok(())
     }
 
+    /// The session "it" means: one this command just opened ("open a new
+    /// Codex and tell it to …"), else the voice target.
+    fn pronoun_session(&self) -> Option<String> {
+        self.pronoun_target
+            .lock()
+            .unwrap()
+            .clone()
+            .or_else(|| self.settings()["active_session"].as_str().map(str::to_string))
+    }
+
     fn choice_extra(&self) -> Value {
         match self.pending_choice.lock().unwrap().as_ref() {
             Some(pending) => {
@@ -2007,7 +2017,7 @@ impl App {
         let rest_lower = &lower[start..];
         let sessions = self.sessions()?;
         let labels = session_labels(&sessions);
-        let active = self.settings()["active_session"].as_str().map(str::to_string);
+        let active = self.pronoun_session();
         let find = |name: &str| named_sessions(&sessions, &labels, active.as_deref(), name);
         // "<target> to <text>" first (multi-word names), then a one-word
         // target followed by the text.
@@ -2098,7 +2108,7 @@ impl App {
         };
         let sessions = self.sessions()?;
         let labels = session_labels(&sessions);
-        let active = self.settings()["active_session"].as_str().map(str::to_string);
+        let active = self.pronoun_session();
         let ids = named_sessions(&sessions, &labels, active.as_deref(), name);
         if !ids.is_empty() {
             return Ok(Some(json!({"kind":"session_screen","ids":ids})));
@@ -3177,6 +3187,7 @@ impl App {
         } else {
             self.pending_choice.lock().unwrap().take()
         };
+        *self.pronoun_target.lock().unwrap() = None;
         let mut choice = pending
             .as_ref()
             .filter(|_| steps == 1)
@@ -3214,6 +3225,13 @@ impl App {
                     continue;
                 }
                 let result = self.run_fast(clause, &action, &scope)?;
+                // Later steps' "it" is the session this step opened; the voice
+                // target itself stays as the user set it (BUG-081).
+                if action["kind"] == "launch"
+                    && let Some(session) = result["reply"]["session"].as_str()
+                {
+                    *self.pronoun_target.lock().unwrap() = Some(session.to_string());
+                }
                 if action["kind"] == "project_switch" {
                     scope["project_id"] = result["project_id"].clone();
                     switched = result["project_id"].clone();

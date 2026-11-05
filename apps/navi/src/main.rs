@@ -84,6 +84,8 @@ pub struct App {
     held_prompts: Mutex<HashMap<String, Vec<String>>>,
     /// The last progress change made through Navi's own commands, for "undo".
     last_change: Mutex<Option<Value>>,
+    /// A session opened by an earlier step of the running command.
+    pronoun_target: Mutex<Option<String>>,
     pub generation: AtomicU64,
     pub config_version: AtomicU64,
     workers: Mutex<Vec<(String, Child)>>,
@@ -391,6 +393,7 @@ impl App {
             pending_choice: Mutex::new(None),
             held_prompts: Mutex::new(HashMap::new()),
             last_change: Mutex::new(None),
+            pronoun_target: Mutex::new(None),
             generation: AtomicU64::new(0),
             config_version: AtomicU64::new(0),
             workers: Mutex::new(Vec::new()),
