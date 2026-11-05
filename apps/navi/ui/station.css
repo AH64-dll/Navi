@@ -1,10 +1,484 @@
-.glass{background:linear-gradient(150deg,rgba(17,30,104,.95),rgba(3,8,45,.94));border:1px solid var(--edge);box-shadow:0 12px 45px #01032199,inset 0 1px #c2dfff55;backdrop-filter:blur(14px);color:var(--ice)}
-.session-dock{position:fixed;z-index:9;top:60%;bottom:20%;left:3%;width:32%;padding:14px;overflow:auto}
-.session-dock header{display:flex;justify-content:space-between;align-items:center;letter-spacing:3px;font-size:11px;color:var(--cyan);margin-bottom:12px}
-.session-dock header button{font-size:20px;border-radius:50%;width:30px;height:30px}
-#sessions{display:grid;gap:6px}.session{display:flex;align-items:center;gap:10px;text-align:left;padding:10px 12px;border:1px solid #819fff33;background:#21409022;border-radius:3px;width:100%}
-.session.selected{background:linear-gradient(90deg,#4265c966,#81e5ed19);border-color:#a6edff99;box-shadow:0 0 18px #6be1fd22}.session .dot{width:6px;height:6px;background:var(--aqua);border-radius:50%;box-shadow:0 0 8px var(--aqua)}.session .dead{background:#9894b1;box-shadow:none}.session small{display:block;font-size:10px;color:#9fb1dc;margin-top:4px}.session strong{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;display:block;max-width:260px}
-#chief-status{font-size:10px;color:var(--cyan);margin-top:14px}#empty-session{position:absolute;inset:15% 8% 25%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}#empty-session h1{font:italic 700 30px var(--serif);color:#d8ecff}#empty-session p{font-size:12px;line-height:1.7}#empty-session[hidden]{display:none}
-#command-form{display:flex;margin:0 14px 14px;gap:6px;flex-shrink:0}input,select,textarea{font:12px var(--type);color:var(--ice);background:#02092cbb;border:1px solid #8cacd766;border-radius:3px;padding:10px;min-width:0}input:focus,textarea:focus,select:focus{outline:1px solid #8dffe0}#command{flex:1}button{border:1px solid #8eaff366;border-radius:4px;background:linear-gradient(#4564b866,#13266399);padding:7px 12px}button:hover{border-color:var(--cyan)}button:disabled{opacity:.45;cursor:default}.muted{color:#9cadd0}
-.syslog{width:32%;bottom:3%;height:14%;overflow:hidden}.orbit-controls{gap:20px}.orb{width:96px}dialog{width:min(610px,90vw);max-height:86vh;border-radius:10px;padding:22px;overflow:auto}dialog::backdrop{background:#010726aa;backdrop-filter:blur(5px)}dialog header{display:flex;align-items:center;justify-content:space-between}dialog h2{font:italic 700 26px var(--serif)}dialog h3{font:italic 700 20px var(--serif);color:var(--cyan)}dialog label{display:grid;gap:6px;font-size:11px;color:#b9cbed;margin:15px 0}dialog p{font-size:11px;line-height:1.7}dialog hr{border:0;border-top:1px solid #83acd533;margin-top:24px}#toast{position:fixed;left:42%;right:4%;top:1%;z-index:40;padding:8px 14px;background:#0a2456dd;border:1px solid #8ce8ff77;font-size:12px;opacity:0;pointer-events:none;transition:opacity .2s}#toast.visible{opacity:1}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}body.focus-view .session-dock{display:none}body.focus-view .syslog{display:none}
-@media(max-width:1000px){.session-dock{left:2%;width:32%}.orb{width:80px}.orbit-controls{gap:8px}.syslog{width:32%}}@media(max-width:860px){.session-dock{display:none}.terminal-pane{top:6%}.orb{width:90px}#toast{left:4%}}
+/* ── L0 shell ──────────────────────────────────────────────────────────────────
+   One fixed grid owns every panel: areas strip / stage / dock / graph / composer,
+   gap 12px. The canvas stays full-bleed behind it and #stage-region is an empty
+   measurement cell — scene.js frames the artwork from its rect, never percentages.
+   The dock and graph columns are `auto`, so a hidden panel contributes no width;
+   `--dock` and `--graph` are the widths used when a panel is present. */
+:root{
+  --gap:12px;
+  /* Splitter contract for the host: write `--dock` (right dock width) or
+     `--dock-h` (under-stage height) in px, clamped so both sides keep 120 px.
+     `body[data-dock="closed"]` collapses the dock to zero. */
+  --dock:min(46vw,720px);
+  --dock-h:min(32vh,300px);
+  --graph:min(360px,30vw);
+  --composer-max:min(30vh,320px);
+  --composer-min:120px;
+  --composer-line:22px;
+}
+#shell{position:fixed;inset:0;display:grid;gap:var(--gap) 0;padding:var(--gap);
+  grid-template-columns:minmax(0,1fr) auto auto;
+  grid-template-rows:auto minmax(180px,1fr) auto;
+  grid-template-areas:"strip strip strip" "stage dock graph" "composer composer composer"}
+#stage-region{grid-area:stage;min-width:0;min-height:0}
+
+.panel{background:var(--surface-panel);border:1px solid var(--edge);box-shadow:0 12px 45px #01032199,inset 0 1px #c2dfff55;color:var(--ice)}
+.glass{background:var(--surface-overlay);border:1px solid var(--edge);box-shadow:0 12px 45px #01032199,inset 0 1px #c2dfff55;color:var(--ice);backdrop-filter:blur(14px)}
+
+/* Composer: the chat sits under the stage cell, never over it. The log scrolls
+   inside the panel; the row itself is bounded so the stage keeps its cell. */
+.chat{grid-area:composer;justify-self:center;width:min(920px,100%);z-index:9;
+  display:flex;flex-direction:column;min-height:var(--composer-min);max-height:var(--composer-max);
+  padding:14px 16px 10px;border-radius:12px;position:relative}
+/* The log is a scroll container holding a virtualised window of rows: the spacers
+   above and below stand in for rows outside the window, so the scrollbar still
+   describes the whole conversation (BUG-047). */
+.chat-log-wrap{position:relative;flex:1;min-height:0;display:flex}
+#chat-log{flex:1;min-height:42px;overflow:auto;display:flex;flex-direction:column;gap:11px;padding:2px 4px 10px;scrollbar-width:thin;scrollbar-color:#3656b8 transparent}
+.chat-spacer{flex:0 0 auto;width:100%}
+.chat-pill{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:3;
+  padding:5px 12px;font-size:10px;letter-spacing:1px;border-radius:999px;
+  background:#0a2456f2;border:1px solid #8dffe088;color:#d9fff6;box-shadow:0 6px 18px #01032199}
+.chat-pill:hover{border-color:var(--aqua)}
+
+/* First run: the three ways to act, and why the microphone may be unavailable. */
+/* The first-run block covers the empty log instead of pushing the composer taller:
+   the shell's grid is measured, and an onboarding card must not cost stage height. */
+.chat-empty{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;gap:7px;
+  padding:12px 14px;overflow:auto;border-radius:8px;border:1px dashed #8eaff355;background:#061040e6}
+.empty-title{margin:0;font:italic 700 15px var(--serif);color:#e2ecff}
+.empty-hint{margin:0;font-size:11px;line-height:1.5;color:#a9c6e8}
+.empty-actions{display:flex;flex-wrap:wrap;gap:8px}
+.empty-actions button{font-size:11px;padding:6px 12px}
+.empty-note{margin:0;font-size:10px;line-height:1.5;color:#93b2d6}
+
+/* A message is a row of parts: head (who + time), parts, meta, actions. One accent
+   per role, no gradients in text, and every state carries its own `data-status`. */
+.msg{display:flex;flex-direction:column;gap:4px;max-width:88%;outline:none}
+.msg:focus-visible{outline:1px solid #8dffe066;outline-offset:2px}
+.msg-head{display:flex;align-items:baseline;gap:8px;justify-content:flex-start}
+.msg .who{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:#7ec8d4;opacity:.9}
+.msg-time{font-size:9px;letter-spacing:.6px;color:#8aa8c8;opacity:.75}
+.msg.user{align-self:flex-end;align-items:flex-end;text-align:right}
+.msg.user .msg-head{justify-content:flex-end}
+.msg.user .who{color:#b7a6ff}
+.msg.system{max-width:100%;align-self:stretch}
+.msg.system .who{color:#9fb6d4}
+.msg p{margin:0;font-size:13px;line-height:1.6;color:var(--ice);word-break:break-word}
+.msg.navi p{color:#b8ffe9}
+.msg .msg-body{display:flex;flex-direction:column;gap:8px;min-width:0}
+.part{min-width:0}
+.part.text p{white-space:pre-wrap}
+.part.text p+p{margin-top:7px}
+.msg[data-status=failed] .msg-body,.msg[data-status=stopped] .msg-body{opacity:.94}
+.msg.streaming .part.text:last-child p:last-child::after{content:'▍';margin-left:1px;color:#8dffe0;animation:caret 1s steps(2) infinite}
+@keyframes caret{50%{opacity:0}}
+
+/* Code: fenced blocks keep the language, a copy affordance and their own scroll.
+   Inline code never inherits the prose colour, so it stays legible on any surface. */
+.code{margin:0;border:1px solid #8cacd755;border-radius:6px;background:#030a2bee;overflow:hidden}
+.code-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 8px;
+  background:#0a1740;border-bottom:1px solid #8cacd733}
+.code-lang{font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#9fc0e4}
+.code-copy{font-size:9px;letter-spacing:.8px;padding:2px 8px;border-radius:4px;background:none;
+  border:1px solid #8eaff355;color:#cfe3ff}
+.code-copy:hover{border-color:var(--aqua);color:#eafcff}
+.code pre{margin:0;padding:8px 10px;overflow:auto;max-height:340px}
+.code code{font:11.5px/1.55 ui-monospace,"Nimbus Mono PS","Courier New",monospace;color:#d8ecff;white-space:pre}
+.md-code{padding:1px 4px;border-radius:3px;background:#0a1740;border:1px solid #8cacd733;
+  font:11.5px ui-monospace,"Nimbus Mono PS","Courier New",monospace;color:#bfe9ff}
+.md-link{padding:0;background:none;border:none;color:#9fe6ff;text-decoration:underline;
+  font:inherit;cursor:copy}
+.md-link:hover{color:#d9fbff}
+.md-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:2px}
+.md-list li{font-size:13px;line-height:1.55;color:#cfeeff}
+.msg h3,.msg h4{margin:2px 0 0;font:700 13px var(--type);color:#e0ecff;letter-spacing:.3px}
+
+/* Diff: green/red lines with a path header, used for `diff` parts and for tool
+   output that is a patch. */
+.diff{margin:0;border:1px solid #8cacd755;border-radius:6px;background:#030a2bee;overflow:hidden}
+.diff-head{padding:3px 9px;font-size:10px;letter-spacing:.5px;color:#c4d8f2;
+  background:#0a1740;border-bottom:1px solid #8cacd733;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.diff pre{margin:0;padding:6px 0;overflow:auto;max-height:340px}
+.diff code{display:block;font:11.5px/1.5 ui-monospace,"Nimbus Mono PS","Courier New",monospace}
+.diff-line{display:block;padding:0 10px;white-space:pre;color:#c8d8ee}
+.diff-line.add{background:#0d3d2a;color:#a8ffcb}
+.diff-line.del{background:#42201f;color:#ffc2c0}
+.diff-line.hunk{color:#a9bcff;background:#101d4a}
+.diff-line.file{color:#e0c8ff;font-weight:700}
+.tool-diff{padding:0}
+.tool-diff .diff{border:0;background:none}
+
+/* Reasoning is collapsed by default: it is available, never in the way. */
+.part.reasoning{border-left:2px solid #8eaff344;padding-left:8px}
+.part.reasoning summary{cursor:pointer;font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;color:#93b2d6}
+.part.reasoning summary:hover{color:#bfe0ff}
+.reasoning-body{margin-top:6px;font-size:12px;line-height:1.55;color:#adc8e4}
+.reasoning-body p{margin:0 0 6px;color:#adc8e4}
+
+/* Tool chips: one collapsible record per tool id, with the run state in the header. */
+.part.tool{border:1px solid #8cacd755;border-radius:6px;background:#06123899;overflow:hidden}
+.part.tool summary{display:flex;align-items:center;gap:8px;padding:5px 9px;cursor:pointer;
+  font-size:11px;color:#cfe3ff;list-style:none}
+.part.tool summary::-webkit-details-marker{display:none}
+.part.tool summary::before{content:'▸';color:#8dffe0;font-size:10px}
+.part.tool[open] summary::before{content:'▾'}
+.tool-name{font:600 11px ui-monospace,"Nimbus Mono PS","Courier New",monospace;color:#bfe9ff;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool-state{flex:1;text-align:right;font-size:10px;letter-spacing:.5px;color:#9db8d8;white-space:nowrap}
+.part.tool[data-final=true] .tool-state{color:#9adfb6}
+.part.tool[data-status=failed] .tool-state{color:#ffb3b3}
+.part.tool[data-status=approval] .tool-state{color:#ffe08a}
+.tool-body{padding:4px 9px 8px;display:flex;flex-direction:column;gap:6px}
+.tool-block{display:flex;flex-direction:column;gap:2px;min-width:0}
+.tool-label{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:#93b2d6}
+.tool-block pre{margin:0;padding:6px 8px;max-height:220px;overflow:auto;background:#030a2b;border-radius:4px;
+  font:11px/1.5 ui-monospace,"Nimbus Mono PS","Courier New",monospace;color:#cfe3ff;white-space:pre-wrap;word-break:break-word}
+.tool-empty{margin:0;font-size:11px;color:#93b2d6}
+.approval{display:flex;align-items:center;gap:8px;padding-top:4px;flex-wrap:wrap}
+.approval-label{font-size:11px;color:#ffe08a}
+.approval-allow,.approval-deny{font-size:10px;letter-spacing:.6px;padding:4px 10px}
+.approval-allow{border-color:#8dffb0aa;color:#c8ffe0}
+.approval-deny{border-color:#ff9a9aaa;color:#ffd7d7}
+
+/* A failure is a left rule, its reason, and Retry: never a confident answer. */
+.part.error{border-left:3px solid #ff8a8a;padding:6px 10px;border-radius:0 6px 6px 0;background:#2a0f1f59}
+.error-text p{margin:0;font-size:12px;line-height:1.5;color:#ffd7d7}
+.error-detail{margin:6px 0 0;padding:6px 8px;background:#030a2b;border-radius:4px;
+  font:11px/1.5 ui-monospace,"Nimbus Mono PS","Courier New",monospace;color:#ffb3b3;
+  white-space:pre-wrap;max-height:180px;overflow:auto}
+.error-retry{margin-top:6px;font-size:10px;letter-spacing:.8px;padding:4px 12px;
+  border-color:#ff8a8aaa;color:#ffd7d7}
+.msg .part.tone-warning p{font-size:11.5px;color:#ffe6a8}
+.msg .part.tone-queued p{font-size:11.5px;color:#ffe6a8}
+.msg .part.tone-tool p{font-size:11.5px;color:#bfe9ff}
+
+/* Per-row metadata and actions: actions appear on hover or keyboard focus, so the
+   row stays quiet while it is being read (BUG-041). */
+.msg-meta{font-size:9.5px;letter-spacing:.4px;color:#9ab6d6;opacity:.9;word-break:break-word}
+.msg-actions{display:flex;align-items:center;gap:6px;min-height:16px;flex-wrap:wrap;
+  opacity:0;transition:opacity .12s}
+.msg:hover .msg-actions,.msg:focus-within .msg-actions{opacity:1}
+.msg[data-status=failed] .msg-actions{opacity:1}
+.msg.user .msg-actions{justify-content:flex-end}
+.msg-action{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;font-size:9.5px;
+  letter-spacing:.4px;background:none;border:1px solid transparent;border-radius:4px;color:#9fe6ff;opacity:.85}
+.msg-action:hover{border-color:#8eaff366;opacity:1}
+.msg-action svg{display:block}
+.msg-badge{padding:1px 6px;border-radius:999px;border:1px solid #8eaff344;font-size:9px;
+  letter-spacing:.6px;color:#9fb6d4}
+
+/* Voice: the transcript that is about to run, its provenance, and the countdown. */
+.voice-banner{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:7px 10px;
+  border-radius:8px;border:1px solid #ffe08a66;background:#2a220bcc;font-size:11.5px;line-height:1.45;color:#fff3cf}
+.voice-source{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#ffe08a;opacity:.9;white-space:nowrap}
+.voice-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff8e2}
+.voice-count{font-size:10px;letter-spacing:.6px;color:#ffe08a;font-variant-numeric:tabular-nums}
+.voice-action{font-size:10px;letter-spacing:.5px;padding:3px 9px;border-color:#ffe08a77;color:#fff3cf}
+
+/* Status pills: the model, the voice state and the phase, all in plain words. */
+.pill{flex-shrink:0;padding:3px 10px;font-size:10px;letter-spacing:.6px;border-radius:999px;
+  border:1px solid #8eaff355;background:#08123a99;color:#cfe3ff;white-space:nowrap;
+  max-width:34%;overflow:hidden;text-overflow:ellipsis}
+.pill:hover{border-color:var(--aqua)}
+.pill:disabled{opacity:.55;cursor:default}
+#state{letter-spacing:1.1px;white-space:nowrap}
+#state[data-phase=ready]{color:#8dffc0}
+#state[data-phase=working]{color:#ffe08a}
+#state[data-phase=attention]{color:#ffb3b3}
+#state[data-phase=offline]{color:#ff8a8a}
+
+#chat-form{display:flex;align-items:center;gap:8px;border-top:1px solid #83acd533;padding-top:10px}
+#command{flex:1}
+.mic{flex-shrink:0;padding:9px 14px;font-size:11px;letter-spacing:.5px}
+.mic[aria-pressed=true]{border-color:#b4fff0;box-shadow:0 0 18px rgba(110,255,210,.45);color:#c8fff2}
+.send{flex-shrink:0;padding:9px 18px}
+.chat-meta{display:flex;align-items:center;gap:12px;padding-top:7px;font-size:10px;letter-spacing:1px;color:#7ec8d4;opacity:.85;position:relative}
+.chat-meta span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chief-status{flex:1;text-align:center;opacity:.75}
+.icon{padding:2px 6px;font-size:13px;line-height:1;background:none;border:1px solid transparent;color:#9fe6ff}
+.icon svg{display:block}
+.icon:hover{border-color:#8eaff366;color:#d8fbff}
+
+/* Settings: a compact overlay, the only other surface besides stage and chat. */
+.settings{width:min(620px,92vw);max-height:86vh;padding:22px 22px 16px;border-radius:14px;background:linear-gradient(150deg,#0d1a52f2,#040b36f4)}
+.settings::backdrop{background:#01031acc;backdrop-filter:blur(3px)}
+.settings h2{margin:0 0 16px;font:italic 700 20px var(--serif);color:#d8e4ff;letter-spacing:.5px}
+.settings form{display:flex;flex-direction:column;gap:10px}
+.settings .toggles{display:flex;gap:22px;font-size:12px;letter-spacing:.3px;color:var(--ice)}
+.settings .toggles label{display:flex;align-items:center;gap:8px;cursor:pointer}
+.settings .toggles input{accent-color:#4fd8c0}
+.settings .field{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4;margin-top:6px}
+.settings textarea{resize:vertical;min-height:96px;line-height:1.5}
+.settings select{font:12px var(--type);color:var(--ice);background:#02092cbb;border:1px solid #8cacd766;border-radius:3px;padding:9px}
+.settings .hint{margin:2px 0 0;font-size:10px;line-height:1.5;color:#8fb4d9;opacity:.8}
+.settings .actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:8px}
+.settings .actions .spacer{flex:1}
+.settings .primary{border-color:#8dffe0aa;color:#d9fff6;box-shadow:0 0 14px #4fd8c02e}
+
+input,textarea{font:12px var(--type);color:var(--ice);background:#02092cbb;border:1px solid #8cacd766;border-radius:3px;padding:10px;min-width:0}
+input:focus,textarea:focus{outline:1px solid #8dffe0}
+button{border:1px solid #8eaff366;border-radius:4px;background:linear-gradient(#4564b866,#13266399);padding:7px 12px}
+button:hover{border-color:var(--cyan)}
+button:disabled{opacity:.45;cursor:default}
+
+/* Short-lived status: an inline banner inside the chat column, never a floating
+   overlay that can cover the docked terminal or the graph (BUG-038). */
+#toast{display:none;margin:0 0 8px;padding:8px 12px;border-radius:6px;
+  background:#0a2456ee;border:1px solid #8ce8ff77;font-size:12px;line-height:1.4}
+#toast.visible{display:block}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+
+/* Slash command suggestions: filtered list above the input. */
+#chat-form{position:relative}
+#slash-list{position:absolute;left:44px;right:96px;bottom:calc(100% + 6px);margin:0;padding:5px;list-style:none;
+  max-height:240px;overflow:auto;border-radius:8px;border:1px solid #8eaff355;
+  background:linear-gradient(150deg,#0d1a52f2,#040b36f4);box-shadow:0 -8px 30px #01032180;scrollbar-width:thin}
+#slash-list li{display:flex;align-items:baseline;gap:10px;padding:6px 9px;border-radius:5px;cursor:pointer}
+#slash-list li.active,#slash-list li:hover{background:#3a55b544}
+.slash-name{font:600 12px var(--type);color:#b8ffe9;min-width:110px}
+.slash-hint{flex:1;font-size:11px;color:#8fb4d9;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stop{flex-shrink:0;padding:9px 14px;border-color:#ff8a8aaa;color:#ffd7d7;box-shadow:0 0 14px #ff5a5a33}
+
+/* Session strip: live sessions first, finished ones behind a collapsed Recent. The
+   chip is a row control (role=button) so it can hold its own remove button. */
+.sessions{grid-area:strip;justify-self:start;max-width:100%;z-index:8;
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 10px;border-radius:10px}
+.session-chip{display:flex;align-items:center;gap:7px;padding:5px 11px;font-size:11px;
+  color:var(--ice);border:1px solid #8eaff366;border-radius:4px;
+  background:linear-gradient(#4564b866,#13266399);cursor:pointer}
+.session-chip:hover,.session-chip:focus-visible{border-color:var(--cyan);outline:none}
+.session-chip.dead{opacity:.72}
+.session-dot{width:6px;height:6px;border-radius:50%;background:#8dffc0;flex:0 0 auto;box-shadow:0 0 8px #8dffc099}
+.session-chip.dead .session-dot{background:#7a8aa8;box-shadow:none}
+.session-name{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment-chips{display:flex;flex-wrap:wrap;gap:5px;padding:0 10px 6px}
+.attachment-chips[hidden]{display:none}
+.attachment-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;
+  padding:3px 5px 3px 8px;border:1px solid #8eaff355;border-radius:999px;
+  background:#0a1740d9;color:var(--ice);font-size:10px;min-width:0}
+.attachment-chip[data-state="error"]{border-color:#ff9b9b88;color:#ffd0d0}
+.attachment-name{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attachment-size{color:#9fb6d4;white-space:nowrap}
+.attachment-remove{border:0;background:transparent;color:#b9d3f5;cursor:pointer;
+  padding:0 2px;font-size:12px;line-height:1}
+.attachment-remove:hover{color:#fff}
+.mic.attach svg{display:block}
+.session-state{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;color:#93b2d6;opacity:.9}
+.session-chip.attached{border-color:#8dffe0aa;box-shadow:0 0 12px #4fd8c033}
+.session-chip.active{border-color:#9fe6ffaa}
+.session-chip.active .session-state{color:#9fe6ff}
+.session-chip.new{border-style:dashed;color:#9fe6ff}
+.session-drop{padding:0 3px;font-size:12px;line-height:1;background:none;border:1px solid transparent;color:#ff9a9a}
+.session-drop:hover{border-color:#ff9a9a66}
+.sessions-recent{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sessions-recent-chips{display:flex;flex-wrap:wrap;gap:8px}
+.recent-toggle{border-style:dashed;color:#9fb6d4;font-size:10px}
+
+/* Project switcher (BUG-090): the strip's first control, so the active project is
+   always visible instead of inferred. The menu overlays the strip only. */
+.project-switcher{position:relative;display:flex;align-items:center;flex-shrink:0}
+/* `hidden` must win over the flex display, or the menu would always be open. */
+.project-switcher[hidden],.project-menu[hidden]{display:none}
+.project-button{display:flex;align-items:center;gap:7px;padding:5px 10px;font-size:11px;
+  border:1px solid #8eaff366;border-radius:4px;background:linear-gradient(#4564b866,#13266399);
+  color:var(--ice);cursor:pointer;max-width:340px}
+.project-button:hover,.project-button:focus-visible{border-color:var(--cyan);outline:none}
+.project-switcher .project-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-path-state{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;padding:1px 5px;
+  border-radius:999px;border:1px solid #8eaff344;color:#9fb6d4;white-space:nowrap}
+.project-path-state[data-state="ok"]{color:#8dffc0;border-color:#8dffc055}
+.project-path-state[data-state="missing"]{color:#ffb3b3;border-color:#ff8a8a66}
+.project-caret{font-size:9px;color:#9fe6ff;opacity:.8}
+.project-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;display:flex;flex-direction:column;
+  gap:2px;min-width:280px;max-width:360px;max-height:min(320px,50vh);overflow:auto;padding:6px;
+  border-radius:8px;border:1px solid #8eaff355;background:linear-gradient(150deg,#0d1a52f7,#040b36fa);
+  box-shadow:0 14px 32px #01032199}
+.project-option{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;
+  padding:6px 8px;border:1px solid transparent;border-radius:5px;background:none;text-align:left;cursor:pointer}
+.project-option:hover,.project-option:focus-visible{border-color:#8eaff355;background:#3a55b544;outline:none}
+.project-option[aria-selected="true"]{border-color:#8dffe077}
+.project-option .project-name{grid-column:1;grid-row:1;font-size:11.5px;color:var(--ice)}
+.project-option .project-path{grid-column:1;grid-row:2;font-size:9.5px;color:#9fc0e4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-option .project-path-state{grid-column:2;grid-row:1;justify-self:end}
+.project-option .project-key{grid-column:2;grid-row:2;justify-self:end;font-size:9px;color:#93b2d6}
+
+/* The status line carries the active project beside the turn phase. */
+#project-status{max-width:190px;color:#9fe6ff;opacity:.9}
+#project-status[data-state="missing"]{color:#ffb3b3}
+
+/* Terminal: a dock cell, not a floating card. `body[data-dock]` is authoritative:
+   closed hides it even if the `hidden` attribute is stale (BUG-033). */
+.terminal-pane{grid-area:dock;z-index:8;position:relative;margin-left:var(--gap);width:var(--dock);
+  display:flex;flex-direction:column;min-height:120px;min-width:0;border-radius:12px;overflow:hidden}
+body[data-dock="closed"]{--dock:0px}
+body[data-dock="closed"] .terminal-pane{display:none!important}
+#dock-splitter{position:absolute;z-index:2;left:0;top:0;bottom:0;width:10px;cursor:col-resize;touch-action:none;
+  background:linear-gradient(90deg,#8eaff344,transparent)}
+#dock-splitter:hover,#dock-splitter:focus-visible{background:linear-gradient(90deg,#8dffe0aa,transparent);outline:none}
+.terminal-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #83acd533}
+.terminal-head span{font:italic 700 13px var(--serif);color:#d8e4ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#terminal-prompt{flex:1;padding:7px 10px}
+#terminal-send{padding:7px 14px}
+#terminal-close{font-size:16px;color:#9fe6ff}
+#terminal-host{flex:1;min-height:0;padding:6px 8px;background:#030a2b;overflow:hidden}
+#terminal-host .xterm{height:100%}
+
+/* Graph: its own column, a drawer once the window is too narrow for three. The
+   panel scrolls inside its cell, so a long aspect list can never push another
+   panel; every number is text plus a bar, and unknown is an em dash (BUG-089). */
+#graph-region{grid-area:graph;z-index:8;margin-left:var(--gap);width:var(--graph);min-width:0;
+  min-height:0;border-radius:12px;overflow:auto;padding:10px}
+.graph-panel{display:flex;flex-direction:column;gap:10px;min-width:0}
+.graph-head{display:flex;flex-direction:column;gap:4px}
+.graph-score{display:flex;align-items:baseline;gap:8px}
+.graph-percent{font:italic 700 30px var(--serif);color:#eafcff;line-height:1;letter-spacing:.5px;
+  font-variant-numeric:tabular-nums}
+.graph-percent[data-null="true"]{color:#8fb4d9;opacity:.9}
+.graph-caption{font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4}
+.graph-sub{display:flex;flex-wrap:wrap;gap:10px}
+.graph-stat{display:flex;align-items:baseline;gap:5px;color:#93b2d6}
+.graph-stat-label{font-size:8.5px;letter-spacing:1px;text-transform:uppercase}
+.graph-stat-value{font-size:11.5px;color:#cfe3ff;font-variant-numeric:tabular-nums}
+.graph-project{margin:0;font-size:9.5px;letter-spacing:.5px;color:#8fb4d9;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* An empty panel says what is missing rather than implying a graph. */
+.graph-note{margin:0;font-size:11px;line-height:1.5;color:#8fb4d9;opacity:.85}
+
+.aspect-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.aspect{display:flex;flex-direction:column;gap:4px;min-width:0}
+.aspect-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
+.aspect-title{font-size:11.5px;color:#e2ecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aspect-value{flex-shrink:0;font-size:11px;color:#b8ffe9;font-variant-numeric:tabular-nums}
+.aspect-value[data-null="true"]{color:#8fb4d9}
+.aspect-bar{height:5px;border-radius:999px;background:#0a1740;overflow:hidden;border:1px solid #8cacd733}
+.aspect-fill{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg,#4fd8c0,#9fe6ff)}
+.aspect-fill[data-state="unknown"]{background:#3656b8}
+.aspect-meta{display:flex;flex-wrap:wrap;gap:8px;font-size:9px;letter-spacing:.5px;color:#8fb4d9}
+.aspect-unknown{color:#ffe08a}
+
+.graph-risks{display:flex;flex-direction:column;gap:4px}
+.graph-sub-title{margin:0;font-size:9px;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4}
+.risk-list{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:3px}
+.risk{font-size:10.5px;line-height:1.45;color:#ffe6a8}
+
+.graph-evidence{border:1px solid #8cacd755;border-radius:6px;background:#06123899;overflow:hidden}
+.graph-evidence-head{padding:5px 9px;font-size:10px;letter-spacing:1px;text-transform:uppercase;
+  color:#cfe3ff;cursor:pointer;list-style:none}
+.graph-evidence-head::-webkit-details-marker{display:none}
+.graph-evidence-head::before{content:'▸';color:#8dffe0;margin-right:6px;font-size:9px}
+.graph-evidence[open] .graph-evidence-head::before{content:'▾'}
+.graph-evidence .graph-note{padding:2px 9px 8px}
+.evidence-list{list-style:none;margin:0;padding:2px 9px 8px;display:flex;flex-direction:column;gap:6px;
+  max-height:240px;overflow:auto}
+.evidence{display:flex;flex-direction:column;gap:2px;border-left:2px solid #8eaff344;padding-left:7px;min-width:0}
+.evidence[data-source="harness"]{border-left-color:#8dffe099}
+.evidence[data-source="git"]{border-left-color:#9fe6ff88}
+.evidence-head{display:flex;flex-wrap:wrap;gap:6px;font-size:9px;letter-spacing:.6px;color:#93b2d6}
+.evidence-kind{color:#bfe9ff;text-transform:uppercase}
+.evidence-id{color:#8aa8c8}
+.evidence-text{margin:0;font-size:10.5px;line-height:1.45;color:#cfe3ff;word-break:break-word}
+.evidence-task{font-size:9px;color:#93b2d6}
+
+.graph-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:2px}
+.graph-stamp{font-size:9px;letter-spacing:.5px;color:#8fb4d9}
+.graph-refresh{font-size:9.5px;letter-spacing:.8px;padding:3px 9px;border-color:#8eaff355;color:#cfe3ff}
+
+/* Empty state: what is missing, and the one action that starts a real number. */
+.graph-empty{display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:8px;
+  border:1px dashed #8eaff355;background:#061040e6;min-width:0}
+.graph-empty .empty-title{font-size:13px}
+.graph-empty .empty-hint,.graph-empty .empty-note{font-size:10px}
+.aspect-form{display:flex;gap:6px;min-width:0}
+.aspect-form input{flex:1;padding:7px 8px;font-size:11px}
+.aspect-form button{flex-shrink:0;padding:6px 10px;font-size:10px;letter-spacing:.6px}
+
+/* Below 900 px the graph is a tab in the composer area, not a rail or a drawer. */
+#graph-tab{display:none}
+
+/* While the splitter is dragged the pointer is captured, so text selection is
+   disabled and the resize cursor follows the axis of the dock cell. */
+body.resizing{user-select:none;cursor:col-resize}
+body.resizing[data-dock="bottom"]{cursor:row-resize}
+
+/* ── Breakpoints (BUG-025, plan 06 graph rail) ─────────────────────────────────
+   ≥1280: three columns, the graph is a 320–380 px right rail.
+   900–1279: no third column — the graph becomes a drawer over the stage cell.
+   900–1199: the dock moves under the stage.
+   <900: one column, the terminal takes the stage cell as a tab. */
+@media(max-width:1279px){
+  #graph-region{grid-area:stage;justify-self:end;align-self:stretch;z-index:12;
+    width:min(360px,86vw);margin:0}
+}
+@media(max-width:1199px){
+  #shell{grid-template-columns:minmax(0,1fr);
+    grid-template-rows:auto minmax(180px,1fr) auto auto;
+    grid-template-areas:"strip" "stage" "dock" "composer"}
+  .terminal-pane{margin-left:0;width:100%;height:var(--dock-h)}
+  #dock-splitter{left:0;right:0;top:0;bottom:auto;width:auto;height:10px;cursor:row-resize;
+    background:linear-gradient(180deg,#8eaff344,transparent)}
+  #dock-splitter:hover,#dock-splitter:focus-visible{background:linear-gradient(180deg,#8dffe0aa,transparent)}
+}
+@media(max-width:899px){
+  #shell{grid-template-rows:auto minmax(180px,1fr) auto;
+    grid-template-areas:"strip" "stage" "composer"}
+  /* No room for a second column or row: the terminal takes the stage cell as a tab
+     instead of shrinking it. Only one surface can hold that cell, so the graph
+     drawer hides the tab while it is open. */
+  .terminal-pane{grid-area:stage;margin:0;width:auto;height:auto;z-index:10}
+  #dock-splitter{display:none}
+  body:has(#graph-region:not([hidden])) .terminal-pane,body[data-graph="open"] .terminal-pane{display:none}
+  /* The graph is a tab in the composer area and its panel owns the stage cell,
+     so it is readable at this width instead of a 360 px drawer. */
+  #graph-region{justify-self:stretch;width:auto;margin:0}
+  #graph-tab{display:inline-flex}
+}
+
+/* Maximised terminal: it takes the stage cell, so the stage is no longer measured. */
+body[data-dock="max"] #shell{grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"strip strip" "stage graph" "composer composer"}
+body[data-dock="max"] #stage-region{display:none}
+body[data-dock="max"] .terminal-pane{grid-area:stage;margin-left:0;width:auto;height:auto}
+
+/* Short windows: the composer collapses to one line and scrolls (BUG-021). */
+@media(max-height:640px){
+  #chat-log{min-height:var(--composer-line);max-height:var(--composer-line)}
+}
+
+/* Short windows: the first-run block keeps its buttons and drops its prose. */
+@media(max-height:700px){
+  .chat-empty{padding:8px 10px;gap:4px}
+  .empty-hint,.empty-note{display:none}
+}
+
+/* Harness profile editor rows in settings. */
+.profile-row{display:grid;grid-template-columns:1.1fr 1.2fr 1.2fr auto;gap:7px;align-items:center}
+.profile-row input{padding:8px 9px;font-size:11px}
+.profile-remove{font-size:15px;color:#ff9a9a}
+#profile-add{align-self:flex-start;font-size:11px;padding:6px 12px;margin-top:2px}
+.settings input{padding:9px;font-size:12px}
+
+/* ── Model picker (BUG-044) ───────────────────────────────────────────────────
+   One searchable list serves the settings dialog and the composer switcher: options
+   are grouped by provider, the saved reference is always present, and the popup
+   never opens empty. */
+.combobox{position:relative}
+.combobox-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;margin:0;padding:6px;
+  list-style:none;max-height:240px;overflow:auto;border-radius:8px;border:1px solid #8eaff366;
+  background:#071039fa;box-shadow:0 14px 32px #01032199}
+.model-pop{position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:20;
+  max-height:min(260px,40vh);overflow:auto;padding:8px;border-radius:10px;
+  border:1px solid #8eaff366;background:linear-gradient(150deg,#0d1a52f7,#040b36fa);
+  box-shadow:0 -10px 34px #01032199}
+.model-search{width:100%;margin-bottom:6px;padding:7px 9px;font-size:11px}
+.model-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.combobox-group{padding:4px 6px 2px;font-size:9px;letter-spacing:1.3px;text-transform:uppercase;color:#93c6d6}
+.combobox-option{display:flex;align-items:baseline;gap:10px;padding:5px 8px;border-radius:5px;cursor:pointer}
+.combobox-option:hover,.combobox-option.active{background:#3a55b544}
+.combobox-option[aria-selected=true]{outline:1px solid #8dffe055}
+.option-name{font-size:11.5px;color:var(--ice)}
+.option-ref{flex:1;text-align:right;font-size:9.5px;color:#9fc0e4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

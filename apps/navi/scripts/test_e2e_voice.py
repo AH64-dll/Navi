@@ -91,6 +91,9 @@ def find_event(station, since, kind):
 def main():
     os.environ.setdefault("NAVI_SPEECH_CONFIG", "/nonexistent-e2e-speech.json")
     os.environ.setdefault("NAVI_SECRETS_FILE", "/nonexistent-e2e-secrets.env")
+    # The E2E check asserts the cloud/local STT fallbacks; the Hex engine has
+    # its own live test (scripts/test_hex_asr.py --real) so it stays out here.
+    os.environ.setdefault("NAVI_HEX_DISABLE", "1")
     fixture = ThreadingHTTPServer(("127.0.0.1", 0), DecisionFixture)
     fixture.daemon_threads = True
     threading.Thread(target=fixture.serve_forever, daemon=True).start()
@@ -107,7 +110,7 @@ def main():
 
             settings = station.call("status")["result"]["settings"]
             settings["model"]["endpoint"] = f"http://127.0.0.1:{fixture.server_port}/v1/systemone"
-            settings["persona"] = "jarvis"
+            settings["persona"] = "navi"
             saved = station.call("settings", settings)
             assert saved["ok"], saved
             initial = station.call("status")["result"]
@@ -161,7 +164,7 @@ def main():
             assert (event.get("details") or {}).get("text"), event
             assert (event.get("details") or {}).get("source") == "opencode", event
 
-            p = persona.get("jarvis")
+            p = persona.get("navi")
             started = time.monotonic()
             synthesized = tts.synthesize(reply_text, voice=p.voice)
             tts_elapsed = time.monotonic() - started

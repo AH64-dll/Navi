@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // packages/navi/src/protocol/limits.ts
+  // ../../packages/navi/src/protocol/limits.ts
   var MAX_ENVELOPE_BYTES = 64 * 1024;
   var MAX_OBSERVATION_BYTES = 16 * 1024;
   var MAX_NODES = 100;
@@ -11,7 +11,7 @@
   var MAX_TITLE_CHARS = 200;
   var MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
 
-  // packages/navi/browser/content/actions.ts
+  // ../../packages/navi/browser/content/actions.ts
   var ActionError = class extends Error {
     constructor(code, message) {
       super(message);
@@ -76,7 +76,7 @@
     }
   }
 
-  // packages/navi/browser/content/refs.ts
+  // ../../packages/navi/browser/content/refs.ts
   var REF_PATTERN = /^n[1-9][0-9]{0,4}$/;
   function createRefTable(observationId) {
     const byRef = /* @__PURE__ */ new Map();
@@ -116,7 +116,7 @@
     };
   }
 
-  // packages/navi/browser/content/collector.ts
+  // ../../packages/navi/browser/content/collector.ts
   var COLLECT_TIME_BUDGET_MS = 250;
   var OBSERVATION_HEADROOM_BYTES = 512;
   var FORBIDDEN_TEXT_CHARACTERS = /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g;
@@ -630,7 +630,7 @@
     return { ok: true, observation: frozen, refs: liveRefs, bytes: byteLength(JSON.stringify(frozen)) };
   }
 
-  // apps/navi/browser/content-entry.ts
+  // browser/content-entry.ts
   var scope = globalThis;
   if (!scope.naviStationAttached) {
     scope.naviStationAttached = true;

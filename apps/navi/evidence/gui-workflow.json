@@ -4,77 +4,1059 @@
   "software_webgl": true,
   "gui_close_preserves_session": true,
   "inspection": {
-    "renderer": "webgl",
-    "sessions": [
+    "renderer": "fallback",
+    "pixelRatio": 1,
+    "dpr": 1,
+    "viewport": {
+      "width": 1392,
+      "height": 872
+    },
+    "chatOpacity": "1",
+    "booted": true,
+    "degraded": true,
+    "boot": "scene",
+    "bootOverlay": {
+      "display": "none",
+      "hidden": true,
+      "opacity": "0"
+    },
+    "art": {
+      "x": 110,
+      "y": 109,
+      "w": 519.8,
+      "h": 466,
+      "scale": 0.481,
+      "settled": true,
+      "cell": {
+        "x": 12,
+        "y": 69,
+        "w": 715.7,
+        "h": 517.4
+      }
+    },
+    "devtools": true,
+    "isolated": true,
+    "pending": 1,
+    "pendingOps": [
+      "status"
+    ],
+    "pendingStale": 0,
+    "pendingOldestMs": 75,
+    "cursor": 1836621680246806,
+    "polls": 10,
+    "pollFailures": 0,
+    "offline": false,
+    "backoff": 700,
+    "timeouts": 0,
+    "dropped": 0,
+    "unknownReplies": 1,
+    "daemon": {
+      "pid": 1458049,
+      "version": "0.1.0"
+    },
+    "workers": {
+      "voice": "off",
+      "desktop": "disconnected"
+    },
+    "errors": [
       {
-        "created": 1791634572163,
-        "cwd": "/tmp/navi-isolated-yjinkvgf",
-        "id": "navi-ea10746e59b706eb",
-        "name": "Isolated validation",
-        "profile": "terminal",
-        "running": true
+        "type": "log",
+        "at": "2026-11-01T23:31:06.468Z",
+        "level": "error",
+        "message": "Script error."
       },
       {
-        "created": 1791634578593,
-        "cwd": "/tmp/navi-isolated-yjinkvgf",
-        "id": "navi-dfa2254c6381a60a",
-        "name": "GUI review",
-        "profile": "fixture-shell",
-        "running": true
+        "type": "log",
+        "at": "2026-11-01T23:31:06.570Z",
+        "level": "error",
+        "message": "rpc __no_such_op failed: Unknown operation __no_such_op"
       },
       {
-        "created": 1791634581930,
-        "cwd": "/tmp/navi-isolated-yjinkvgf",
-        "id": "navi-3f00f9f5df41a7b1",
-        "name": "Fixture shell",
-        "profile": "fixture-shell",
-        "running": true
+        "type": "log",
+        "at": "2026-11-01T23:31:06.747Z",
+        "level": "error",
+        "message": "rpc command failed: Command stopped during decision inference"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:13.136Z",
+        "level": "error",
+        "message": "rpc voice_start failed: Live desktop and microphone workers are disabled in isolated mode"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:13.204Z",
+        "level": "error",
+        "message": "rpc voice_start failed: Live desktop and microphone workers are disabled in isolated mode"
       }
     ],
-    "active": "navi-3f00f9f5df41a7b1",
-    "terminal": "[amrhares@fedora navi-isolated-yjinkvgf]$                                                     ",
-    "title": "Fixture shell"
+    "diagnostics": [
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:06.468Z",
+        "level": "error",
+        "message": "Script error."
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:06.519Z",
+        "level": "warn",
+        "message": "reply for unknown ticket 424242"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:06.570Z",
+        "level": "error",
+        "message": "rpc __no_such_op failed: Unknown operation __no_such_op"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:06.747Z",
+        "level": "error",
+        "message": "rpc command failed: Command stopped during decision inference"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:13.136Z",
+        "level": "error",
+        "message": "rpc voice_start failed: Live desktop and microphone workers are disabled in isolated mode"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:13.204Z",
+        "level": "error",
+        "message": "rpc voice_start failed: Live desktop and microphone workers are disabled in isolated mode"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:31:13.322Z",
+        "level": "warn",
+        "message": "stage unavailable: workflow probe"
+      }
+    ],
+    "sessions": [
+      {
+        "active": false,
+        "created": 1793575859697,
+        "cwd": "/tmp/navi-isolated-idxzmg8k",
+        "exit_status": null,
+        "exited": null,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-6e847367b862a787",
+        "last_active": 1793575866405,
+        "last_launched": false,
+        "launch_kind": "new",
+        "name": "Isolated validation",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1458108,
+        "profile": "terminal",
+        "project_id": "prj-46bf81d6",
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
+      },
+      {
+        "active": true,
+        "created": 1793575869911,
+        "cwd": "/tmp/navi-isolated-idxzmg8k",
+        "exit_status": null,
+        "exited": 1793575869950,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-c3a33c2a77c83525",
+        "last_active": 1793575871369,
+        "last_launched": true,
+        "launch_kind": "new",
+        "name": "Fixture shell",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1458535,
+        "profile": "fixture-shell",
+        "project_id": "prj-46bf81d6",
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": true
+      },
+      {
+        "active": false,
+        "created": 1793575871624,
+        "cwd": "/home/amrhares/Documents/navi",
+        "exit_status": null,
+        "exited": 1793575872079,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-2f6cc775ca348d88",
+        "last_active": 1793575872787,
+        "last_launched": false,
+        "launch_kind": "new",
+        "name": "Fixture shell",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1458600,
+        "profile": "fixture-shell",
+        "project_id": "prj-6105a486",
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
+      }
+    ],
+    "title": "Navi",
+    "messages": 13,
+    "chat": {
+      "count": 13,
+      "mounted": 13,
+      "rows": 13,
+      "empty": false,
+      "emptyVisible": false,
+      "streaming": false,
+      "turnDone": false,
+      "status": "attention",
+      "label": "Attention",
+      "failed": 4,
+      "ids": [
+        "m-mvygrfoy-1",
+        "m-mvygrfw1-2",
+        "m-mvygrfy3-3",
+        "m-mvygrfzo-4",
+        "m-mvygrg8k-5",
+        "m-mvygrg8k-6",
+        "m-mvygrgsv-7",
+        "m-mvygrhbu-8",
+        "m-mvygrji6-9",
+        "m-mvygrkyu-a",
+        "m-mvygrkyv-d",
+        "m-mvygrl4m-e",
+        "m-mvygrl4m-f"
+      ],
+      "cursors": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "savedIds": [
+        "m-mvygrfw1-2",
+        "m-mvygrfy3-3",
+        "m-mvygrg8k-6",
+        "m-mvygrgsv-7",
+        "m-mvygrhbu-8",
+        "m-mvygrkyu-a"
+      ],
+      "lastId": "m-mvygrl4m-f",
+      "lastText": "",
+      "lastStatus": "failed",
+      "pendingFinalise": null,
+      "history": {
+        "limit": 200,
+        "hasMore": false,
+        "oldestCursor": null
+      },
+      "lastFailure": "Live desktop and microphone workers are disabled in isolated mode",
+      "attachments": [],
+      "lastCommand": {
+        "text": "Open Fixture shell",
+        "project_id": "prj-6105a486",
+        "attachments": []
+      }
+    },
+    "voice": {
+      "status": "off",
+      "label": "Mic off",
+      "transcript": null,
+      "confirming": false,
+      "countdown": "",
+      "banner": false
+    },
+    "model": "F 1",
+    "modelPicker": {
+      "value": "fixture/f-1",
+      "filter": "fixture",
+      "open": false,
+      "choices": 1,
+      "catalog": 1,
+      "options": 1
+    },
+    "rpcOps": [
+      "status",
+      "messages",
+      "ping",
+      "__no_such_op",
+      "oc_commands",
+      "message_save",
+      "command",
+      "cancel",
+      "message_save",
+      "status",
+      "message_save",
+      "status",
+      "message_save",
+      "command",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "select",
+      "prompt",
+      "session_interrupt",
+      "create",
+      "status",
+      "status",
+      "select",
+      "oc_models",
+      "settings",
+      "voice_start",
+      "status",
+      "oc_agents",
+      "oc_agents",
+      "settings",
+      "voice_start",
+      "message_save",
+      "status"
+    ],
+    "rpcCalls": [
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 0
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 200,
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "ping",
+        "params": {}
+      },
+      {
+        "op": "__no_such_op",
+        "params": {}
+      },
+      {
+        "op": "oc_commands",
+        "params": {}
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygrfw1-2",
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "open something for me"
+            }
+          ],
+          "time": 1793575866673,
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "command",
+        "params": {
+          "text": "open something for me",
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "cancel",
+        "params": {}
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygrfy3-3",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "Command stopped during decision inference",
+              "retry": true
+            }
+          ],
+          "time": 1793575866747,
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246787
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygrg8k-6",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "Command stopped during decision inference",
+              "retry": true
+            }
+          ],
+          "time": 1793575866674,
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246793
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygrgsv-7",
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Open Fixture shell"
+            }
+          ],
+          "time": 1793575867855,
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "command",
+        "params": {
+          "text": "Open Fixture shell",
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246793
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246794
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246794
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246795
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246798
+        }
+      },
+      {
+        "op": "select",
+        "params": {
+          "id": "navi-c3a33c2a77c83525"
+        }
+      },
+      {
+        "op": "prompt",
+        "params": {
+          "id": "navi-c3a33c2a77c83525",
+          "text": "echo navi-probe-$((40+2))"
+        }
+      },
+      {
+        "op": "session_interrupt",
+        "params": {
+          "id": "navi-c3a33c2a77c83525"
+        }
+      },
+      {
+        "op": "create",
+        "params": {
+          "profile": "fixture-shell",
+          "cwd": "/home/amrhares/Documents/navi",
+          "prompt": "echo navi-create-$((3+4))"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246800
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246801
+        }
+      },
+      {
+        "op": "select",
+        "params": {
+          "id": "navi-2f6cc775ca348d88"
+        }
+      },
+      {
+        "op": "oc_models",
+        "params": {}
+      },
+      {
+        "op": "settings",
+        "params": {
+          "active_session": "navi-c3a33c2a77c83525",
+          "assistant": {
+            "agent": "navi",
+            "model": "commandcode/deepseek/deepseek-v4.1-flash"
+          },
+          "favorites": [],
+          "last_launched": "navi-c3a33c2a77c83525",
+          "listening": "background",
+          "microphone": false,
+          "model": {
+            "endpoint": "http://127.0.0.1:38901/v1/systemone",
+            "gpu_layers": 99,
+            "minimum_probability": 0.65,
+            "name": "d1-3B Q4",
+            "projection": "/tmp/navi-isolated-idxzmg8k/data/models/d1-3B/mmproj-d1-3B-Q8_0.gguf",
+            "server": "/tmp/navi-isolated-idxzmg8k/data/runtime/llama-b11540/llama-b11540/llama-server",
+            "threads": 2,
+            "weights": "/tmp/navi-isolated-idxzmg8k/data/models/d1-3B/d1-3B-Q4_K_M.gguf"
+          },
+          "persona": "navi",
+          "profiles": [
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "codex",
+              "harness": "codex",
+              "id": "codex",
+              "interrupt_keys": [],
+              "name": "Codex",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "claude",
+              "harness": "claude",
+              "id": "claude",
+              "interrupt_keys": [],
+              "name": "Claude Code",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "pi",
+              "harness": "pi",
+              "id": "pi",
+              "interrupt_keys": [],
+              "name": "Pi",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "/bin/bash",
+              "harness": "bash",
+              "id": "terminal",
+              "interrupt_keys": [],
+              "name": "Terminal",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "executable": "/bin/bash",
+              "harness": "bash",
+              "id": "fixture-shell",
+              "name": "Fixture shell"
+            },
+            {
+              "id": "args-probe",
+              "name": "args-probe",
+              "executable": "/bin/true",
+              "args": [
+                "--flag",
+                "with space"
+              ]
+            }
+          ],
+          "profiles_rev": 2,
+          "projects": [
+            {
+              "name": "Fixture",
+              "path": "/tmp/navi-isolated-idxzmg8k"
+            }
+          ],
+          "shortcuts": {
+            "focus": "F10",
+            "fullscreen": "F11"
+          },
+          "speak": true,
+          "speech": {
+            "engine": "whistle",
+            "wake_score": 1,
+            "wake_threshold": 0.25,
+            "weights": "/tmp/navi-isolated-idxzmg8k/data/models/whistle/whistle.cact",
+            "language": "fr"
+          },
+          "system_prompt": "You are Navi, the user's coding agent on their own machine. Your name is Navi; that is your only name. Begin every reply with one plain spoken sentence that says what you did or what you need \u2014 the voice system reads only that line aloud. After it, answer with readable markdown: fenced code blocks, diffs, and lists are all welcome. Work inside the project directory you are given and never touch files outside it. Use the tools OpenCode provides for real work: read, edit, run, verify. Never state a completion percentage and never claim progress you have not verified. Keep it short."
+        }
+      },
+      {
+        "op": "voice_start",
+        "params": {}
+      },
+      {
+        "op": "status",
+        "params": {}
+      },
+      {
+        "op": "oc_agents",
+        "params": {}
+      },
+      {
+        "op": "oc_agents",
+        "params": {}
+      },
+      {
+        "op": "settings",
+        "params": {
+          "active_session": "navi-c3a33c2a77c83525",
+          "assistant": {
+            "agent": "navi",
+            "model": "fixture/f-1"
+          },
+          "favorites": [],
+          "last_launched": "navi-c3a33c2a77c83525",
+          "listening": "background",
+          "microphone": false,
+          "model": {
+            "endpoint": "http://127.0.0.1:38901/v1/systemone",
+            "gpu_layers": 99,
+            "minimum_probability": 0.65,
+            "name": "d1-3B Q4",
+            "projection": "/tmp/navi-isolated-idxzmg8k/data/models/d1-3B/mmproj-d1-3B-Q8_0.gguf",
+            "server": "/tmp/navi-isolated-idxzmg8k/data/runtime/llama-b11540/llama-b11540/llama-server",
+            "threads": 2,
+            "weights": "/tmp/navi-isolated-idxzmg8k/data/models/d1-3B/d1-3B-Q4_K_M.gguf"
+          },
+          "persona": "navi",
+          "profiles": [
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "codex",
+              "harness": "codex",
+              "id": "codex",
+              "interrupt_keys": [],
+              "name": "Codex",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "claude",
+              "harness": "claude",
+              "id": "claude",
+              "interrupt_keys": [],
+              "name": "Claude Code",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "pi",
+              "harness": "pi",
+              "id": "pi",
+              "interrupt_keys": [],
+              "name": "Pi",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "cwd": "inherit",
+              "env": {},
+              "executable": "/bin/bash",
+              "harness": "bash",
+              "id": "terminal",
+              "interrupt_keys": [],
+              "name": "Terminal",
+              "resume_default": "ask"
+            },
+            {
+              "args": [],
+              "executable": "/bin/bash",
+              "harness": "bash",
+              "id": "fixture-shell",
+              "name": "Fixture shell"
+            },
+            {
+              "id": "args-probe",
+              "name": "args-probe",
+              "executable": "/bin/true",
+              "args": [
+                "--flag",
+                "with space"
+              ]
+            }
+          ],
+          "profiles_rev": 2,
+          "projects": [
+            {
+              "name": "Fixture",
+              "path": "/tmp/navi-isolated-idxzmg8k"
+            }
+          ],
+          "shortcuts": {
+            "focus": "F10",
+            "fullscreen": "F11"
+          },
+          "speak": true,
+          "speech": {
+            "engine": "whistle",
+            "wake_score": 1,
+            "wake_threshold": 0.25,
+            "weights": "/tmp/navi-isolated-idxzmg8k/data/models/whistle/whistle.cact",
+            "language": "fr"
+          },
+          "system_prompt": "You are Navi, the user's coding agent on their own machine. Your name is Navi; that is your only name. Begin every reply with one plain spoken sentence that says what you did or what you need \u2014 the voice system reads only that line aloud. After it, answer with readable markdown: fenced code blocks, diffs, and lists are all welcome. Work inside the project directory you are given and never touch files outside it. Use the tools OpenCode provides for real work: read, edit, run, verify. Never state a completion percentage and never claim progress you have not verified. Keep it short."
+        }
+      },
+      {
+        "op": "voice_start",
+        "params": {}
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygrkyu-a",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "reasoning",
+              "text": "probe reasoning"
+            },
+            {
+              "type": "tool",
+              "id": "tool-mvygrkyu-b",
+              "name": "fixture",
+              "status": "running",
+              "final": false
+            },
+            {
+              "type": "tool",
+              "id": "approval-approval-mvygrkyv-c",
+              "name": "fixture",
+              "status": "awaiting approval",
+              "final": false,
+              "approval": {
+                "id": "approval-mvygrkyv-c",
+                "tool": "fixture",
+                "decision": null
+              }
+            },
+            {
+              "type": "text",
+              "text": "probe reply"
+            }
+          ],
+          "time": 1793575873253,
+          "project_id": "prj-6105a486"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621680246806
+        }
+      }
+    ],
+    "slash": 0,
+    "busy": false,
+    "terminal": true,
+    "terminalDisplay": "flex",
+    "dock": "right",
+    "graphOpen": false,
+    "phase": "error",
+    "project": {
+      "id": "prj-6105a486",
+      "name": "Navi",
+      "path": "/home/amrhares/Documents/navi",
+      "path_state": "ok",
+      "label": "Navi",
+      "switcher": false,
+      "options": 2,
+      "scope": null
+    },
+    "graph": {
+      "open": false,
+      "loading": false,
+      "project_id": null,
+      "percent": null,
+      "percent_null": false,
+      "unknown": true,
+      "label": null,
+      "verified": null,
+      "confidence": null,
+      "aspects": [],
+      "risks": [],
+      "evidence": 0,
+      "evidenceTotal": null,
+      "empty": false,
+      "as_of": null
+    },
+    "layout": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 716,
+        "height": 517,
+        "visible": true
+      },
+      "chat": {
+        "x": 236,
+        "y": 598,
+        "width": 920,
+        "height": 262,
+        "visible": true
+      },
+      "terminal": {
+        "x": 740,
+        "y": 69,
+        "width": 640,
+        "height": 517,
+        "visible": true
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 921,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "overlaps": []
+    },
+    "host": {
+      "push": {
+        "delivered": 8,
+        "skipped": 3,
+        "errors": 0,
+        "unhandled": 0,
+        "bytes": 12041,
+        "cursor": 1836621680246806,
+        "active": false,
+        "rate": 0.84
+      }
+    }
   },
   "workflow": {
     "ok": true,
     "steps": [
-      "Hardware controls disabled",
-      "Remote decision endpoint rejected",
-      "Decision and speech configuration saved",
-      "External desktop launcher blocked",
-      "Named fixture harness launched and attached",
-      "Session selection switched the terminal",
-      "GUI command reached Rust and launched a registered harness",
-      "Stop canceled pending inference without a terminal side effect"
+      "Hardware controls disabled, developer extras enabled",
+      "Uncaught error captured in the diagnostics deque",
+      "Malformed request answered with its ticket; unknown op rejected",
+      "Slash list rendered 3 OpenCode commands",
+      "Stop cancelled an in-flight command",
+      "Typed message rendered in the chat panel",
+      "Chat command reached Rust and launched a registered harness",
+      "Terminal pane opened with xterm for the harness session",
+      "Sent a prompt into the harness and observed its output",
+      "Terminal Stop sent session_interrupt for the attached harness",
+      "New-session dialog launched a harness and injected its prompt",
+      "Settings rendered live diagnostics with no network",
+      "Settings saved: speak on, Navi prompt updated, model kept, spaced args and language kept",
+      "Model picker searched the catalog, grouped providers and persisted fixture/f-1",
+      "Composer model switcher opened inside the panel and closed with Escape",
+      "Reasoning, tool_use, approval, warning and unknown kinds rendered without errors",
+      "Degraded stage kept a visible chat with an honest renderer"
     ],
+    "slash_count": 3,
+    "diagnostics": "renderer   webgl \u00b7 pixel ratio 1\ndpr        1\nviewport   1392\u00d7872\ndaemon     navid 0.1.0 pid 1458049\npending    1 \u00b7 0 timeouts \u00b7 0 dropped\ncursor     1836621680246802 \u00b7 boot 0e774a4142eafc34\nchat       9 messages \u00b7 9 mounted \u00b7 ready\nvoice      Mic off\nworkers    voice off \u00b7 desktop disconnected\nfeed       online \u00b7 10 polls \u00b7 0 failures \u00b7 backoff 700ms\nlast log   error: rpc command failed: Command stopped during decision inference",
+    "messages": 11,
     "sessions": [
       {
-        "created": 1791634572163,
-        "cwd": "/tmp/navi-isolated-yjinkvgf",
-        "id": "navi-ea10746e59b706eb",
+        "active": false,
+        "created": 1793575859697,
+        "cwd": "/tmp/navi-isolated-idxzmg8k",
+        "exit_status": null,
+        "exited": null,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-6e847367b862a787",
+        "last_active": 1793575866405,
+        "last_launched": false,
+        "launch_kind": "new",
         "name": "Isolated validation",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1458108,
         "profile": "terminal",
-        "running": true
+        "project_id": "prj-46bf81d6",
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
       },
       {
-        "created": 1791634578593,
-        "cwd": "/tmp/navi-isolated-yjinkvgf",
-        "id": "navi-dfa2254c6381a60a",
-        "name": "GUI review",
-        "profile": "fixture-shell",
-        "running": true
-      },
-      {
-        "created": 1791634581930,
-        "cwd": "/tmp/navi-isolated-yjinkvgf",
-        "id": "navi-3f00f9f5df41a7b1",
+        "active": true,
+        "created": 1793575869911,
+        "cwd": "/tmp/navi-isolated-idxzmg8k",
+        "exit_status": null,
+        "exited": 1793575869950,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-c3a33c2a77c83525",
+        "last_active": 1793575871369,
+        "last_launched": true,
+        "launch_kind": "new",
         "name": "Fixture shell",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1458535,
         "profile": "fixture-shell",
-        "running": true
+        "project_id": "prj-46bf81d6",
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": true
+      },
+      {
+        "active": false,
+        "created": 1793575871624,
+        "cwd": "/home/amrhares/Documents/navi",
+        "exit_status": null,
+        "exited": 1793575872079,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-2f6cc775ca348d88",
+        "last_active": 1793575872787,
+        "last_launched": false,
+        "launch_kind": "new",
+        "name": "Fixture shell",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1458600,
+        "profile": "fixture-shell",
+        "project_id": "prj-6105a486",
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
       }
     ],
-    "model": "GUI replacement provider",
-    "voice_engine": "whisper",
-    "renderer": "webgl"
-  }
+    "model": "d1-3B Q4",
+    "voice_engine": "whistle",
+    "renderer": "webgl",
+    "dpr": 1,
+    "pixel_ratio": 1
+  },
+  "console_errors": [
+    "file:///home/amrhares/Documents/navi/apps/navi/ui/station.js:39:56: CONSOLE ERROR [navi] Script error.",
+    "file:///home/amrhares/Documents/navi/apps/navi/ui/station.js:39:56: CONSOLE ERROR [navi] rpc __no_such_op failed: Unknown operation __no_such_op",
+    "file:///home/amrhares/Documents/navi/apps/navi/ui/station.js:39:56: CONSOLE ERROR [navi] rpc command failed: Command stopped during decision inference"
+  ],
+  "rpc_log": [
+    "rpc status 7ms ok=True bytes=5467",
+    "rpc messages 0ms ok=True bytes=59",
+    "rpc ping 0ms ok=True bytes=60",
+    "rpc ? 0ms ok=False bytes=64 error=\"'NoneType' object is not subscriptable\"",
+    "rpc __no_such_op 0ms ok=False bytes=56 error='Unknown operation __no_such_op'",
+    "rpc oc_commands 84ms ok=True bytes=172",
+    "rpc message_save 0ms ok=True bytes=46",
+    "rpc command 71ms ok=False bytes=67 error='Command stopped during decision inference'",
+    "rpc message_save 0ms ok=True bytes=46",
+    "rpc cancel 80ms ok=True bytes=103",
+    "rpc status 4ms ok=True bytes=5652",
+    "rpc message_save 0ms ok=True bytes=46",
+    "rpc status 7ms ok=True bytes=4261",
+    "rpc message_save 0ms ok=True bytes=46",
+    "rpc status 3ms ok=True bytes=4502",
+    "rpc status 7ms ok=True bytes=4262",
+    "rpc status 4ms ok=True bytes=5073",
+    "rpc status 7ms ok=True bytes=5072",
+    "rpc command 3276ms ok=True bytes=601",
+    "rpc status 5ms ok=True bytes=4785",
+    "rpc select 1ms ok=True bytes=98",
+    "rpc prompt 129ms ok=True bytes=69",
+    "rpc session_interrupt 2ms ok=True bytes=93",
+    "rpc status 8ms ok=True bytes=5817",
+    "rpc status 6ms ok=True bytes=5817",
+    "rpc create 1370ms ok=True bytes=401",
+    "rpc select 1ms ok=True bytes=98",
+    "rpc settings 1ms ok=True bytes=2529",
+    "rpc voice_start 0ms ok=False bytes=91 error='Live desktop and microphone workers are disabled in isolated mode'",
+    "rpc oc_models 73ms ok=True bytes=89",
+    "rpc status 9ms ok=True bytes=12474",
+    "rpc settings 1ms ok=True bytes=2500",
+    "rpc voice_start 0ms ok=False bytes=91 error='Live desktop and microphone workers are disabled in isolated mode'",
+    "rpc oc_agents 78ms ok=True bytes=75",
+    "rpc oc_agents 73ms ok=True bytes=75",
+    "rpc message_save 0ms ok=True bytes=46",
+    "rpc status 5ms ok=True bytes=5655"
+  ]
 }

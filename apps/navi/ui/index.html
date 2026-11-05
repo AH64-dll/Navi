@@ -4,72 +4,156 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'">
-  <title>Navi · Orchestration Station</title>
-  <link rel="stylesheet" href="vendor/xterm.css">
+  <title>Navi</title>
   <link rel="stylesheet" href="surface.css">
   <link rel="stylesheet" href="station.css">
+  <link rel="stylesheet" href="vendor/xterm.css">
 </head>
 <body class="booting">
   <canvas id="field" aria-hidden="true"></canvas><div class="scan" aria-hidden="true"></div>
-  <div class="brand"><b>Copland OS Enterprise</b><i>Navi · Orchestration Station</i></div>
-  <div id="whisper" aria-hidden="true"></div>
-  <aside class="session-dock glass" aria-label="Sessions">
-    <header><span>SESSIONS</span><button id="new-session" title="Create a session">+</button></header>
-    <div id="sessions"></div>
-    <div id="chief-status">Local chief · starting</div>
-  </aside>
-  <section class="terminal-pane" aria-label="Harness terminal">
-    <header class="pane-title">
-      <span class="pane-name"><i id="signal"></i><b id="session-name">Navi</b><em id="harness-name">Station</em></span>
-      <span class="pane-state" id="state">ready</span>
-      <button id="focus-top" title="Focus view" aria-label="Toggle focus view">⤢</button>
-    </header>
-    <div id="terminal"></div>
-    <div id="empty-session"><h1>Your terminals, together.</h1><p>Open Codex, Claude Code, Pi, or a custom harness.</p><button id="empty-launch">Create session</button><p class="muted">Sessions keep running when this window closes.</p></div>
-    <form id="command-form"><label class="sr-only" for="command">Command to the local chief</label><input id="command" placeholder="Open Codex · Switch to Navi · Open the browser" autocomplete="off"><button type="submit">Run</button><button type="button" id="stop">Stop</button></form>
-    <div class="pane-edge" aria-hidden="true"></div>
-  </section>
-  <section class="syslog" aria-label="Activity"><span class="syslog-title">SYSTEM</span><div id="syslog"></div></section>
-  <nav class="orbit-controls" aria-label="Station controls">
-    <button class="orb" id="microphone" aria-pressed="false"><span>Mic off</span></button>
-    <button class="orb" id="desktop"><span>Desktop</span></button>
-    <button class="orb" id="settings-button"><span>Settings</span></button>
-    <button class="orb" id="motion-button" aria-pressed="true"><span>Motion</span></button>
-    <button class="orb" id="fullscreen-button"><span>Full View</span></button>
-  </nav>
-  <dialog id="launch-dialog" class="glass"><form id="launch-form">
-    <header><h2>Create session</h2><button type="button" data-close="launch-dialog">Close</button></header>
-    <label>Harness<select id="launch-profile"></select></label>
-    <label>Session name<input id="launch-name" placeholder="Optional name" maxlength="120"></label>
-    <label>Project directory<input id="launch-cwd" required></label>
-    <button type="submit">Open terminal</button>
-  </form></dialog>
-  <dialog id="settings-dialog" class="glass"><form id="settings-form">
-    <header><h2>Station settings</h2><button type="button" data-close="settings-dialog">Close</button></header>
-    <label>Decision model name<input id="model-name"></label>
-    <label>Local decision endpoint<input id="model-endpoint"></label>
-    <label>Model server executable<input id="model-server"></label>
-    <label>Decision weights<input id="model-weights"></label>
-    <label>Image projection<input id="model-projection"></label>
-    <label>GPU layers (0 for CPU)<input id="model-gpu" type="number" min="0" max="999"></label>
-    <label>CPU threads<input id="model-threads" type="number" min="1" max="8"></label>
-    <label>Confidence threshold<input id="model-confidence" type="number" min="0.5" max="1" step="0.01"></label>
-    <label>Listening mode<select id="listening"><option value="background">Keep listening with window closed</option><option value="gui">Listen while window is open</option></select></label>
-    <label>Assistant persona<select id="persona"><option value="jarvis">Jarvis</option><option value="friendly">Friendly</option><option value="concise">Concise</option></select></label>
-    <p>Voice uses “Hey Navi”, then an English command. Mic off releases the microphone.</p>
-    <p>Voice is experimental. Use the Stop button if speech is misunderstood.</p>
-    <label>Speech settings (JSON)<textarea id="speech" rows="3" spellcheck="false"></textarea></label>
-    <label>Launch profiles (JSON)<textarea id="profiles" rows="5" spellcheck="false"></textarea></label>
-    <label>Projects (JSON)<textarea id="projects" rows="3" spellcheck="false"></textarea></label>
-    <label>Browser favorites (JSON)<textarea id="favorites" rows="3" spellcheck="false"></textarea></label>
-    <button type="submit">Save settings</button>
-    <hr><h3>Zen browser connection</h3><p id="browser-status">Extension disconnected</p>
-    <p>Load the provided extension in Zen's about:debugging → This Firefox → Load Temporary Add-on. Select browser/manifest.json. Its popup connects to Navi and lets you attach a tab for control. Temporary installation lasts until Zen restarts; a signed add-on is needed for permanent installation.</p>
-    <button type="button" id="browser-folder">Open extension folder</button>
-    <h3>Desktop connection</h3><p id="desktop-status">Disconnected</p><p>Desktop opens the system's screen and input consent dialog. Choose the screen you want Navi to control.</p>
-  </form></dialog>
-  <div id="toast" role="status" aria-live="polite"></div>
-  <div id="boot" aria-hidden="true"><div class="boot-title"><b>Copland OS Enterprise</b><i>Navi · Orchestration Station</i></div></div>
-  <script src="vendor/xterm.js"></script><script src="scene.bundle.js"></script><script src="station.js"></script>
+
+  <!-- L0 shell: one fixed grid, areas strip / stage / dock / graph / composer. The
+       canvas stays full-bleed behind it and #stage-region is a measurement cell, so
+       every panel has a cell of its own and none can be positioned over another. -->
+  <div id="shell">
+    <section id="sessions" class="sessions panel" aria-label="Harness sessions" hidden>
+      <!-- The active project is this window's own state (BUG-090): the switcher
+           shows its name and path state, and Ctrl+1..9 selects by position. -->
+      <div id="project-switcher" class="project-switcher"></div>
+    </section>
+
+    <div id="stage-region" aria-hidden="true"></div>
+
+    <section id="terminal-pane" class="terminal-pane panel" aria-label="Harness terminal" hidden>
+      <div id="dock-splitter" role="separator" aria-orientation="vertical" aria-label="Resize terminal" tabindex="0"></div>
+      <header class="terminal-head">
+        <span id="terminal-title">session</span>
+        <input id="terminal-prompt" placeholder="Prompt this harness…" aria-label="Prompt this harness">
+        <button type="button" id="terminal-send" title="Send prompt">Send</button>
+        <button type="button" id="terminal-stop" class="stop" title="Interrupt this harness">Stop</button>
+        <button type="button" id="terminal-close" class="icon" aria-label="Close terminal">×</button>
+      </header>
+      <div id="terminal-host"></div>
+    </section>
+
+    <aside id="graph-region" class="panel" aria-label="Project graph" hidden></aside>
+
+    <section class="chat panel" aria-label="Chat with Navi">
+      <div id="toast" role="status" aria-live="polite"></div>
+      <!-- Voice: the transcript that is about to run, with its source, confidence and
+           the countdown the worker holds it for. Enter dispatches, Escape edits. -->
+      <div id="voice-banner" class="voice-banner" role="status" aria-live="polite" hidden>
+        <span id="voice-source" class="voice-source"></span>
+        <span id="voice-text" class="voice-text"></span>
+        <span id="voice-count" class="voice-count"></span>
+        <button type="button" id="voice-use" class="voice-action">Use</button>
+        <button type="button" id="voice-edit" class="voice-action">Edit</button>
+      </div>
+      <div class="chat-log-wrap">
+        <!-- First run: the three ways to act, and why the mic may be unavailable. It
+             overlays an empty log, so it never steals height from the composer. -->
+        <div id="chat-empty" class="chat-empty">
+          <p class="empty-title">Ask Navi for real work.</p>
+          <p class="empty-hint">Type a request · press <b>/</b> for commands · say “Hey Navi”</p>
+          <div class="empty-actions">
+            <button type="button" id="empty-session">New harness session</button>
+            <button type="button" id="empty-settings">Settings</button>
+            <button type="button" id="empty-mic">Enable mic</button>
+          </div>
+          <p class="empty-note" id="mic-note">Microphone is off.</p>
+        </div>
+        <div id="chat-log" role="log" aria-live="off"></div>
+        <button type="button" id="chat-pill" class="chat-pill" hidden>Jump to latest ↓</button>
+      </div>
+      <div id="attachment-chips" class="attachment-chips" role="list" aria-label="Attached files" hidden></div>
+      <form id="chat-form" autocomplete="off">
+        <button type="button" id="attach" class="mic attach" title="Attach files" aria-label="Attach files"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M16.5 6.5v9a4.5 4.5 0 0 1-9 0V5a3 3 0 0 1 6 0v9.5a1.5 1.5 0 0 1-3 0V7h1.5v7.5a.2.2 0 0 0 .4 0V5a1.7 1.7 0 0 0-3.4 0v10.5a3 3 0 0 0 6 0v-9h1.5Z"/></svg></button>
+        <input id="attach-input" type="file" multiple hidden accept="image/*,text/*,.md,.json,.diff,.patch,.log,.csv,.txt">
+        <button type="button" id="microphone" class="mic" aria-pressed="false" title="Microphone"><span>Mic</span></button>
+        <label class="sr-only" for="command">Message Navi</label>
+        <input id="command" placeholder="Ask Navi… or /help" autocomplete="off">
+        <button type="button" id="stop" class="stop" hidden>Stop</button>
+        <button type="submit" class="send">Send</button>
+        <ul id="slash-list" role="listbox" aria-label="Slash commands" hidden></ul>
+      </form>
+      <div class="chat-meta">
+        <span id="state" data-phase="ready">Connecting…</span>
+        <span id="project-status" title="Active project"></span>
+        <button type="button" id="model-switcher" class="pill" title="Assistant model">Model</button>
+        <div id="model-pop" class="model-pop" hidden>
+          <input id="model-search" class="model-search" role="combobox" aria-expanded="true"
+                 aria-controls="model-list" aria-autocomplete="list" aria-label="Search models"
+                 placeholder="Search models…" autocomplete="off" spellcheck="false">
+          <ul id="model-list" class="model-list" role="listbox" aria-label="Models"></ul>
+        </div>
+        <button type="button" id="voice-pill" class="pill" title="Voice status">Mic off</button>
+        <!-- Below 900 px there is no room for a rail or a drawer: the graph
+             becomes a tab in the composer area (BUG-089). -->
+        <button type="button" id="graph-tab" class="pill" title="Project graph" aria-pressed="false">Graph</button>
+        <span id="chief-status"></span>
+        <button type="button" id="settings-button" class="icon" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.1 7.1 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg></button>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="settings-dialog" class="settings glass" aria-label="Settings">
+    <form id="settings-form" method="dialog">
+      <h2>Settings</h2>
+      <div class="toggles">
+        <label><input type="checkbox" id="setting-speak"> Speak replies</label>
+        <label><input type="checkbox" id="setting-mic"> Microphone</label>
+      </div>
+      <label class="field" for="setting-language">Speech language</label>
+      <input id="setting-language" maxlength="12" autocomplete="off" spellcheck="false"
+             placeholder="en" aria-describedby="speech-note">
+      <p class="hint" id="speech-note"></p>
+      <label class="field" for="setting-prompt">System prompt</label>
+      <textarea id="setting-prompt" rows="6" spellcheck="false"></textarea>
+      <label class="field" for="setting-model">OpenCode model</label>
+      <!-- A native select could blank the saved model when the catalog lacked it
+           (BUG-044). This combobox searches locally, groups by provider and always
+           keeps the current reference as a seeded option. -->
+      <div class="combobox">
+        <input id="setting-model" role="combobox" aria-expanded="false" aria-autocomplete="list"
+               aria-controls="model-options" autocomplete="off" spellcheck="false" placeholder="Search models…">
+        <ul id="model-options" class="combobox-list" role="listbox" aria-label="Models" hidden></ul>
+      </div>
+      <p class="hint" id="model-note">The answering model is reported with every reply.</p>
+      <label class="field" for="setting-agent">OpenCode agent</label>
+      <select id="setting-agent"></select>
+      <label class="field" for="setting-profiles">Harness profiles</label>
+      <div id="profiles-editor"></div>
+      <button type="button" id="profile-add">Add harness</button>
+      <p class="hint">The system prompt lives in OpenCode's <b>navi</b> agent and applies on the next turn. Another agent will use its own prompt instead.</p>
+      <div class="actions">
+        <button type="button" id="settings-new">New session</button>
+        <span class="spacer"></span>
+        <button type="button" id="settings-cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="new-dialog" class="settings glass" aria-label="New harness session">
+    <form id="new-form" method="dialog">
+      <h2>New session</h2>
+      <label class="field" for="new-profile">Harness</label>
+      <select id="new-profile"></select>
+      <label class="field" for="new-cwd">Project directory</label>
+      <input id="new-cwd" list="new-projects" placeholder="/path/to/project">
+      <datalist id="new-projects"></datalist>
+      <label class="field" for="new-name">Name (optional)</label>
+      <input id="new-name" placeholder="Session name">
+      <label class="field" for="new-prompt">First prompt (optional)</label>
+      <input id="new-prompt" placeholder="Sent to the harness after it starts">
+      <div class="actions">
+        <button type="button" id="new-cancel">Cancel</button>
+        <button type="submit" class="primary">Launch</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="boot" aria-hidden="true"><div class="boot-title"><b>Navi</b><i>online</i></div></div>
+  <script src="vendor/xterm.js"></script>
+  <script src="scene.bundle.js"></script><script src="station.js"></script>
 </body>
 </html>

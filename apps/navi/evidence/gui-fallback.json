@@ -1,0 +1,306 @@
+{
+  "private_display": true,
+  "private_bus": true,
+  "software_webgl": true,
+  "gui_close_preserves_session": true,
+  "inspection": {
+    "renderer": "fallback",
+    "pixelRatio": 1,
+    "dpr": 1,
+    "viewport": {
+      "width": 1392,
+      "height": 872
+    },
+    "chatOpacity": "1",
+    "booted": true,
+    "degraded": true,
+    "boot": "degraded",
+    "bootOverlay": {
+      "display": "none",
+      "hidden": true,
+      "opacity": "0"
+    },
+    "art": null,
+    "devtools": false,
+    "isolated": true,
+    "pending": 0,
+    "pendingOps": [],
+    "pendingStale": 0,
+    "pendingOldestMs": 0,
+    "cursor": 1836621791238147,
+    "polls": 9,
+    "pollFailures": 0,
+    "offline": false,
+    "backoff": 700,
+    "timeouts": 0,
+    "dropped": 0,
+    "unknownReplies": 0,
+    "daemon": {
+      "pid": 1461490,
+      "version": "0.1.0"
+    },
+    "workers": {
+      "voice": "off",
+      "desktop": "disconnected"
+    },
+    "errors": [],
+    "diagnostics": [
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:54.894Z",
+        "level": "warn",
+        "message": "stage unavailable: NAVI_FORCE_WEBGL_FAIL"
+      }
+    ],
+    "sessions": [
+      {
+        "active": false,
+        "created": 1793575968088,
+        "cwd": "/tmp/navi-isolated-0x8ednyk",
+        "exit_status": null,
+        "exited": null,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-8d890c0c288139b5",
+        "last_active": 1793575974901,
+        "last_launched": true,
+        "launch_kind": "new",
+        "name": "Isolated validation",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1461550,
+        "profile": "terminal",
+        "project_id": null,
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
+      }
+    ],
+    "title": "Navi",
+    "messages": 1,
+    "chat": {
+      "count": 1,
+      "mounted": 1,
+      "rows": 1,
+      "empty": true,
+      "emptyVisible": true,
+      "streaming": false,
+      "turnDone": false,
+      "status": "ready",
+      "label": "Ready",
+      "failed": 0,
+      "ids": [
+        "m-mvygtrer-1"
+      ],
+      "cursors": [
+        null
+      ],
+      "savedIds": [],
+      "lastId": "m-mvygtrer-1",
+      "lastText": "Harness session started: Isolated validation",
+      "lastStatus": "complete",
+      "pendingFinalise": null,
+      "history": {
+        "limit": 200,
+        "hasMore": false,
+        "oldestCursor": null
+      },
+      "lastFailure": null,
+      "attachments": [],
+      "lastCommand": null
+    },
+    "voice": {
+      "status": "off",
+      "label": "Mic off",
+      "transcript": null,
+      "confirming": false,
+      "countdown": "",
+      "banner": false
+    },
+    "model": "Deepseek V4.1 Flash",
+    "modelPicker": {
+      "value": "",
+      "filter": "",
+      "open": false,
+      "choices": 1,
+      "catalog": 0,
+      "options": 0
+    },
+    "rpcOps": [
+      "status",
+      "messages",
+      "ping",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status"
+    ],
+    "rpcCalls": [
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 0
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 200,
+          "project_id": "prj-00da0982"
+        }
+      },
+      {
+        "op": "ping",
+        "params": {}
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621791238147
+        }
+      }
+    ],
+    "slash": 0,
+    "busy": false,
+    "terminal": false,
+    "terminalDisplay": "none",
+    "dock": "closed",
+    "graphOpen": false,
+    "phase": "idle",
+    "project": {
+      "id": "prj-00da0982",
+      "name": "Navi",
+      "path": "/home/amrhares/Documents/navi",
+      "path_state": "ok",
+      "label": "Navi",
+      "switcher": false,
+      "options": 1,
+      "scope": null
+    },
+    "graph": {
+      "open": false,
+      "loading": false,
+      "project_id": null,
+      "percent": null,
+      "percent_null": false,
+      "unknown": true,
+      "label": null,
+      "verified": null,
+      "confidence": null,
+      "aspects": [],
+      "risks": [],
+      "evidence": 0,
+      "evidenceTotal": null,
+      "empty": false,
+      "as_of": null
+    },
+    "layout": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 1368,
+        "height": 588,
+        "visible": true
+      },
+      "chat": {
+        "x": 236,
+        "y": 669,
+        "width": 920,
+        "height": 191,
+        "visible": true
+      },
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 461,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "overlaps": []
+    },
+    "host": {
+      "push": {
+        "delivered": 1,
+        "skipped": 8,
+        "errors": 0,
+        "unhandled": 0,
+        "bytes": 3886,
+        "cursor": 1836621791238147,
+        "active": false,
+        "rate": 0.12
+      }
+    }
+  }
+}

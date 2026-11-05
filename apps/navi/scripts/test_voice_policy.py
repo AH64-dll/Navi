@@ -1,10 +1,27 @@
 """Voice policy checks without importing speech engines or opening audio devices."""
+import os
 from pathlib import Path
 import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workers"))
-from voice import command_text, enabled, input_device, speech_keywords
+os.environ["NAVI_HEX_DISABLE"] = "1"  # this suite asserts the cloud/local order
+from voice import (command_for, command_text, enabled, ignored_wake,
+                   input_device, speech_keywords)
+
+
+class _NullRecognizer:
+    def create_stream(self):
+        return self
+
+    def accept_waveform(self, rate, samples):
+        pass
+
+    def decode_stream(self, stream):
+        pass
+
+    class result:
+        text = ""
 
 
 class VoicePolicyTests(unittest.TestCase):
@@ -24,8 +41,106 @@ class VoicePolicyTests(unittest.TestCase):
         self.assertEqual(command_text("Hey, Navi, stop"), "stop")
         self.assertEqual(command_text("Hay Navi, Open terminal."), "Open terminal")
         self.assertEqual(command_text("Hey Navi. Open Codex."), "Open Codex")
+        self.assertEqual(command_text("Navi, Open terminal."), "Open terminal")
+        self.assertEqual(command_text("Navi open Codex"), "open Codex")
+        self.assertEqual(command_text("Navy, what is the capital of France"), "what is the capital of France")
+        self.assertEqual(command_text("Hey Nadi, open Codex"), "open Codex")
         self.assertEqual(command_text("Open Claude Code."), "Open Claude Code")
         self.assertEqual(command_text("Hey Navigator, open Codex"), "Hey Navigator, open Codex")
+        self.assertEqual(command_text("navigation tips"), "navigation tips")
+
+    def test_navigation_words_are_not_treated_as_commands(self):
+        self.assertTrue(ignored_wake("navigation tips"))
+        self.assertTrue(ignored_wake("Navigate to the settings page"))
+        self.assertTrue(ignored_wake("Navigator window"))
+        self.assertFalse(ignored_wake("Navi, open terminal"))
+        self.assertFalse(ignored_wake("open terminal"))
+
+    def test_ignored_wake_evaluates_the_raw_transcript(self):
+        """BUG-067: "Navi navigate to X" is a command; bare "navigation" is
+        a false wake only when the KWS actually fired."""
+        self.assertEqual(command_for("navigation is hard", wake_triggered=True), "")
+        self.assertEqual(command_for("Navi navigate to the files page", wake_triggered=True),
+                         "navigate to the files page")
+        self.assertEqual(command_for("Hey Navi, navigate home", wake_triggered=True),
+                         "navigate home")
+        # Without a wake trigger the words are kept verbatim.
+        self.assertEqual(command_for("navigation tips", wake_triggered=False),
+                         "navigation tips")
+        self.assertEqual(command_for("Navy deployment docs", wake_triggered=False),
+                         "Navy deployment docs")
+
+    def test_mishearing_table_from_evaluation_fixtures(self):
+        """BUG-050: the strip is a wake-only safety net over KWS variants."""
+        for raw, expected in (
+            ("Hey, Navi.", ""),
+            ("Hey Navi navigate to X", "navigate to X"),
+            ("Navy what time is it", "what time is it"),
+            ("Nadi open Codex", "open Codex"),
+            ("Navi, run the tests!", "run the tests"),
+        ):
+            self.assertEqual(command_for(raw, wake_triggered=True), expected, raw)
+        # A non-wake transcript is never stripped, so real words survive.
+        self.assertEqual(command_for("Navy deployment docs", wake_triggered=False),
+                         "Navy deployment docs")
+
+    def test_hex_runs_before_local_and_when_cloud_unavailable(self):
+        import numpy as np
+        import cloud_stt
+        import voice
+
+        old = voice.hex_asr.transcribe
+        old_available = cloud_stt.available
+        voice.hex_asr.transcribe = lambda blocks, *args, **kwargs: "from hex"
+        cloud_stt.available = lambda order=None: False
+        try:
+            text, source, meta = voice.recognize(
+                [np.zeros(1600, dtype="float32")], None, None, {}, cloud=True
+            )
+        finally:
+            voice.hex_asr.transcribe = old
+            cloud_stt.available = old_available
+        self.assertEqual((text, source), ("from hex", "hex"))
+        self.assertEqual(meta["raw"], "from hex")
+
+    def test_empty_hex_result_falls_through_to_local(self):
+        from unittest.mock import MagicMock
+
+        import numpy as np
+        import cloud_stt
+        import voice
+
+        old_hex = voice.hex_asr.transcribe
+        old_cloud = cloud_stt.available
+        voice.hex_asr.transcribe = lambda blocks, *args, **kwargs: None
+        cloud_stt.available = lambda: False
+        recognizer = MagicMock()
+        recognizer.create_stream.return_value.result.text = ""
+        try:
+            text, source, _meta = voice.recognize(
+                [np.zeros(1600, dtype="float32")], "moonshine", recognizer, {}, cloud=True
+            )
+        finally:
+            voice.hex_asr.transcribe = old_hex
+            cloud_stt.available = old_cloud
+        self.assertEqual((text, source), ("", "local"))
+
+    def test_hex_is_skipped_for_non_english_languages(self):
+        """BUG-057: an English-only model is bypassed when speech is fr."""
+        import numpy as np
+        import voice
+
+        calls = []
+        old = voice.hex_asr.transcribe
+        try:
+            voice.hex_asr.transcribe = lambda *a, **k: calls.append(1) or "hex"
+            text, source, meta = voice.recognize(
+                [np.zeros(1600, dtype="float32")], "moonshine",
+                _NullRecognizer(), {}, cloud=False, language="fr")
+        finally:
+            voice.hex_asr.transcribe = old
+        self.assertEqual(calls, [])   # Hex never runs for a French request
+        self.assertEqual(meta["language"], "fr")
 
     def test_registered_speech_names_are_bounded_and_active_session_is_prioritized(self):
         status = {"settings": {"active_session": "active", "profiles": [{"name": "CLAUDE"}], "projects": [{"name": "Navi"}]}, "sessions": [
@@ -73,23 +188,28 @@ class VoicePolicyTests(unittest.TestCase):
 
         status = {"settings": {"profiles": [], "projects": [], "favorites": []}, "sessions": []}
         audio = [np.zeros(1600, dtype=np.float32)]
-        old_available, old_transcribe = cloud_stt.available, cloud_stt.transcribe
+        old_available, old_result = cloud_stt.available, cloud_stt.transcribe_result
         old_cache = speech_config._speech_cache
         try:
             speech_config._speech_cache = dict(speech_config.DEFAULTS)
             cloud_stt.available = lambda order=None: True
-            cloud_stt.transcribe = lambda *a, **k: "hey navi cloud answer"
-            self.assertEqual(voice.recognize(audio, "whistle", Local(), status), ("cloud answer", "cloud"))
+            cloud_stt.transcribe_result = lambda *a, **k: ("hey navi cloud answer", {"confidence": 0.9})
+            self.assertEqual(voice.recognize(audio, "whistle", Local(), status),
+                             ("cloud answer", "cloud", {"confidence": 0.9, "provider": None,
+                                                        "raw": "hey navi cloud answer",
+                                                        "language": speech_config.language()}))
             self.assertEqual(Local.calls, 0)
-            cloud_stt.transcribe = lambda *a, **k: None
-            self.assertEqual(voice.recognize(audio, "whistle", Local(), status), ("local answer", "local"))
+            cloud_stt.transcribe_result = lambda *a, **k: (None, None)
+            self.assertEqual(voice.recognize(audio, "whistle", Local(), status)[0:2],
+                             ("local answer", "local"))
             self.assertEqual(Local.calls, 1)
             speech_config._speech_cache = dict(speech_config.DEFAULTS, speech_mode="local-only")
-            cloud_stt.transcribe = lambda *a, **k: "should not be used"
-            self.assertEqual(voice.recognize(audio, "whistle", Local(), status), ("local answer", "local"))
+            cloud_stt.transcribe_result = lambda *a, **k: ("should not be used", {})
+            self.assertEqual(voice.recognize(audio, "whistle", Local(), status)[0:2],
+                             ("local answer", "local"))
             self.assertEqual(Local.calls, 2)
         finally:
-            cloud_stt.available, cloud_stt.transcribe = old_available, old_transcribe
+            cloud_stt.available, cloud_stt.transcribe_result = old_available, old_result
             speech_config._speech_cache = old_cache
 
 

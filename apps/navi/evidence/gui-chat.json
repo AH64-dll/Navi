@@ -1,0 +1,836 @@
+{
+  "private_display": true,
+  "private_bus": true,
+  "software_webgl": true,
+  "gui_close_preserves_session": true,
+  "inspection": {
+    "renderer": "webgl",
+    "pixelRatio": 1,
+    "dpr": 1,
+    "viewport": {
+      "width": 1392,
+      "height": 872
+    },
+    "chatOpacity": "1",
+    "booted": true,
+    "degraded": false,
+    "boot": "scene",
+    "bootOverlay": {
+      "display": "none",
+      "hidden": true,
+      "opacity": "0"
+    },
+    "art": {
+      "x": 440.1,
+      "y": 110.7,
+      "w": 511.8,
+      "h": 459,
+      "scale": 0.477,
+      "settled": false,
+      "cell": {
+        "x": 12,
+        "y": 69,
+        "w": 1368,
+        "h": 517.4
+      }
+    },
+    "devtools": false,
+    "isolated": true,
+    "pending": 2,
+    "pendingOps": [
+      "message_save",
+      "message_save"
+    ],
+    "pendingStale": 0,
+    "pendingOldestMs": 261,
+    "cursor": 1836621771822089,
+    "polls": 2,
+    "pollFailures": 0,
+    "offline": false,
+    "backoff": 700,
+    "timeouts": 0,
+    "dropped": 0,
+    "unknownReplies": 0,
+    "daemon": {
+      "pid": 1460869,
+      "version": "0.1.0"
+    },
+    "workers": {
+      "voice": "off",
+      "desktop": "disconnected"
+    },
+    "errors": [
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.420Z",
+        "level": "error",
+        "message": "rpc permission_reply failed: /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission: POST /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission -> 400: {\"_tag\":\"InvalidRequestError\",\"message\":\"Missing key\\n  at [\\\"action\\\"]\",\"kind\":\"Payload\"}; /api/permission/permission-1: POST /api/permission/permission-1 -> 404: ; /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission/permission-1: POST /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission/permission-1 -> 404: ; /api/permission/permission-1/reply: POST /api/permission/permission-1/reply -> 404: ; /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/approval/permission-1: POST /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/approval/permission-1 -> 404:"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.494Z",
+        "level": "error",
+        "message": "rpc permission_reply failed: Invalid permission id"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.616Z",
+        "level": "error",
+        "message": "rpc command failed: Isolated tests require a separate model endpoint"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.932Z",
+        "level": "error",
+        "message": "rpc command failed: Isolated tests require a separate model endpoint"
+      }
+    ],
+    "diagnostics": [
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.420Z",
+        "level": "error",
+        "message": "rpc permission_reply failed: /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission: POST /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission -> 400: {\"_tag\":\"InvalidRequestError\",\"message\":\"Missing key\\n  at [\\\"action\\\"]\",\"kind\":\"Payload\"}; /api/permission/permission-1: POST /api/permission/permission-1 -> 404: ; /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission/permission-1: POST /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/permission/permission-1 -> 404: ; /api/permission/permission-1/reply: POST /api/permission/permission-1/reply -> 404: ; /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/approval/permission-1: POST /api/session/ses_e668acc83ffeK06j7hnWOpNC7V/approval/permission-1 -> 404:"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.494Z",
+        "level": "error",
+        "message": "rpc permission_reply failed: Invalid permission id"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.616Z",
+        "level": "error",
+        "message": "rpc command failed: Isolated tests require a separate model endpoint"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:32:37.932Z",
+        "level": "error",
+        "message": "rpc command failed: Isolated tests require a separate model endpoint"
+      }
+    ],
+    "sessions": [
+      {
+        "active": false,
+        "created": 1793575949230,
+        "cwd": "/tmp/navi-isolated-wx7k1et8",
+        "exit_status": null,
+        "exited": null,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-794de648ed241b03",
+        "last_active": 1793575956184,
+        "last_launched": true,
+        "launch_kind": "new",
+        "name": "Chat probe",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1460934,
+        "profile": "terminal",
+        "project_id": null,
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
+      }
+    ],
+    "title": "Navi",
+    "messages": 17,
+    "chat": {
+      "count": 17,
+      "mounted": 17,
+      "rows": 17,
+      "empty": false,
+      "emptyVisible": false,
+      "streaming": false,
+      "turnDone": false,
+      "status": "attention",
+      "label": "Attention",
+      "failed": 7,
+      "ids": [
+        "m-mvygtd5g-2",
+        "m-mvygtd78-3",
+        "m-mvygtdeq-4",
+        "m-mvygtdi9-5",
+        "m-mvygtdj6-6",
+        "fixed-message",
+        "m-mvygtdnm-7",
+        "m-mvygtdxv-9",
+        "m-mvygte27-b",
+        "m-mvygte6g-c",
+        "m-mvygteaw-d",
+        "m-mvygteb0-e",
+        "m-mvygtech-f",
+        "m-mvygteee-g",
+        "m-mvygteee-h",
+        "m-mvygteee-i",
+        "m-mvygteee-j"
+      ],
+      "cursors": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        10,
+        11,
+        12,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "savedIds": [
+        "m-mvygtd5g-2",
+        "m-mvygtd78-3",
+        "m-mvygtdeq-4",
+        "m-mvygtdi9-5",
+        "m-mvygtdj6-6",
+        "fixed-message",
+        "m-mvygtdnm-7",
+        "m-mvygtdxv-9",
+        "m-mvygte27-b",
+        "m-mvygte6g-c",
+        "m-mvygteaw-d",
+        "m-mvygteb0-e",
+        "m-mvygteee-i",
+        "m-mvygteee-j"
+      ],
+      "lastId": "m-mvygteee-j",
+      "lastText": "",
+      "lastStatus": "failed",
+      "pendingFinalise": null,
+      "history": {
+        "limit": 200,
+        "hasMore": false,
+        "oldestCursor": 4
+      },
+      "lastFailure": "Isolated tests require a separate model endpoint",
+      "attachments": [],
+      "lastCommand": {
+        "text": "summarise the attachment",
+        "project_id": "prj-806757f4",
+        "attachments": [
+          "notes.txt"
+        ]
+      }
+    },
+    "voice": {
+      "status": "off",
+      "label": "Mic off",
+      "transcript": null,
+      "confirming": false,
+      "countdown": "1.5s",
+      "banner": false
+    },
+    "model": "Deepseek V4.1 Flash",
+    "modelPicker": {
+      "value": "",
+      "filter": "",
+      "open": false,
+      "choices": 1,
+      "catalog": 0,
+      "options": 0
+    },
+    "rpcOps": [
+      "status",
+      "messages",
+      "ping",
+      "messages",
+      "messages",
+      "messages",
+      "message_save",
+      "message_save",
+      "message_save",
+      "message_save",
+      "message_save",
+      "message_save",
+      "message_save",
+      "message_save",
+      "permission_reply",
+      "permission_reply",
+      "message_save",
+      "messages",
+      "voice_confirm",
+      "message_save",
+      "command",
+      "message_save",
+      "voice_confirm",
+      "voice_confirm",
+      "message_save",
+      "command",
+      "message_save",
+      "status",
+      "message_save",
+      "message_save"
+    ],
+    "rpcCalls": [
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 0
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 200,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "ping",
+        "params": {}
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 2,
+          "project_id": "paging-probe"
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 2,
+          "project_id": "paging-probe",
+          "before": 2
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 200,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygtd5g-2",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Probe answer one"
+            }
+          ],
+          "time": 1793575956436,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygtd78-3",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Streaming text that arrives in pieces"
+            }
+          ],
+          "time": 1793575956499,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygtdeq-4",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Coalesced answer"
+            }
+          ],
+          "time": 1793575956770,
+          "turn": "coalesced-1",
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygtdi9-5",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Same words twice"
+            }
+          ],
+          "time": 1793575956897,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygtdj6-6",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Same words twice"
+            }
+          ],
+          "time": 1793575956929,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "fixed-message",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "One identity"
+            }
+          ],
+          "time": 1793575956993,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "fixed-message",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "One identity"
+            }
+          ],
+          "time": 1793575956993,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygtdnm-7",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "tool",
+              "id": "tool-1",
+              "name": "shell",
+              "status": "completed",
+              "exit": 0,
+              "final": true,
+              "input": "git status",
+              "output": "## main"
+            },
+            {
+              "type": "reasoning",
+              "text": "Checking the fixture before answering"
+            },
+            {
+              "type": "tool",
+              "id": "approval-permission-1",
+              "name": "shell",
+              "status": "awaiting approval",
+              "final": false,
+              "input": "rm -rf build",
+              "approval": {
+                "id": "permission-1",
+                "tool": "shell",
+                "decision": null
+              }
+            },
+            {
+              "type": "text",
+              "text": "Ready to continue"
+            }
+          ],
+          "time": 1793575957089,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "permission_reply",
+        "params": {
+          "id": "permission-1",
+          "decision": "deny"
+        }
+      },
+      {
+        "op": "permission_reply",
+        "params": {
+          "id": "permission-\u0001bad",
+          "decision": "allow"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygtdxv-9",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "tool",
+              "id": "approval-permission-\u0001bad",
+              "name": "shell",
+              "status": "awaiting approval",
+              "final": false,
+              "input": "rm -rf build",
+              "approval": {
+                "id": "permission-\u0001bad",
+                "tool": "shell",
+                "decision": null
+              }
+            },
+            {
+              "type": "text",
+              "text": "Here is the fix:\n\n```js\nconst x = 1 < 2;\n```\n\n<img src=x onerror=\"window.__xss=1\">"
+            }
+          ],
+          "time": 1793575957459,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 200,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "voice_confirm",
+        "params": {
+          "accept": true
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygte27-b",
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "list the failing tests"
+            }
+          ],
+          "time": 1793575957615,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "command",
+        "params": {
+          "text": "list the failing tests",
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygte6g-c",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "Isolated tests require a separate model endpoint",
+              "retry": true
+            }
+          ],
+          "time": 1793575957768,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "voice_confirm",
+        "params": {
+          "accept": true
+        }
+      },
+      {
+        "op": "voice_confirm",
+        "params": {
+          "accept": false
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygteaw-d",
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "summarise the attachment"
+            }
+          ],
+          "time": 1793575957928,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "command",
+        "params": {
+          "text": "summarise the attachment",
+          "project_id": "prj-806757f4",
+          "attachments": [
+            {
+              "name": "notes.txt",
+              "data": "aGVsbG8gZnJvbSBhIGZpbGU="
+            }
+          ]
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygteb0-e",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "Isolated tests require a separate model endpoint",
+              "retry": true
+            }
+          ],
+          "time": 1793575957932,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621771822083
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygteee-i",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "Isolated tests require a separate model endpoint",
+              "retry": true
+            }
+          ],
+          "time": 1793575957615,
+          "project_id": "prj-806757f4"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mvygteee-j",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "Isolated tests require a separate model endpoint",
+              "retry": true
+            }
+          ],
+          "time": 1793575957929,
+          "project_id": "prj-806757f4"
+        }
+      }
+    ],
+    "slash": 0,
+    "busy": false,
+    "terminal": false,
+    "terminalDisplay": "none",
+    "dock": "closed",
+    "graphOpen": false,
+    "phase": "error",
+    "project": {
+      "id": "prj-806757f4",
+      "name": "Navi",
+      "path": "/home/amrhares/Documents/navi",
+      "path_state": "ok",
+      "label": "Navi",
+      "switcher": false,
+      "options": 1,
+      "scope": null
+    },
+    "graph": {
+      "open": false,
+      "loading": false,
+      "project_id": null,
+      "percent": null,
+      "percent_null": false,
+      "unknown": true,
+      "label": null,
+      "verified": null,
+      "confidence": null,
+      "aspects": [],
+      "risks": [],
+      "evidence": 0,
+      "evidenceTotal": null,
+      "empty": false,
+      "as_of": null
+    },
+    "layout": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 1368,
+        "height": 517,
+        "visible": true
+      },
+      "chat": {
+        "x": 236,
+        "y": 598,
+        "width": 920,
+        "height": 262,
+        "visible": true
+      },
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 398,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "overlaps": []
+    },
+    "host": {
+      "push": {
+        "delivered": 0,
+        "skipped": 0,
+        "errors": 0,
+        "unhandled": 0,
+        "bytes": 0,
+        "cursor": 0,
+        "active": false,
+        "rate": 0.0
+      }
+    }
+  },
+  "chat": {
+    "status": "Ready",
+    "empty": true,
+    "paging": {
+      "page": 2,
+      "loaded": 3,
+      "hasMore": false,
+      "before": 2,
+      "cursors": [
+        1,
+        2,
+        3
+      ]
+    },
+    "ready": "Ready",
+    "streaming": {
+      "first": 23,
+      "second": 50
+    },
+    "turn_state": {
+      "replaced": true,
+      "done": true
+    },
+    "dedupe": {
+      "rows": 6
+    },
+    "tool": {
+      "status": "completed"
+    },
+    "errors": {
+      "rows": 2
+    },
+    "permission": {
+      "rows": 2,
+      "text": "Invalid permission id",
+      "decided": false,
+      "replies": [
+        "deny",
+        "allow"
+      ]
+    },
+    "markdown": {
+      "code": true,
+      "safe": true
+    },
+    "rehydrated": 8,
+    "voice": {
+      "confirming": true,
+      "claimed": true,
+      "dispatched": true,
+      "already": true,
+      "cancel": true,
+      "claims": 2,
+      "cancels": 1,
+      "commands": 1
+    },
+    "attachments": {
+      "sent": 1,
+      "refused": true,
+      "names": [
+        "notes.txt"
+      ]
+    },
+    "count": 13,
+    "empty_final": false,
+    "label": "Attention"
+  },
+  "chat_steps": [
+    "Status derived Ready \u2192 Working \u2192 Ready without a \"starting\" placeholder",
+    "Streaming row grew 23\u219250 chars and finalised in place",
+    "Identical text with different ids rendered twice; one id rendered once",
+    "One tool chip per id, upserted to its single final state",
+    "Reasoning collapsed, approval sent permission_reply, one error surface per failure",
+    "Fenced code rendered with a copy affordance; raw HTML stayed text",
+    "Transcript rehydrated from the daemon store (8 messages)",
+    "Older history paged by cursor: 3 saved rows in two pages, one request, has_more false",
+    "Voice confirm claimed the hold before dispatch; a lost claim sent nothing and said so; Escape cancelled",
+    "A refused permission decision stayed undecided and showed the daemon text once",
+    "A text attachment was read and sent with the prompt; a 3 MiB file was refused visibly"
+  ],
+  "paging_store": {
+    "project": "paging-probe",
+    "ids": [
+      "paging-0",
+      "paging-1",
+      "paging-2"
+    ],
+    "cursors": [
+      1,
+      2,
+      3
+    ]
+  }
+}

@@ -1,0 +1,412 @@
+{
+  "private_display": true,
+  "private_bus": true,
+  "software_webgl": true,
+  "gui_close_preserves_session": true,
+  "inspection": {
+    "renderer": "webgl",
+    "pixelRatio": 1,
+    "dpr": 1,
+    "viewport": {
+      "width": 1392,
+      "height": 872
+    },
+    "chatOpacity": "1",
+    "booted": true,
+    "degraded": false,
+    "boot": "scene",
+    "bootOverlay": {
+      "display": "none",
+      "hidden": true,
+      "opacity": "0"
+    },
+    "art": {
+      "x": 399.1,
+      "y": 109.5,
+      "w": 593.8,
+      "h": 530.9,
+      "scale": 0.57,
+      "settled": true,
+      "cell": {
+        "x": 12,
+        "y": 69,
+        "w": 1368,
+        "h": 588
+      }
+    },
+    "devtools": false,
+    "isolated": true,
+    "pending": 0,
+    "pendingOps": [],
+    "pendingStale": 0,
+    "pendingOldestMs": 0,
+    "cursor": 1836621815438339,
+    "polls": 20,
+    "pollFailures": 0,
+    "offline": false,
+    "backoff": 700,
+    "timeouts": 0,
+    "dropped": 0,
+    "unknownReplies": 0,
+    "daemon": {
+      "pid": 1462247,
+      "version": "0.1.0"
+    },
+    "workers": {
+      "voice": "off",
+      "desktop": "disconnected"
+    },
+    "errors": [],
+    "diagnostics": [],
+    "sessions": [
+      {
+        "active": false,
+        "created": 1793575991847,
+        "cwd": "/tmp/navi-isolated-65ozhf2y",
+        "exit_status": null,
+        "exited": null,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-907cc6d8cc418c16",
+        "last_active": 1793575998943,
+        "last_launched": true,
+        "launch_kind": "new",
+        "name": "Isolated validation",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1462313,
+        "profile": "terminal",
+        "project_id": null,
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
+      }
+    ],
+    "title": "Navi",
+    "messages": 1,
+    "chat": {
+      "count": 1,
+      "mounted": 1,
+      "rows": 1,
+      "empty": true,
+      "emptyVisible": true,
+      "streaming": false,
+      "turnDone": false,
+      "status": "ready",
+      "label": "Ready",
+      "failed": 0,
+      "ids": [
+        "m-mvygu9yd-1"
+      ],
+      "cursors": [
+        null
+      ],
+      "savedIds": [],
+      "lastId": "m-mvygu9yd-1",
+      "lastText": "Harness session started: Isolated validation",
+      "lastStatus": "complete",
+      "pendingFinalise": null,
+      "history": {
+        "limit": 200,
+        "hasMore": false,
+        "oldestCursor": null
+      },
+      "lastFailure": null,
+      "attachments": [],
+      "lastCommand": null
+    },
+    "voice": {
+      "status": "off",
+      "label": "Mic off",
+      "transcript": null,
+      "confirming": false,
+      "countdown": "",
+      "banner": false
+    },
+    "model": "Deepseek V4.1 Flash",
+    "modelPicker": {
+      "value": "",
+      "filter": "",
+      "open": false,
+      "choices": 1,
+      "catalog": 0,
+      "options": 0
+    },
+    "rpcOps": [
+      "status",
+      "messages",
+      "ping",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status"
+    ],
+    "rpcCalls": [
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 0
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 200,
+          "project_id": "prj-cb8adb93"
+        }
+      },
+      {
+        "op": "ping",
+        "params": {}
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621815438339
+        }
+      }
+    ],
+    "slash": 0,
+    "busy": false,
+    "terminal": false,
+    "terminalDisplay": "none",
+    "dock": "closed",
+    "graphOpen": false,
+    "phase": "idle",
+    "project": {
+      "id": "prj-cb8adb93",
+      "name": "Navi",
+      "path": "/home/amrhares/Documents/navi",
+      "path_state": "ok",
+      "label": "Navi",
+      "switcher": false,
+      "options": 1,
+      "scope": null
+    },
+    "graph": {
+      "open": false,
+      "loading": false,
+      "project_id": null,
+      "percent": null,
+      "percent_null": false,
+      "unknown": true,
+      "label": null,
+      "verified": null,
+      "confidence": null,
+      "aspects": [],
+      "risks": [],
+      "evidence": 0,
+      "evidenceTotal": null,
+      "empty": false,
+      "as_of": null
+    },
+    "layout": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 1368,
+        "height": 588,
+        "visible": true
+      },
+      "chat": {
+        "x": 236,
+        "y": 669,
+        "width": 920,
+        "height": 191,
+        "visible": true
+      },
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 461,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "overlaps": []
+    },
+    "host": {
+      "push": {
+        "delivered": 1,
+        "skipped": 19,
+        "errors": 0,
+        "unhandled": 0,
+        "bytes": 3887,
+        "cursor": 1836621815438339,
+        "active": false,
+        "rate": 0.06
+      }
+    }
+  },
+  "crash": {
+    "policy": {
+      "escalation": [
+        "reload",
+        "uri",
+        "destroy"
+      ],
+      "after_window": "reload"
+    },
+    "reloaded": true,
+    "sessions": 1
+  }
+}

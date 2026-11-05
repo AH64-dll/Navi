@@ -1,14 +1,17 @@
-"""TTS provider chain for Navi: edge-tts -> Cloudflare melotts -> Gemini -> Piper.
+"""TTS provider chain for Navi: {CHAIN}.
 
 Public API:
-    synthesize(text, voice=None, rate=None) -> (audio_bytes, sample_rate, fmt) | None
-    speak(text, voice=None, rate=None, cancel_event=None) -> bool
+    synthesize(text, voice=None, rate=None, language=None) -> (audio_bytes, sample_rate, fmt) | None
+    speak(text, voice=None, rate=None, cancel_event=None, language=None) -> bool
 
-fmt is "mp3" or "wav". Every cloud hop has a ~3 s timeout and a circuit
-breaker that disables a failed provider for speech_config.breaker_seconds
-(default 5 min). Providers without credentials or dependencies are skipped.
-Playback uses the first available of mpv/ffplay/pw-play/paplay; setting
-cancel_event (threading.Event) kills the player for barge-in.
+fmt is "mp3" or "wav". Cloud hop timeouts are configurable via
+speech_config.timeout_seconds (default ~3 s) and a circuit breaker disables
+a failed provider for speech_config.breaker_seconds (default 5 min).
+Providers without credentials or dependencies are skipped. When *voice* is
+not given, an edge/piper voice matching speech_config.language() is
+selected (BUG-057). Playback uses the first available of
+mpv/ffplay/pw-play/paplay; setting cancel_event (threading.Event) kills
+the player for barge-in.
 """
 import asyncio
 import base64
@@ -25,9 +28,46 @@ import urllib.request
 import wave
 from pathlib import Path
 
+
 import speech_config
+__doc__ = __doc__.replace(
+    "{CHAIN}", " -> ".join(
+        list(speech_config.CLOUD_TTS) + list(speech_config.LOCAL_TTS)))
+
+# Default edge voice per language when a persona does not pin one (BUG-057).
+LANGUAGE_VOICES = {
+    "en": "en-GB-RyanNeural",
+    "fr": "fr-FR-DeniseNeural",
+    "de": "de-DE-KatjaNeural",
+    "es": "es-ES-ElviraNeural",
+    "it": "it-IT-ElsaNeural",
+    "pt": "pt-PT-RaquelNeural",
+    "ar": "ar-EG-SalmaNeural",
+    "nl": "nl-NL-ColetteNeural",
+    "pl": "pl-PL-ZofiaNeural",
+    "ja": "ja-JP-NanamiNeural",
+    "zh": "zh-CN-XiaoxiaoNeural",
+}
+
 
 DEFAULT_VOICE = "en-GB-RyanNeural"
+
+
+def voice_for(voice=None, language=None):
+    """Resolve the TTS voice (BUG-057): an explicit *voice* wins unless a
+    *language* was requested it does not speak; then the configured
+    tts_voice when it matches; then the language's default."""
+    lang = language or speech_config.language()
+    lang = (lang or "en").split("-")[0].split("_")[0]
+    configured = speech_config.speech().get("tts_voice")
+    chosen = voice or configured
+    if chosen and chosen.split("-")[0].split("_")[0] == lang:
+        return chosen
+    if language is None and chosen:
+        return chosen
+    return LANGUAGE_VOICES.get(lang, DEFAULT_VOICE)
+
+
 EDGE_RATE = "24khz"  # edge-tts default output is 24 kHz mp3
 GEMINI_URL = os.environ.get(
     "NAVI_GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta/interactions")
@@ -237,21 +277,23 @@ def provider_available(name):
     return False
 
 
-def synthesize(text, voice=None, rate=None, order=None):
+def synthesize(text, voice=None, rate=None, order=None, language=None):
     """Return (audio_bytes, sample_rate, fmt) from the first working provider.
 
     fmt is "mp3" or "wav". Returns None when every provider in the chain is
-    unavailable or fails inside its timeout.
+    unavailable or fails inside its timeout. When *voice* is unset, a voice
+    matching *language* (or speech_config.language()) is used (BUG-057).
     """
     if not text or not text.strip():
         return None
     timeout = speech_config.timeout_seconds()
+    resolved = voice_for(voice, language)
     for name in (order or speech_config.provider_order("tts")):
         provider = PROVIDERS.get(name)
         if provider is None or not provider_available(name):
             continue
         try:
-            result = provider(text, voice, rate, timeout)
+            result = provider(text, resolved, rate, timeout)
         except Exception:  # noqa: BLE001 - fall through to next hop
             _breaker_fail(name)
             continue
@@ -321,7 +363,7 @@ def _sentences(text):
     return parts or [text]
 
 
-def speak(text, voice=None, rate=None, cancel_event=None):
+def speak(text, voice=None, rate=None, cancel_event=None, language=None):
     """Synthesize and play text. First sentence goes out first for latency;
     the next sentence is synthesized while the current one plays.
 
@@ -333,7 +375,8 @@ def speak(text, voice=None, rate=None, cancel_event=None):
     order = speech_config.provider_order("tts")
 
     def synth(index):
-        return synthesize(chunks[index], voice=voice, rate=rate, order=order)
+        return synthesize(chunks[index], voice=voice, rate=rate, order=order,
+                          language=language)
 
     played = False
     result = synth(0)

@@ -1,13 +1,13 @@
 "use strict";
 (() => {
-  // packages/navi/src/protocol/limits.ts
+  // ../../packages/navi/src/protocol/limits.ts
   var MAX_ENVELOPE_BYTES = 64 * 1024;
   var MAX_OBSERVATION_BYTES = 16 * 1024;
   var MAX_QUEUE_BYTES = 2 * MAX_ENVELOPE_BYTES;
   var MAX_URL_CHARS = 512;
   var MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
 
-  // packages/navi/browser/content/collector.ts
+  // ../../packages/navi/browser/content/collector.ts
   var FORBIDDEN_TEXT_CHARACTERS = /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g;
   var textEncoder = typeof TextEncoder === "function" ? new TextEncoder() : void 0;
   function sanitizeUrl(raw) {
@@ -28,7 +28,7 @@
     return value.replace(FORBIDDEN_TEXT_CHARACTERS, "");
   }
 
-  // apps/navi/browser/background-entry.js
+  // browser/background-entry.js
   var attached = null;
   var attachedOrigin = null;
   var port = null;

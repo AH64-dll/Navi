@@ -30,11 +30,13 @@ def _get_tts():
     return _tts
 
 
-def speak(text: str, persona_name: str | None = None, cancel_event=None) -> dict:
+def speak(text: str, persona_name: str | None = None, cancel_event=None,
+          language: str | None = None) -> dict:
     """Sanitize *text* for TTS, speak it via tts.speak, return the payload.
 
     The full sanitized reply goes back in ``text`` for the UI/transcript and
-    only the first few sentences reach ``tts.speak``.
+    only the first few sentences reach ``tts.speak``. ``language`` selects a
+    matching voice when the persona default does not speak it (BUG-057).
     """
     p = persona.get(persona_name)
     if not isinstance(text, str):
@@ -52,12 +54,14 @@ def speak(text: str, persona_name: str | None = None, cancel_event=None) -> dict
     tts_mod = _get_tts()
     if tts_mod is not None and spoken:
         try:
+            kwargs = {"language": language} if language else {}
             payload["spoken"] = bool(
                 tts_mod.speak(
                     spoken,
                     voice=p.voice,
                     rate=p.rate,
                     cancel_event=cancel_event,
+                    **kwargs,
                 )
             )
         except Exception as e:
@@ -68,6 +72,6 @@ def speak(text: str, persona_name: str | None = None, cancel_event=None) -> dict
 
 
 if __name__ == "__main__":
-    name = sys.argv[1] if len(sys.argv) > 1 else "jarvis"
+    name = sys.argv[1] if len(sys.argv) > 1 else "navi"
     text = sys.argv[2] if len(sys.argv) > 2 else "All systems nominal, sir."
     print(json.dumps(speak(text, name)))

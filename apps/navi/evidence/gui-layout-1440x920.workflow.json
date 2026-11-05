@@ -1,0 +1,399 @@
+{
+  "ok": true,
+  "steps": [
+    "Empty state added an aspect and kept the headline unknown",
+    "Dock right and the graph measured with no panel overlap"
+  ],
+  "splitter": {
+    "axis": "width",
+    "opened": 662,
+    "collapsed": 120,
+    "restored": 662
+  },
+  "switcher": {
+    "first": "prj-4d2f87b6",
+    "alpha": "prj-c713b6ae",
+    "label": "100%",
+    "scope": "prj-c713b6ae"
+  },
+  "layout": {
+    "boot": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 1416,
+        "height": 594,
+        "visible": true
+      },
+      "chat": {
+        "x": 260,
+        "y": 675,
+        "width": 920,
+        "height": 233,
+        "visible": true
+      },
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 412,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "open": false,
+        "loading": false,
+        "project_id": null,
+        "percent": null,
+        "percent_null": false,
+        "unknown": true,
+        "label": null,
+        "verified": null,
+        "confidence": null,
+        "aspects": [],
+        "risks": [],
+        "evidence": 0,
+        "evidenceTotal": null,
+        "empty": false,
+        "as_of": null
+      },
+      "overlaps": [],
+      "label": "boot",
+      "viewport": {
+        "width": 1440,
+        "height": 920
+      },
+      "dock": "closed",
+      "graphOpen": false,
+      "phase": "idle",
+      "terminalDisplay": "none",
+      "art": {
+        "x": 421,
+        "y": 112,
+        "w": 598,
+        "h": 535.3,
+        "scale": 0.535,
+        "settled": true,
+        "cell": {
+          "x": 12,
+          "y": 69,
+          "w": 1416,
+          "h": 594
+        }
+      },
+      "bootOverlay": {
+        "display": "none",
+        "hidden": true,
+        "opacity": "0"
+      },
+      "graphRect": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "project": {
+        "id": "prj-4d2f87b6",
+        "name": "Navi",
+        "path": "/home/amrhares/Documents/navi",
+        "path_state": "ok",
+        "label": "Navi",
+        "switcher": false,
+        "options": 3,
+        "scope": null
+      }
+    },
+    "open": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 370,
+        "height": 594,
+        "visible": true
+      },
+      "chat": {
+        "x": 260,
+        "y": 675,
+        "width": 920,
+        "height": 233,
+        "visible": true
+      },
+      "terminal": {
+        "x": 394,
+        "y": 69,
+        "width": 662,
+        "height": 594,
+        "visible": true
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 412,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "open": true,
+        "loading": false,
+        "project_id": "prj-4d2f87b6",
+        "percent": null,
+        "percent_null": true,
+        "unknown": true,
+        "label": "\u2014",
+        "verified": "\u2014",
+        "confidence": "\u2014",
+        "aspects": [],
+        "risks": [
+          "No aspects defined"
+        ],
+        "evidence": 2,
+        "evidenceTotal": "Evidence (2)",
+        "empty": true,
+        "as_of": "as of Nov 2, 01:31 AM"
+      },
+      "overlaps": [],
+      "label": "open",
+      "viewport": {
+        "width": 1440,
+        "height": 920
+      },
+      "dock": "right",
+      "graphOpen": true,
+      "phase": "idle",
+      "terminalDisplay": "flex",
+      "art": {
+        "x": 30.7,
+        "y": 215.2,
+        "w": 334.8,
+        "h": 302.9,
+        "scale": 0.32,
+        "settled": true,
+        "cell": {
+          "x": 12,
+          "y": 69,
+          "w": 369.6,
+          "h": 594
+        }
+      },
+      "bootOverlay": {
+        "display": "none",
+        "hidden": true,
+        "opacity": "0"
+      },
+      "graphRect": {
+        "x": 1068,
+        "y": 69,
+        "width": 360,
+        "height": 594,
+        "visible": true
+      },
+      "project": {
+        "id": "prj-4d2f87b6",
+        "name": "Navi",
+        "path": "/home/amrhares/Documents/navi",
+        "path_state": "ok",
+        "label": "Navi",
+        "switcher": false,
+        "options": 3,
+        "scope": null
+      }
+    },
+    "closed": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 1044,
+        "height": 594,
+        "visible": true
+      },
+      "chat": {
+        "x": 260,
+        "y": 675,
+        "width": 920,
+        "height": 233,
+        "visible": true
+      },
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 412,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "open": true,
+        "loading": false,
+        "project_id": "prj-4d2f87b6",
+        "percent": null,
+        "percent_null": true,
+        "unknown": true,
+        "label": "\u2014",
+        "verified": "\u2014",
+        "confidence": "\u2014",
+        "aspects": [],
+        "risks": [
+          "No aspects defined"
+        ],
+        "evidence": 2,
+        "evidenceTotal": "Evidence (2)",
+        "empty": true,
+        "as_of": "as of Nov 2, 01:31 AM"
+      },
+      "overlaps": [],
+      "label": "closed",
+      "viewport": {
+        "width": 1440,
+        "height": 920
+      },
+      "dock": "closed",
+      "graphOpen": true,
+      "phase": "idle",
+      "terminalDisplay": "none",
+      "art": {
+        "x": 232.1,
+        "y": 109.7,
+        "w": 600.6,
+        "h": 537.5,
+        "scale": 0.535,
+        "settled": true,
+        "cell": {
+          "x": 12,
+          "y": 69,
+          "w": 1044,
+          "h": 594
+        }
+      },
+      "bootOverlay": {
+        "display": "none",
+        "hidden": true,
+        "opacity": "0"
+      },
+      "graphRect": {
+        "x": 1068,
+        "y": 69,
+        "width": 360,
+        "height": 594,
+        "visible": true
+      },
+      "project": {
+        "id": "prj-4d2f87b6",
+        "name": "Navi",
+        "path": "/home/amrhares/Documents/navi",
+        "path_state": "ok",
+        "label": "Navi",
+        "switcher": false,
+        "options": 3,
+        "scope": null
+      }
+    },
+    "reopened": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 370,
+        "height": 594,
+        "visible": true
+      },
+      "chat": {
+        "x": 260,
+        "y": 675,
+        "width": 920,
+        "height": 233,
+        "visible": true
+      },
+      "terminal": {
+        "x": 394,
+        "y": 69,
+        "width": 662,
+        "height": 594,
+        "visible": true
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 412,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "open": true,
+        "loading": false,
+        "project_id": "prj-4d2f87b6",
+        "percent": null,
+        "percent_null": true,
+        "unknown": true,
+        "label": "\u2014",
+        "verified": "\u2014",
+        "confidence": "\u2014",
+        "aspects": [],
+        "risks": [
+          "No aspects defined"
+        ],
+        "evidence": 2,
+        "evidenceTotal": "Evidence (2)",
+        "empty": true,
+        "as_of": "as of Nov 2, 01:31 AM"
+      },
+      "overlaps": [],
+      "label": "reopened",
+      "viewport": {
+        "width": 1440,
+        "height": 920
+      },
+      "dock": "right",
+      "graphOpen": true,
+      "phase": "idle",
+      "terminalDisplay": "flex",
+      "art": {
+        "x": 30.9,
+        "y": 217.9,
+        "w": 335.1,
+        "h": 303.6,
+        "scale": 0.32,
+        "settled": true,
+        "cell": {
+          "x": 12,
+          "y": 69,
+          "w": 370,
+          "h": 594
+        }
+      },
+      "bootOverlay": {
+        "display": "none",
+        "hidden": true,
+        "opacity": "0"
+      },
+      "graphRect": {
+        "x": 1068,
+        "y": 69,
+        "width": 360,
+        "height": 594,
+        "visible": true
+      },
+      "project": {
+        "id": "prj-4d2f87b6",
+        "name": "Navi",
+        "path": "/home/amrhares/Documents/navi",
+        "path_state": "ok",
+        "label": "Navi",
+        "switcher": false,
+        "options": 3,
+        "scope": null
+      }
+    }
+  }
+}

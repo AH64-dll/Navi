@@ -1,10 +1,18 @@
-use crate::{App, Result, now};
+use crate::{App, Result, now, store};
+use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+
+/// Coalescing window for the live answer: at most one `reply_delta` per window,
+/// carrying the text of the whole turn so far. 500 deltas in 300 ms become a
+/// handful of replace-events instead of overflowing the client (BUG-098).
+const DELTA_FLUSH_MS: u64 = 120;
+const DELTA_FLUSH_CHARS: usize = 240;
 
 pub struct PersonaSwitch {
     pub name: String,
@@ -98,62 +106,63 @@ impl App {
             return Ok(());
         }
         let mut process = self.chief_process.lock().unwrap();
-        if process
+        let running = process
             .as_mut()
-            .is_some_and(|p| p.try_wait().ok().flatten().is_none())
-        {
-            return Err("Local chief is still starting; try again shortly".into());
+            .is_some_and(|p| p.try_wait().ok().flatten().is_none());
+        if !running {
+            let binary = config["server"]
+                .as_str()
+                .ok_or("Missing local model server")?;
+            let weights = config["weights"].as_str().ok_or("Missing model weights")?;
+            if !std::path::Path::new(binary).is_file() || !std::path::Path::new(weights).is_file() {
+                return Err("Install the decision runtime and weights, or configure an existing local /v1/systemone server".into());
+            }
+            let port = endpoint
+                .trim_start_matches("http://127.0.0.1:")
+                .split('/')
+                .next()
+                .unwrap();
+            let log = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(self.data.join("chief.log"))
+                .map_err(|e| e.to_string())?;
+            let mut command = Command::new(binary);
+            command
+                .args([
+                    "-m",
+                    weights,
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    port,
+                    "-c",
+                    "4096",
+                    "-ngl",
+                ])
+                .arg(config["gpu_layers"].as_u64().unwrap_or(99).to_string())
+                .args(["--parallel", "1", "--threads"])
+                .arg(config["threads"].as_u64().unwrap_or(2).to_string())
+                .stdin(Stdio::null())
+                .stdout(log.try_clone().map_err(|e| e.to_string())?)
+                .stderr(log);
+            if config["gpu_layers"] == 0 {
+                command.args(["--device", "none", "--no-op-offload", "--no-mmproj-offload"]);
+            }
+            if let Some(projection) = config["projection"].as_str().filter(|p| !p.is_empty()) {
+                command.args(["--mmproj", projection]);
+            }
+            *process = Some(command.spawn().map_err(|e| e.to_string())?);
+            drop(process);
+            self.event(
+                "chief",
+                "Loading the local decision model",
+                json!({"name":config["name"]}),
+            );
+        } else {
+            drop(process);
         }
-        let binary = config["server"]
-            .as_str()
-            .ok_or("Missing local model server")?;
-        let weights = config["weights"].as_str().ok_or("Missing model weights")?;
-        if !std::path::Path::new(binary).is_file() || !std::path::Path::new(weights).is_file() {
-            return Err("Install the decision runtime and weights, or configure an existing local /v1/systemone server".into());
-        }
-        let port = endpoint
-            .trim_start_matches("http://127.0.0.1:")
-            .split('/')
-            .next()
-            .unwrap();
-        let log = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(self.data.join("chief.log"))
-            .map_err(|e| e.to_string())?;
-        let mut command = Command::new(binary);
-        command
-            .args([
-                "-m",
-                weights,
-                "--host",
-                "127.0.0.1",
-                "--port",
-                port,
-                "-c",
-                "4096",
-                "-ngl",
-            ])
-            .arg(config["gpu_layers"].as_u64().unwrap_or(99).to_string())
-            .args(["--parallel", "1", "--threads"])
-            .arg(config["threads"].as_u64().unwrap_or(2).to_string())
-            .stdin(Stdio::null())
-            .stdout(log.try_clone().map_err(|e| e.to_string())?)
-            .stderr(log);
-        if config["gpu_layers"] == 0 {
-            command.args(["--device", "none", "--no-op-offload", "--no-mmproj-offload"]);
-        }
-        if let Some(projection) = config["projection"].as_str().filter(|p| !p.is_empty()) {
-            command.args(["--mmproj", projection]);
-        }
-        *process = Some(command.spawn().map_err(|e| e.to_string())?);
-        drop(process);
-        self.event(
-            "chief",
-            "Loading the local decision model",
-            json!({"name":config["name"]}),
-        );
-        for _ in 0..120 {
+        for _ in 0..240 {
             if self.generation.load(Ordering::SeqCst) != generation {
                 return Err("Command stopped while loading the model".into());
             }
@@ -194,6 +203,7 @@ impl App {
             "return to",
             "select",
             "resume",
+            "continue",
             "focus",
             "existing",
         ]
@@ -273,6 +283,24 @@ impl App {
                         ),
                         json!({"kind":"switch","id":session["id"]}),
                     );
+                }
+                // BUG-069: "continue/resume X" reopens the harness's native
+                // conversation in a fresh pane rather than focusing the pane.
+                let resuming = mentioned(text, "resume") || mentioned(text, "continue");
+                if resuming {
+                    for session in sessions.iter().filter(|s| {
+                        s["native_id"].is_string()
+                            && mentioned(text, s["name"].as_str().unwrap_or(""))
+                    }) {
+                        add(
+                            format!("resume:{}", session["id"].as_str().unwrap()),
+                            format!(
+                                "resume the {} harness conversation in a new session",
+                                session["name"].as_str().unwrap()
+                            ),
+                            json!({"kind":"resume","id":session["id"]}),
+                        );
+                    }
                 }
             }
             let mut favorite_found = false;
@@ -495,8 +523,19 @@ impl App {
     }
 
     // Persona switches are deterministic voice commands, never model output:
-    // "switch to jarvis mode", "be concise", "use friendly persona". Returns
+    // "switch to navi mode", "be concise", "use the navi persona". Returns
     // the switch outcome so dispatch can answer without a decision round-trip.
+    // Load the decision model in the background so the first spoken command
+    // does not pay the multi-second model start. Failures surface on the next
+    // real command, not as startup noise.
+    pub fn warm_chief(&self) {
+        if self.isolated {
+            return;
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let _ = self.ensure_chief(generation);
+    }
+
     pub fn persona_switch(&self, text: &str) -> Result<Option<PersonaSwitch>> {
         let Some(target) = persona_target(text) else {
             return Ok(None);
@@ -517,7 +556,7 @@ impl App {
         };
         let mut settings = self.settings();
         settings["persona"] = json!(name);
-        self.save_settings(settings)?;
+        self.save_settings(settings, false)?;
         self.event("persona", "Persona switched", json!({"persona":name}));
         Ok(Some(PersonaSwitch {
             name: name.clone(),
@@ -558,66 +597,729 @@ impl App {
             .collect())
     }
 
-    // Send a conversational utterance to the OpenCode bridge and return the
-    // assistant's spoken reply. Falls back to a fixed line when the bridge is
-    // unreachable so the voice loop stays responsive.
-    fn converse(&self, text: &str, generation: u64) -> Value {
-        let settings = self.settings();
-        let persona = settings["persona"].as_str().unwrap_or("jarvis");
-        let mut child = match Command::new(self.python())
-            .arg(self.root.join("workers/opencode_bridge.py"))
-            .arg("--persona")
-            .arg(persona)
-            .arg(text)
+    /// One assistant request: which project directory the gateway works in and
+    /// the ≤600-byte project context prepended to the prompt (BUG-004/088).
+    fn assistant_turn(&self, params: &Value) -> Result<AssistantTurn> {
+        let project = self.assistant_project(params["project_id"].as_str())?;
+        let id = project["id"].as_str().unwrap_or_default().to_string();
+        let path = project["path"].as_str().unwrap_or_default().to_string();
+        if path.is_empty() {
+            return Err("Project has no directory".into());
+        }
+        let context = self.context_block(&project);
+        let attachments = self.prepare_attachments(&params["attachments"])?;
+        Ok(AssistantTurn { id, path, context, attachments })
+    }
+
+    pub(crate) fn assistant_project(&self, reference: Option<&str>) -> Result<Value> {
+        match reference.filter(|value| !value.trim().is_empty()) {
+            Some(reference) => self.resolve_project(reference),
+            None => {
+                let projects = self.projects()?;
+                if projects.len() != 1 {
+                    return Err(format!(
+                        "Pass project_id; {} projects are registered",
+                        projects.len()
+                    ));
+                }
+                Ok(projects[0].clone())
+            }
+        }
+    }
+
+    /// Resolve which assistant session a project owns (BUG-090). The switcher
+    /// asks before the next turn so the UI can report the scope, and the answer
+    /// is the directory the turn will run in plus the session id recorded for
+    /// it. The live turn's `assistant_dir` is deliberately not overwritten: an
+    /// interrupt or a permission reply sent after a switch must still reach the
+    /// turn that is actually running.
+    pub(crate) fn assistant_scope(&self, p: &Value) -> Result<Value> {
+        let project = self.assistant_project(p["project_id"].as_str())?;
+        let id = project["id"].as_str().unwrap_or_default().to_string();
+        let directory = project["path"].as_str().unwrap_or_default().to_string();
+        if directory.is_empty() {
+            return Err("Project has no directory".into());
+        }
+        let session: Option<String> = {
+            let state = self.state.lock().unwrap();
+            state
+                .db
+                .query_row(
+                    "SELECT session_id FROM assistant_sessions WHERE project_id=?1",
+                    [&id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+        };
+        Ok(json!({"project_id":id,"directory":directory,"session":session}))
+    }
+
+    /// Host-generated project context prepended to every assistant prompt,
+    /// capped at 600 bytes: project, path, branch@sha, aspect percentages with
+    /// verified flags, open task count, last activity (BUG-088).
+    fn context_block(&self, project: &Value) -> String {
+        let name = project["name"].as_str().unwrap_or("project");
+        let path = project["path"].as_str().unwrap_or("");
+        let id = project["id"].as_str().unwrap_or("");
+        let mut lines = vec![format!("[project {name} · {path}]")];
+        let branch = store::git(path, &["rev-parse", "--abbrev-ref", "HEAD"])
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty() && text != "HEAD");
+        let sha = store::git(path, &["rev-parse", "--short=12", "HEAD"])
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty());
+        match (branch, sha) {
+            (Some(branch), Some(sha)) => lines.push(format!("branch {branch}@{sha}")),
+            (None, Some(sha)) => lines.push(format!("detached @{sha}")),
+            _ => {}
+        }
+        if let Ok(graph) = self.graph_get(Some(id)) {
+            let aspects = graph["aspects"]
+                .as_array()
+                .map(|aspects| {
+                    aspects
+                        .iter()
+                        .map(|aspect| {
+                            let title = aspect["title"].as_str().unwrap_or("aspect");
+                            match aspect["percent"].as_f64() {
+                                Some(percent) => {
+                                    let verified = aspect["verified"].as_f64().unwrap_or(0.0);
+                                    if verified > 0.0 {
+                                        format!("{title} {percent}% (verified {verified}%)")
+                                    } else {
+                                        format!("{title} {percent}%")
+                                    }
+                                }
+                                None => format!("{title} —"),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            if !aspects.is_empty() {
+                lines.push(format!("aspects: {aspects}"));
+            }
+            let tasks = &graph["tasks"];
+            let open = tasks["todo"].as_u64().unwrap_or(0)
+                + tasks["in_progress"].as_u64().unwrap_or(0)
+                + tasks["blocked"].as_u64().unwrap_or(0);
+            lines.push(format!("open tasks: {open}"));
+        }
+        if let Ok(Some(at)) = self.project_last_activity(id) {
+            lines.push(format!("last activity: {}", relative_time(at)));
+        }
+        cap_block(&lines.join("\n"))
+    }
+
+    /// Decode attachment params into gateway --attachment file paths. `data`
+    /// payloads land in private runtime files; `path` payloads are checked and
+    /// passed through. Limits: 4 files, 2 MiB decoded each.
+    fn prepare_attachments(&self, params: &Value) -> Result<Vec<String>> {
+        let Some(items) = params.as_array() else {
+            return Ok(Vec::new());
+        };
+        validate_attachments(params)?;
+        let mut paths = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            if let Some(path) = item["path"].as_str() {
+                let meta = std::fs::metadata(path).map_err(|error| {
+                    format!("Attachment {} is not readable: {error}", item["name"].as_str().unwrap_or(path))
+                })?;
+                if !meta.is_file() {
+                    return Err("Attachment path must be a file".into());
+                }
+                paths.push(path.to_string());
+                continue;
+            }
+            let data = item["data"].as_str().unwrap_or_default();
+            let bytes = b64_decode(data).ok_or("Attachment data is not valid base64")?;
+            let name = item["name"].as_str().unwrap_or("attachment");
+            let safe: String = name
+                .chars()
+                .map(|c| if matches!(c, '/' | '\\') { '_' } else { c })
+                .collect();
+            let file = self
+                .runtime
+                .join(format!("attach-{}-{index}-{safe}", crate::id()));
+            std::fs::write(&file, &bytes).map_err(|error| error.to_string())?;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))
+                .map_err(|error| error.to_string())?;
+            paths.push(file.to_string_lossy().into_owned());
+        }
+        Ok(paths)
+    }
+
+    /// Interrupt the server-side turn for the current assistant directory,
+    /// then kill the gateway child. Never kill without interrupting (BUG-007).
+    fn abort_gateway(&self, directory: Option<&str>, child: &mut std::process::Child) -> bool {
+        let mut args = vec!["interrupt".to_string()];
+        if let Some(directory) = directory.filter(|dir| !dir.is_empty()) {
+            args.push("--directory".into());
+            args.push(directory.to_string());
+        }
+        let interrupted = self
+            .gateway_op(&args.iter().map(String::as_str).collect::<Vec<_>>())
+            .ok()
+            .and_then(|value| value["interrupted"].as_bool())
+            .unwrap_or(false);
+        if !interrupted {
+            self.event_for(
+                None,
+                None,
+                "warning",
+                "Assistant turn may still be running: OpenCode did not confirm the interrupt",
+                json!({"interrupted":false}),
+            );
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        interrupted
+    }
+
+    /// Stream one OpenCode gateway turn: every gateway line becomes a daemon
+    /// event (reply_delta, reasoning/thinking, tool_use, approval, warning)
+    /// and the done record is returned. Stop interrupts the OpenCode turn
+    /// before the child dies; gateway failures return Err (BUG-001/007/014).
+    fn stream_gateway(
+        &self,
+        args: &[String],
+        generation: u64,
+        persona: &str,
+        project_id: Option<&str>,
+        directory: Option<&str>,
+    ) -> std::result::Result<Value, GatewayFailure> {
+        let mut child = Command::new(self.python())
+            .arg(self.root.join("workers/opencode_gateway.py"))
+            .args(args)
             .env("NAVI_RUNTIME_DIR", &self.runtime)
             .env("NAVI_DATA_DIR", &self.data)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-        {
-            Ok(child) => child,
-            Err(error) => {
-                return json!({"text":format!("I could not reach the assistant: {error}")});
+            .map_err(|error| GatewayFailure::new(error.to_string(), false))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| GatewayFailure::new("Gateway has no stdout", false))?;
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(std::result::Result::ok) {
+                if sender.send(line).is_err() {
+                    break;
+                }
             }
-        };
-        let deadline = now() + 90_000;
+        });
+        let deadline = now() + 190_000;
+        let turn_id = self.begin_turn();
+        let mut turn = GatewayTurn::default();
+        let mut done: Option<Value> = None;
+        // Characters accumulated since the last flush; a silent stream still
+        // publishes them from the receive timeout below.
+        let mut unflushed = 0_usize;
+        let mut flushed_at = now();
         loop {
             if self.generation.load(Ordering::SeqCst) != generation {
-                let _ = child.kill();
-                let _ = child.wait();
-                return json!({"text":"Conversation stopped."});
-            }
-            if let Ok(Some(status)) = child.try_wait() {
-                let mut output = String::new();
-                if let Some(mut stdout) = child.stdout.take() {
-                    let _ = stdout.read_to_string(&mut output);
-                }
-                let output = output.trim().to_string();
-                return if status.success() && !output.is_empty() {
-                    json!({"text":output,"persona":persona,"source":"opencode"})
-                } else {
-                    json!({"text":"I could not reach the assistant. Is opencode serve running?","persona":persona,"source":"unavailable"})
-                };
+                let interrupted = self.abort_gateway(directory, &mut child);
+                self.turn_finish(&turn_id, &turn.accumulated);
+                return Err(GatewayFailure::new("stopped", interrupted));
             }
             if now() > deadline {
+                let interrupted = self.abort_gateway(directory, &mut child);
+                self.turn_finish(&turn_id, &turn.accumulated);
+                return Err(GatewayFailure::new(
+                    format!("The assistant took too long to answer (interrupted: {interrupted})"),
+                    interrupted,
+                ));
+            }
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(line) => {
+                    let Some(mut event) = map_gateway_line(&line) else {
+                        continue;
+                    };
+                    if !turn.record(&mut event) {
+                        continue;
+                    }
+                    // Text must reach the client before the tool row that
+                    // follows it, so a pending window is flushed first.
+                    if !matches!(event, GatewayLine::Delta(_)) && unflushed > 0 {
+                        self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
+                        unflushed = 0;
+                        flushed_at = now();
+                    }
+                    match event {
+                        GatewayLine::Delta(text) => {
+                            unflushed += text.chars().count();
+                            if unflushed >= DELTA_FLUSH_CHARS
+                                || now().saturating_sub(flushed_at) >= DELTA_FLUSH_MS
+                            {
+                                self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
+                                unflushed = 0;
+                                flushed_at = now();
+                            }
+                        }
+                        GatewayLine::Reasoning(text, first) => {
+                            if first {
+                                self.event_for(
+                                    project_id,
+                                    None,
+                                    "thinking",
+                                    "The assistant is reasoning",
+                                    json!({"persona":persona}),
+                                );
+                            }
+                            self.event_for(
+                                project_id,
+                                None,
+                                "reasoning",
+                                "Assistant reasoning",
+                                json!({"text":text,"persona":persona}),
+                            );
+                        }
+                        GatewayLine::ToolStatus {
+                            id,
+                            name,
+                            input,
+                            progress,
+                        } => {
+                            self.event_for(
+                                project_id,
+                                None,
+                                "tool_use",
+                                &format!("{} · running", name.as_deref().unwrap_or("tool")),
+                                json!({"id":id,"name":name,"status":"running",
+                                       "input":input,"progress":progress}),
+                            );
+                        }
+                        GatewayLine::ToolFinal {
+                            id,
+                            name,
+                            status,
+                            input,
+                            output,
+                            exit,
+                        } => {
+                            self.event_for(
+                                project_id,
+                                None,
+                                "tool_use",
+                                &format!("{} · {}", name.as_deref().unwrap_or("tool"), status),
+                                json!({"id":id,"name":name,"status":status,"input":input,
+                                       "output":output,"exit":exit,"final":true}),
+                            );
+                        }
+                        GatewayLine::Permission { id, tool, input } => {
+                            self.event_for(
+                                project_id,
+                                None,
+                                "approval",
+                                &format!("{} needs approval", tool.as_deref().unwrap_or("A tool")),
+                                json!({"id":id,"tool":tool,"input":input}),
+                            );
+                        }
+                        GatewayLine::Warning(text) => {
+                            self.event_for(
+                                project_id,
+                                None,
+                                "warning",
+                                &text,
+                                json!({"text":text}),
+                            );
+                        }
+                        GatewayLine::Error(text) => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            self.turn_finish(&turn_id, &turn.accumulated);
+                            return Err(GatewayFailure::new(text, false));
+                        }
+                        GatewayLine::Done(value) => done = Some(*value),
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // A stalled stream must still publish what it already has.
+                    if unflushed > 0 && now().saturating_sub(flushed_at) >= DELTA_FLUSH_MS {
+                        self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
+                        unflushed = 0;
+                        flushed_at = now();
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+            if let Some(value) = done {
+                let _ = child.wait();
+                return Ok(self.completed_turn(&turn_id, value, &mut turn));
+            }
+        }
+        let status = child
+            .wait()
+            .map_err(|error| GatewayFailure::new(error.to_string(), false))?;
+        if let Some(value) = done {
+            return Ok(self.completed_turn(&turn_id, value, &mut turn));
+        }
+        self.turn_finish(&turn_id, &turn.accumulated);
+        Err(GatewayFailure::new(
+            format!("Assistant exited without a reply ({status})"),
+            false,
+        ))
+    }
+
+    /// Finish a gateway record: the turn id travels with the reply event and the
+    /// final text becomes the authoritative `turn_state` (BUG-098).
+    fn completed_turn(&self, turn_id: &str, value: Value, turn: &mut GatewayTurn) -> Value {
+        let mut done = self.finish_turn(value, turn);
+        let text = done["text"].as_str().unwrap_or_default().to_string();
+        done["turn"] = json!(turn_id);
+        self.turn_finish(turn_id, &text);
+        done
+    }
+
+    /// The reply text is the concatenated deltas: a done record with empty or
+    /// missing text falls back to what streamed (BUG-001 contract).
+    fn finish_turn(&self, mut done: Value, turn: &mut GatewayTurn) -> Value {
+        if (!done["text"].is_string() || done["text"].as_str().unwrap_or("").is_empty())
+            && !turn.accumulated.is_empty()
+        {
+            done["text"] = json!(std::mem::take(&mut turn.accumulated));
+        }
+        done
+    }
+
+    pub fn gateway_op(&self, args: &[&str]) -> Result<Value> {
+        // Bound the gateway call: an unreachable OpenCode must fail fast, not
+        // pin the UI request that asked for its catalog.
+        let mut child = Command::new(self.python())
+            .arg(self.root.join("workers/opencode_gateway.py"))
+            .args(args)
+            .env("NAVI_RUNTIME_DIR", &self.runtime)
+            .env("NAVI_DATA_DIR", &self.data)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut stdout = child.stdout.take().unwrap_or_else(|| unreachable!());
+        std::thread::spawn(move || {
+            let mut buffer = Vec::new();
+            let _ = stdout.read_to_end(&mut buffer);
+            let _ = sender.send(buffer);
+        });
+        let output = match receiver.recv_timeout(Duration::from_secs(15)) {
+            Ok(bytes) => bytes,
+            Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return json!({"text":"The assistant took too long to answer.","persona":persona,"source":"timeout"});
+                return Err("OpenCode did not answer in time".into());
             }
-            std::thread::sleep(Duration::from_millis(50));
+        };
+        let status = child.wait().map_err(|error| error.to_string())?;
+        if !status.success() {
+            return Err("OpenCode is not reachable".into());
+        }
+        for line in String::from_utf8_lossy(&output).lines() {
+            if let Ok(value) = serde_json::from_str::<Value>(line) {
+                return Ok(value);
+            }
+        }
+        Err("OpenCode returned no data".into())
+    }
+
+    /// Interrupt the server-side assistant turn (cancel path, BUG-007). The
+    /// most recent assistant directory scopes the interrupt to that session.
+    pub fn gateway_interrupt(&self) -> bool {
+        let directory = self.assistant_dir.lock().unwrap().clone();
+        let mut args = vec!["interrupt"];
+        if let Some(directory) = directory.as_deref() {
+            args.push("--directory");
+            args.push(directory);
+        }
+        self.gateway_op(&args)
+            .ok()
+            .and_then(|value| value["interrupted"].as_bool())
+            .unwrap_or(false)
+    }
+
+    /// POST a permission decision for a gated tool (BUG-006).
+    pub fn permission_reply(&self, permission_id: &str, decision: &str) -> Result<Value> {
+        if !matches!(decision, "allow" | "deny") {
+            return Err("Permission decision must be allow or deny".into());
+        }
+        if permission_id.is_empty() || permission_id.chars().any(char::is_control) {
+            return Err("Invalid permission id".into());
+        }
+        let directory = self.assistant_dir.lock().unwrap().clone();
+        let mut args = vec![
+            "permission",
+            "--id",
+            permission_id,
+            "--decision",
+            decision,
+        ];
+        if let Some(directory) = directory.as_deref() {
+            args.push("--directory");
+            args.push(directory);
+        }
+        // BUG-006: a refusal is exit 0 with `{replied:false,error}` on stdout,
+        // so the payload itself has to carry the failure to the UI.
+        let reply = self.gateway_op(&args)?;
+        let refusal = reply["error"].as_str().unwrap_or_default().trim();
+        if reply["replied"].as_bool() != Some(true) || !refusal.is_empty() {
+            return Err(if refusal.is_empty() {
+                "OpenCode did not accept the permission decision".into()
+            } else {
+                refusal.to_string()
+            });
+        }
+        Ok(reply)
+    }
+
+    /// Run a validated command/slash request under the command lock. Queued
+    /// items call this from the drain thread; both paths resolve the project,
+    /// emit `working` once, and reply through events (BUG-016/018).
+    pub fn run_request(&self, params: &Value, generation: u64) -> Result<Value> {
+        let text = params["text"].as_str().unwrap_or_default();
+        if text.trim_start().starts_with('/') {
+            return self.run_slash(text.trim(), params, generation);
+        }
+        self.run_command(text, params, false, generation)
+    }
+
+    /// Take the command lock when free; otherwise enqueue (bounded at 4) and
+    /// let the drain thread run it later (BUG-016/018).
+    pub fn run_or_queue(&self, params: &Value, generation: u64) -> Result<Value> {
+        if self.command_queue.lock().unwrap().is_empty()
+            && let Ok(lock) = self.command_lock.try_lock()
+        {
+            let result = self.run_request(params, generation);
+            drop(lock);
+            return result;
+        }
+        let mut queue = self.command_queue.lock().unwrap();
+        if queue.len() >= 4 {
+            return Err("The assistant queue is full; cancel or wait for a reply".into());
+        }
+        queue.push_back(params.clone());
+        let position = queue.len();
+        self.event(
+            "queued",
+            "Command queued behind the running turn",
+            json!({"position":position,"text":params["text"]}),
+        );
+        Ok(json!({"queued":true,"position":position}))
+    }
+
+    /// Drain thread: pops queued commands under the command lock until empty.
+    /// Cancel clears the queue; each item re-reads the generation so a turn
+    /// queued before Stop never runs the stale generation.
+    pub fn drain_commands(self: &std::sync::Arc<Self>) {
+        loop {
+            if self.command_queue.lock().unwrap().is_empty() {
+                std::thread::sleep(Duration::from_millis(30));
+                continue;
+            }
+            let Ok(_lock) = self.command_lock.try_lock() else {
+                std::thread::sleep(Duration::from_millis(30));
+                continue;
+            };
+            loop {
+                let params = self.command_queue.lock().unwrap().pop_front();
+                let Some(params) = params else { break };
+                let generation = self.generation.load(Ordering::SeqCst);
+                if let Err(error) = self.run_request(&params, generation) {
+                    self.event("error", &error, json!({}));
+                }
+            }
         }
     }
 
-    pub fn run_command(&self, text: &str, dry: bool, generation: u64) -> Result<Value> {
+    fn assistant_target(&self) -> (String, String, String) {
+        let settings = self.settings();
+        let persona = settings["persona"].as_str().unwrap_or("navi").to_string();
+        let model = settings["assistant"]["model"]
+            .as_str()
+            .unwrap_or(crate::DEFAULT_ASSISTANT_MODEL)
+            .to_string();
+        let agent = settings["assistant"]["agent"]
+            .as_str()
+            .unwrap_or(crate::DEFAULT_ASSISTANT_AGENT)
+            .to_string();
+        (persona, model, agent)
+    }
+
+    /// Ask OpenCode through the gateway and return the assistant's reply.
+    /// Gateway failures are Err, never synthesized reply text (BUG-014); a
+    /// stopped turn is a reply marked `stopped`/`interrupted` (BUG-007).
+    fn converse(&self, text: &str, turn: &AssistantTurn, generation: u64) -> Result<Value> {
+        let (persona, model, agent) = self.assistant_target();
+        let prompt = if turn.context.is_empty() {
+            text.to_string()
+        } else {
+            format!("{}\n\n{}", turn.context, text)
+        };
+        let mut args = vec![
+            "ask".to_string(),
+            prompt,
+            "--stream".to_string(),
+            "--model".to_string(),
+            model.clone(),
+            "--agent".to_string(),
+            agent.clone(),
+            "--directory".to_string(),
+            turn.path.clone(),
+        ];
+        for attachment in &turn.attachments {
+            args.push("--attachment".into());
+            args.push(attachment.clone());
+        }
+        *self.assistant_dir.lock().unwrap() = Some(turn.path.clone());
+        let result = self.stream_gateway(
+            &args,
+            generation,
+            &persona,
+            Some(turn.id.as_str()),
+            Some(turn.path.as_str()),
+        );
+        // Remove only runtime scratch files we decoded; user paths stay.
+        let scratch = self.runtime.join("attach-").to_string_lossy().into_owned();
+        for path in turn.attachments.iter().filter(|p| p.starts_with(&scratch)) {
+            let _ = std::fs::remove_file(path);
+        }
+        match result {
+            Ok(done) => {
+                if let Some(session) = done["session"].as_str() {
+                    let model_ref = done["actual_model"]
+                        .as_object()
+                        .map(|m| {
+                            match (m.get("providerID").and_then(Value::as_str),
+                                   m.get("id").and_then(Value::as_str)) {
+                                (Some(provider), Some(id)) => format!("{provider}/{id}"),
+                                (_, Some(id)) => id.to_string(),
+                                _ => model.clone(),
+                            }
+                        })
+                        .unwrap_or_else(|| model.clone());
+                    let agent_ref = done["actual_agent"]
+                        .as_str()
+                        .unwrap_or(agent.as_str())
+                        .to_string();
+                    let _ = self.record_assistant_session(
+                        turn.id.as_str(), session, &model_ref, &agent_ref,
+                    );
+                }
+                let reply = json!({"text":done["text"],"persona":persona,
+                    "source":done["source"],"session":done["session"],
+                    "usage":done["usage"],"session_usage":done["session_usage"],
+                    "finish":done["finish"],"actual_model":done["actual_model"],
+                    "actual_agent":done["actual_agent"],"warnings":done["warnings"],
+                    "attachments":done["attachments"],"project_id":turn.id,
+                    "turn":done["turn"]});
+                self.event_for(
+                    Some(turn.id.as_str()),
+                    done["session"].as_str(),
+                    "reply",
+                    reply["text"].as_str().unwrap_or("No reply"),
+                    reply.clone(),
+                );
+                Ok(reply)
+            }
+            Err(failure) if failure.stopped => {
+                let reply = json!({"text":"Conversation stopped.","persona":persona,
+                    "source":"stopped","stopped":true,"interrupted":failure.interrupted});
+                self.event_for(
+                    Some(turn.id.as_str()),
+                    None,
+                    "reply",
+                    "Conversation stopped.",
+                    reply.clone(),
+                );
+                Ok(reply)
+            }
+            Err(failure) => Err(failure.message),
+        }
+    }
+
+    /// Slash messages are OpenCode commands, not chief decisions. They join the
+    /// same queue/lock as commands (BUG-018) and scope to the same project.
+    pub fn run_slash(&self, text: &str, params: &Value, generation: u64) -> Result<Value> {
+        let turn = self.assistant_turn(params)?;
+        let (persona, model, agent) = self.assistant_target();
+        self.event_for(
+            Some(turn.id.as_str()),
+            None,
+            "working",
+            "Running an OpenCode command",
+            json!({"text":text}),
+        );
+        let args = vec![
+            "slash".to_string(),
+            text.to_string(),
+            "--stream".to_string(),
+            "--model".to_string(),
+            model.clone(),
+            "--agent".to_string(),
+            agent.clone(),
+            "--directory".to_string(),
+            turn.path.clone(),
+        ];
+        *self.assistant_dir.lock().unwrap() = Some(turn.path.clone());
+        match self.stream_gateway(
+            &args,
+            generation,
+            &persona,
+            Some(turn.id.as_str()),
+            Some(turn.path.as_str()),
+        ) {
+            Ok(done) => {
+                if let Some(session) = done["session"].as_str() {
+                    let _ = self.record_assistant_session(
+                        turn.id.as_str(), session, &model, &agent,
+                    );
+                }
+                let reply = json!({"text":done["text"],"persona":persona,
+                    "source":done["source"],"session":done["session"],
+                    "usage":done["usage"],"session_usage":done["session_usage"],
+                    "finish":done["finish"],"actual_model":done["actual_model"],
+                    "actual_agent":done["actual_agent"],"warnings":done["warnings"],
+                    "turn":done["turn"]});
+                self.event_for(
+                    Some(turn.id.as_str()),
+                    done["session"].as_str(),
+                    "reply",
+                    reply["text"].as_str().unwrap_or("No reply"),
+                    reply.clone(),
+                );
+                Ok(json!({"trace":[],"dry_run":false,"reply":reply}))
+            }
+            Err(failure) if failure.stopped => Ok(json!({"trace":[],"dry_run":false,
+                "reply":{"text":"Conversation stopped.","persona":persona,
+                         "source":"stopped","stopped":true,"interrupted":failure.interrupted},
+                "stopped":true,"interrupted":failure.interrupted})),
+            Err(failure) => Err(failure.message),
+        }
+    }
+
+    pub fn run_command(&self, text: &str, params: &Value, dry: bool, generation: u64) -> Result<Value> {
         let clauses = text.split(" then ").collect::<Vec<_>>();
         if clauses.len() > 4 {
             return Err("Use at most four explicit steps in one command".into());
         }
+        let pid = params["project_id"]
+            .as_str()
+            .and_then(|r| self.resolve_project(r).ok())
+            .and_then(|p| p["id"].as_str().map(str::to_string));
+        self.event_for(
+            pid.as_deref(),
+            None,
+            "working",
+            "Chief is working",
+            json!({"text":text,"dry_run":dry}),
+        );
         let mut trace = Vec::new();
         let mut reply = Value::Null;
         for clause in clauses {
-            self.event("thinking", "Chief is deciding", json!({"text":clause}));
             let decision = self.decide(clause, generation)?;
             if self.generation.load(Ordering::SeqCst) != generation {
                 return Err("Command stopped before execution".into());
@@ -629,15 +1331,12 @@ impl App {
             }
             // Anything that would not execute a tool (noop, clarify, low
             // confidence) is conversation: ask the OpenCode bridge instead of
-            // asking the user to rephrase. Actions keep the same dispatch.
+            // asking the user to rephrase. Gateway failures propagate as Err —
+            // no reply is ever synthesized for a failure (BUG-014).
             let kind = action["kind"].as_str().unwrap_or("");
             let result = if routes_to_conversation(kind) {
-                let reply = self.converse(&conversational_text(clause), generation);
-                self.event(
-                    "reply",
-                    reply["text"].as_str().unwrap_or("No reply"),
-                    json!({"persona":reply["persona"],"source":reply["source"],"text":reply["text"]}),
-                );
+                let turn = self.assistant_turn(params)?;
+                let reply = self.converse(&conversational_text(clause), &turn, generation)?;
                 json!({"message":"No action requested","reply":reply})
             } else {
                 match kind {
@@ -651,9 +1350,11 @@ impl App {
                     }
                     "switch" => {
                         let target = action["id"].as_str().ok_or("Missing session")?;
-                        self.require_session(target)?;
-                        self.set_active(target)?;
+                        self.session_target(&json!({"id":target}))?;
                         json!({"id":target})
+                    }
+                    "resume" => {
+                        self.session_resume(&json!({"id":action["id"]}))?
                     }
                     "browser" => {
                         if self.isolated {
@@ -712,13 +1413,241 @@ impl App {
     }
 }
 
+struct AssistantTurn {
+    id: String,
+    path: String,
+    context: String,
+    attachments: Vec<String>,
+}
+
+/// A gateway failure: `stopped` marks a user Stop so callers can return a
+/// `stopped`/`interrupted` reply instead of an error (BUG-007).
+struct GatewayFailure {
+    message: String,
+    stopped: bool,
+    interrupted: bool,
+}
+
+impl GatewayFailure {
+    fn new(message: impl Into<String>, interrupted: bool) -> Self {
+        let message = message.into();
+        Self {
+            stopped: message == "stopped",
+            interrupted,
+            message,
+        }
+    }
+}
+
+/// What one gateway stdout line means for the daemon (BUG-001). Pure mapping;
+/// `map_gateway_line` never touches process state so fixtures can test it.
+enum GatewayLine {
+    Delta(String),
+    Reasoning(String, bool),
+    ToolStatus {
+        id: String,
+        name: Option<String>,
+        input: Value,
+        progress: Value,
+    },
+    ToolFinal {
+        id: String,
+        name: Option<String>,
+        status: String,
+        input: Value,
+        output: Value,
+        exit: Value,
+    },
+    Permission {
+        id: Value,
+        tool: Option<String>,
+        input: Value,
+    },
+    Warning(String),
+    Error(String),
+    Done(Box<Value>),
+}
+
+/// Per-turn stream state: accumulated reply text, deduplicated tool finals,
+/// and whether real reasoning has been seen (only that may emit `thinking`).
+#[derive(Default)]
+struct GatewayTurn {
+    accumulated: String,
+    finished_tools: HashSet<String>,
+    reasoned: bool,
+}
+
+impl GatewayTurn {
+    /// Merge stream semantics into a mapped line; returns false when the line
+    /// must produce no event (duplicate tool final — exactly one per id).
+    fn record(&mut self, event: &mut GatewayLine) -> bool {
+        match event {
+            GatewayLine::Delta(text) => self.accumulated.push_str(text),
+            GatewayLine::Reasoning(_, first) => {
+                *first = !self.reasoned;
+                self.reasoned = true;
+            }
+            GatewayLine::ToolFinal { id, .. }
+                if !self.finished_tools.insert(id.clone()) =>
+            {
+                return false;
+            }
+            GatewayLine::ToolFinal { .. } => {}
+            _ => {}
+        }
+        true
+    }
+}
+
+/// Map one raw stdout line from the gateway to a `GatewayLine` (BUG-001).
+/// Unparseable or unknown lines return None.
+fn map_gateway_line(line: &str) -> Option<GatewayLine> {
+    let value: Value = serde_json::from_str(line).ok()?;
+    match value["type"].as_str()? {
+        "delta" => Some(GatewayLine::Delta(value["text"].as_str()?.to_string())),
+        "reasoning" => Some(GatewayLine::Reasoning(
+            value["text"].as_str()?.to_string(),
+            false,
+        )),
+        "tool_status" => Some(GatewayLine::ToolStatus {
+            id: value["id"].as_str()?.to_string(),
+            name: value["name"].as_str().map(str::to_string),
+            input: value["input"].clone(),
+            progress: value["progress"].clone(),
+        }),
+        "tool" => Some(GatewayLine::ToolFinal {
+            id: value["id"].as_str()?.to_string(),
+            name: value["name"].as_str().map(str::to_string),
+            status: value["status"].as_str().unwrap_or("completed").to_string(),
+            input: value["input"].clone(),
+            output: value["output"].clone(),
+            exit: value["exit"].clone(),
+        }),
+        "permission" => Some(GatewayLine::Permission {
+            id: value["id"].clone(),
+            tool: value["tool"].as_str().map(str::to_string),
+            input: value["input"].clone(),
+        }),
+        "warning" => Some(GatewayLine::Warning(value["text"].as_str()?.to_string())),
+        "error" => Some(GatewayLine::Error(
+            value["text"].as_str().unwrap_or("Assistant error").to_string(),
+        )),
+        "done" => Some(GatewayLine::Done(Box::new(value))),
+        _ => None,
+    }
+}
+
+/// Shape/size checks shared by `command` and `prompt` before a request may be
+/// queued: ≤4 files, ≤2 MiB each, no control characters in names (BUG-005).
+pub(crate) fn validate_attachments(params: &Value) -> Result<()> {
+    let Some(items) = params.as_array() else {
+        if params.is_null() {
+            return Ok(());
+        }
+        return Err("attachments must be an array".into());
+    };
+    if items.len() > 4 {
+        return Err("At most 4 attachments per prompt".into());
+    }
+    for item in items {
+        let name = item["name"].as_str().unwrap_or_default();
+        if !name.is_empty() && (name.len() > 120 || name.chars().any(char::is_control)) {
+            return Err("Invalid attachment name".into());
+        }
+        match (item["path"].as_str(), item["data"].as_str()) {
+            (Some(_), _) | (None, Some(_)) => {}
+            _ => return Err("Attachment needs a path or data".into()),
+        }
+        if let Some(data) = item["data"].as_str() {
+            let encoded = data.chars().filter(|c| !c.is_whitespace()).count();
+            if encoded * 3 / 4 > 2 * 1024 * 1024 {
+                return Err("Attachment exceeds 2 MiB".into());
+            }
+        }
+        if let Some(path) = item["path"].as_str()
+            && path.chars().any(char::is_control)
+        {
+            return Err("Invalid attachment path".into());
+        }
+    }
+    Ok(())
+}
+
+/// Strict base64 decode (standard alphabet, optional whitespace).
+fn b64_decode(data: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(data.len() * 3 / 4);
+    let clean: Vec<u8> = data.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+    for chunk in clean.chunks(4) {
+        if chunk.len() < 4 {
+            return None;
+        }
+        let mut acc = 0u32;
+        for (i, byte) in chunk.iter().enumerate() {
+            acc <<= 6;
+            if *byte == b'=' {
+                if i < 2 || chunk[i..].iter().any(|b| *b != b'=') {
+                    return None;
+                }
+                continue;
+            }
+            acc |= match byte {
+                b'A'..=b'Z' => (*byte - b'A') as u32,
+                b'a'..=b'z' => (*byte - b'a' + 26) as u32,
+                b'0'..=b'9' => (*byte - b'0' + 52) as u32,
+                b'+' => 62,
+                b'/' => 63,
+                _ => return None,
+            };
+        }
+        let payload = &chunk[..chunk.iter().position(|b| *b == b'=').unwrap_or(4)];
+        if payload.len() >= 2 {
+            out.push((acc >> 16) as u8);
+        }
+        if payload.len() >= 3 {
+            out.push((acc >> 8) as u8);
+        }
+        if payload.len() == 4 {
+            out.push(acc as u8);
+        }
+    }
+    Some(out)
+}
+
+/// "2 minutes ago" style activity stamp for the context block.
+fn relative_time(at: u64) -> String {
+    let elapsed = now().saturating_sub(at) / 1000;
+    for (unit, seconds) in [
+        ("day", 86_400_u64),
+        ("hour", 3_600),
+        ("minute", 60),
+    ] {
+        if elapsed >= seconds {
+            let value = elapsed / seconds;
+            return format!("{value} {unit}{} ago", if value == 1 { "" } else { "s" });
+        }
+    }
+    "just now".into()
+}
+
+/// Trim the context block to ≤600 bytes on a char boundary.
+fn cap_block(text: &str) -> String {
+    if text.len() <= 600 {
+        return text.to_string();
+    }
+    let mut end = 600;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_string()
+}
+
 // Model action kinds that actually execute a tool. Everything else (noop,
 // clarify, low confidence, an unexpected kind) runs no tool and is answered as
 // conversation by the OpenCode bridge instead of a clarification prompt.
 fn routes_to_conversation(kind: &str) -> bool {
     !matches!(
         kind,
-        "launch" | "switch" | "browser" | "url" | "browser_action" | "desktop_action"
+        "launch" | "switch" | "resume" | "browser" | "url" | "browser_action" | "desktop_action"
     )
 }
 
@@ -752,7 +1681,7 @@ fn conversational_text(text: &str) -> String {
 }
 
 // Deterministic voice-command grammar for persona changes, independent of the
-// decision model: "switch to jarvis mode", "be concise", "use friendly
+// decision model: "switch to navi mode", "be concise", "use friendly
 // persona". Trailing punctuation is ignored; unsupported phrasing returns None.
 fn persona_target(text: &str) -> Option<String> {
     let lower = text.trim().to_lowercase();
@@ -953,22 +1882,16 @@ mod tests {
     }
     #[test]
     fn persona_switch_phrases_are_parsed_deterministically() {
-        assert_eq!(
-            persona_target("Switch to jarvis mode"),
-            Some("jarvis".into())
-        );
-        assert_eq!(persona_target("switch to jarvis."), Some("jarvis".into()));
+        assert_eq!(persona_target("Switch to navi mode"), Some("navi".into()));
+        assert_eq!(persona_target("switch to navi."), Some("navi".into()));
         assert_eq!(persona_target("Be concise"), Some("concise".into()));
         assert_eq!(persona_target("be brief!"), Some("brief".into()));
-        assert_eq!(
-            persona_target("use friendly persona"),
-            Some("friendly".into())
-        );
+        assert_eq!(persona_target("use navi persona"), Some("navi".into()));
         assert_eq!(persona_target("Open Codex"), None);
         assert_eq!(persona_target("be "), None);
         assert_eq!(
-            persona_target("switch to the jarvis mode"),
-            Some("the jarvis".into())
+            persona_target("switch to the navi mode"),
+            Some("the navi".into())
         );
         assert_eq!(persona_target("be very concise right now"), None);
     }
@@ -1043,5 +1966,126 @@ mod tests {
             .unwrap(),
             "clarify"
         );
+    }
+    #[test]
+    fn gateway_lines_map_to_stream_events() {
+        let mut turn = GatewayTurn::default();
+
+        // A full verified-schema tool turn: status, one final, reasoning,
+        // deltas that must concatenate into the reply.
+        let mut event = map_gateway_line(r#"{"type":"delta","text":"Hello"}"#).unwrap();
+        assert!(turn.record(&mut event));
+        assert!(matches!(event, GatewayLine::Delta(ref text) if text == "Hello"));
+
+        let mut event =
+            map_gateway_line(r#"{"type":"reasoning","text":"thinking about it"}"#).unwrap();
+        assert!(turn.record(&mut event));
+        match event {
+            GatewayLine::Reasoning(text, first) => {
+                assert_eq!(text, "thinking about it");
+                assert!(first, "first reasoning chunk marks the thinking state");
+            }
+            _ => panic!("reasoning line did not map"),
+        }
+        // A second reasoning line is content but no longer "first".
+        let mut event = map_gateway_line(r#"{"type":"reasoning","text":"more"}"#).unwrap();
+        assert!(turn.record(&mut event));
+        assert!(matches!(event, GatewayLine::Reasoning(_, false)));
+
+        let mut event = map_gateway_line(
+            r#"{"type":"tool_status","id":"call_1","name":"shell","status":"running","input":{"command":"ls"}}"#,
+        )
+        .unwrap();
+        assert!(turn.record(&mut event));
+        match event {
+            GatewayLine::ToolStatus { id, name, .. } => {
+                assert_eq!(id, "call_1");
+                assert_eq!(name.as_deref(), Some("shell"));
+            }
+            _ => panic!("tool_status line did not map"),
+        }
+        let final_line = r#"{"type":"tool","id":"call_1","name":"shell","status":"completed","input":{"command":"ls"},"output":"README.md","exit":0,"final":true}"#;
+        let mut event = map_gateway_line(final_line).unwrap();
+        assert!(turn.record(&mut event));
+        match event {
+            GatewayLine::ToolFinal { id, status, exit, .. } => {
+                assert_eq!(id, "call_1");
+                assert_eq!(status, "completed");
+                assert_eq!(exit, json!(0));
+            }
+            _ => panic!("tool line did not map"),
+        }
+        // A duplicated final for the same id produces no second event.
+        let mut event = map_gateway_line(final_line).unwrap();
+        assert!(!turn.record(&mut event), "final rows are deduplicated by id");
+
+        let mut event = map_gateway_line(
+            r#"{"type":"permission","id":"perm_1","tool":"shell","input":{"command":"rm x"}}"#,
+        )
+        .unwrap();
+        assert!(turn.record(&mut event));
+        match event {
+            GatewayLine::Permission { id, tool, .. } => {
+                assert_eq!(id, json!("perm_1"));
+                assert_eq!(tool.as_deref(), Some("shell"));
+            }
+            _ => panic!("permission line did not map"),
+        }
+        let mut event =
+            map_gateway_line(r#"{"type":"warning","text":"directory ignored"}"#).unwrap();
+        assert!(turn.record(&mut event));
+        assert!(matches!(event, GatewayLine::Warning(ref text) if text == "directory ignored"));
+
+        let mut event = map_gateway_line(r#"{"type":"delta","text":" world"}"#).unwrap();
+        assert!(turn.record(&mut event));
+        assert_eq!(turn.accumulated, "Hello world",
+            "the reply text is the concatenated deltas");
+
+        let mut event =
+            map_gateway_line(r#"{"type":"done","text":"Hello world","session":"ses_1",
+                "usage":{"tokens":{"input":10,"output":5,"reasoning":2},"cost":0.002},
+                "session_usage":{"totalTokens":17},"finish":"stop",
+                "actual_model":{"id":"m","providerID":"p"},"actual_agent":"navi"}"#)
+            .unwrap();
+        assert!(turn.record(&mut event));
+        match event {
+            GatewayLine::Done(done) => {
+                assert_eq!(done["usage"]["cost"], json!(0.002));
+                assert_eq!(done["session_usage"]["totalTokens"], json!(17));
+                assert_eq!(done["actual_model"]["id"], json!("m"));
+                assert_eq!(done["actual_agent"], json!("navi"));
+            }
+            _ => panic!("done line did not map"),
+        }
+
+        // Errors and unknown lines.
+        assert!(matches!(
+            map_gateway_line(r#"{"type":"error","text":"dead"}"#),
+            Some(GatewayLine::Error(ref text)) if text == "dead"
+        ));
+        assert!(map_gateway_line("not json").is_none());
+        assert!(map_gateway_line(r#"{"type":"step","x":1}"#).is_none());
+    }
+    #[test]
+    fn attachment_params_are_bounded_and_checked() {
+        assert!(validate_attachments(&Value::Null).is_ok());
+        assert!(validate_attachments(&json!([{"name":"a.txt","data":"aGk="}])).is_ok());
+        assert!(validate_attachments(&json!([{"name":"a\u{7}bad","data":"aGk="}])).is_err());
+        assert!(validate_attachments(&json!([{"name":"a"}])).is_err());
+        assert!(validate_attachments(&json!([{"path":"/tmp/x"}])).is_ok());
+        let many = json!([{"path":"/a"},{"path":"/b"},{"path":"/c"},{"path":"/d"},{"path":"/e"}]);
+        assert!(validate_attachments(&many).is_err());
+        let big = "A".repeat(2 * 1024 * 1024 * 4 / 3 + 8);
+        assert!(validate_attachments(&json!([{"data":big}])).is_err());
+    }
+    #[test]
+    fn base64_decodes_and_context_is_capped() {
+        assert_eq!(b64_decode("aGVsbG8="), Some(b"hello".to_vec()));
+        assert_eq!(b64_decode("aGVsbG8"), None);
+        assert_eq!(b64_decode("aGVsbG8!!!="), None);
+        assert_eq!(b64_decode("aGk="), Some(b"hi".to_vec()));
+        let long = "x".repeat(1000);
+        assert_eq!(cap_block(&long).len(), 600);
+        assert_eq!(cap_block("short"), "short");
     }
 }

@@ -38,7 +38,9 @@ pi-*.html
 out.html
 packages/coding-agent/binaries/
 todo.md
+# Other `plans/` dirs stay local; Navi's fix plans are tracked.
 plans/
+!apps/navi/plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh

@@ -1,0 +1,328 @@
+{
+  "private_display": true,
+  "private_bus": true,
+  "software_webgl": true,
+  "gui_close_preserves_session": true,
+  "inspection": {
+    "renderer": "webgl",
+    "pixelRatio": 1,
+    "dpr": 1,
+    "viewport": {
+      "width": 1392,
+      "height": 872
+    },
+    "chatOpacity": "1",
+    "booted": true,
+    "degraded": false,
+    "boot": "scene",
+    "bootOverlay": {
+      "display": "none",
+      "hidden": true,
+      "opacity": "0"
+    },
+    "art": {
+      "x": 421.2,
+      "y": 107.5,
+      "w": 549.6,
+      "h": 492.2,
+      "scale": 0.516,
+      "settled": true,
+      "cell": {
+        "x": 12,
+        "y": 69,
+        "w": 1368,
+        "h": 546
+      }
+    },
+    "devtools": false,
+    "isolated": true,
+    "pending": 0,
+    "pendingOps": [],
+    "pendingStale": 0,
+    "pendingOldestMs": 0,
+    "cursor": 1836621848552451,
+    "polls": 6,
+    "pollFailures": 0,
+    "offline": false,
+    "backoff": 700,
+    "timeouts": 1,
+    "dropped": 1,
+    "unknownReplies": 0,
+    "daemon": {
+      "pid": 1463192,
+      "version": "0.1.0"
+    },
+    "workers": {
+      "voice": "off",
+      "desktop": "disconnected"
+    },
+    "errors": [
+      {
+        "type": "log",
+        "at": "2026-11-01T23:34:11.201Z",
+        "level": "error",
+        "message": "timeout: status got no reply within 15000ms"
+      }
+    ],
+    "diagnostics": [
+      {
+        "type": "log",
+        "at": "2026-11-01T23:33:51.226Z",
+        "level": "warn",
+        "message": "dropped reply for ticket 1"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-01T23:34:11.201Z",
+        "level": "error",
+        "message": "timeout: status got no reply within 15000ms"
+      }
+    ],
+    "sessions": [
+      {
+        "active": false,
+        "created": 1793576024120,
+        "cwd": "/tmp/navi-isolated-ryeovd0i",
+        "exit_status": null,
+        "exited": null,
+        "gen": 0,
+        "harness": "bash",
+        "id": "navi-abef4305bd85090f",
+        "last_active": 1793576031222,
+        "last_launched": true,
+        "launch_kind": "new",
+        "name": "Isolated validation",
+        "native_id": null,
+        "native_name": null,
+        "origin": "navi",
+        "orphan": false,
+        "pid": 1463252,
+        "profile": "terminal",
+        "project_id": null,
+        "replaced_by": null,
+        "running": true,
+        "state": "needs_input",
+        "voice_target": false
+      }
+    ],
+    "title": "Navi",
+    "messages": 1,
+    "chat": {
+      "count": 1,
+      "mounted": 1,
+      "rows": 1,
+      "empty": true,
+      "emptyVisible": true,
+      "streaming": false,
+      "turnDone": false,
+      "status": "ready",
+      "label": "Ready",
+      "failed": 0,
+      "ids": [
+        "m-mvygvfd8-1"
+      ],
+      "cursors": [
+        null
+      ],
+      "savedIds": [],
+      "lastId": "m-mvygvfd8-1",
+      "lastText": "Harness session started: Isolated validation",
+      "lastStatus": "complete",
+      "pendingFinalise": null,
+      "history": {
+        "limit": 200,
+        "hasMore": false,
+        "oldestCursor": null
+      },
+      "lastFailure": null,
+      "attachments": [],
+      "lastCommand": null
+    },
+    "voice": {
+      "status": "off",
+      "label": "Mic off",
+      "transcript": null,
+      "confirming": false,
+      "countdown": "",
+      "banner": false
+    },
+    "model": "Deepseek V4.1 Flash",
+    "modelPicker": {
+      "value": "",
+      "filter": "",
+      "open": false,
+      "choices": 1,
+      "catalog": 0,
+      "options": 0
+    },
+    "rpcOps": [
+      "status",
+      "messages",
+      "status",
+      "ping",
+      "status",
+      "status",
+      "status",
+      "status",
+      "status"
+    ],
+    "rpcCalls": [
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 0
+        }
+      },
+      {
+        "op": "messages",
+        "params": {
+          "limit": 200,
+          "project_id": "prj-ea44ca67"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 0
+        }
+      },
+      {
+        "op": "ping",
+        "params": {}
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621848552451
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621848552451
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621848552451
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621848552451
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1836621848552451
+        }
+      }
+    ],
+    "slash": 0,
+    "busy": false,
+    "terminal": false,
+    "terminalDisplay": "none",
+    "dock": "closed",
+    "graphOpen": false,
+    "phase": "idle",
+    "project": {
+      "id": "prj-ea44ca67",
+      "name": "Navi",
+      "path": "/home/amrhares/Documents/navi",
+      "path_state": "ok",
+      "label": "Navi",
+      "switcher": false,
+      "options": 1,
+      "scope": null
+    },
+    "graph": {
+      "open": false,
+      "loading": false,
+      "project_id": null,
+      "percent": null,
+      "percent_null": false,
+      "unknown": true,
+      "label": null,
+      "verified": null,
+      "confidence": null,
+      "aspects": [],
+      "risks": [],
+      "evidence": 0,
+      "evidenceTotal": null,
+      "empty": false,
+      "as_of": null
+    },
+    "layout": {
+      "stage": {
+        "x": 12,
+        "y": 69,
+        "width": 1368,
+        "height": 546,
+        "visible": true
+      },
+      "chat": {
+        "x": 236,
+        "y": 627,
+        "width": 920,
+        "height": 233,
+        "visible": true
+      },
+      "terminal": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "sessions": {
+        "x": 12,
+        "y": 12,
+        "width": 461,
+        "height": 45,
+        "visible": true
+      },
+      "graph": {
+        "x": 0,
+        "y": 0,
+        "width": 0,
+        "height": 0,
+        "visible": false
+      },
+      "overlaps": []
+    },
+    "host": {
+      "push": {
+        "delivered": 1,
+        "skipped": 36,
+        "errors": 0,
+        "unhandled": 0,
+        "bytes": 3886,
+        "cursor": 1836621848552451,
+        "active": false,
+        "rate": 0.04
+      }
+    }
+  },
+  "dropped_reply": {
+    "timeouts": 1,
+    "polls": 6,
+    "pending": 0
+  },
+  "verbose_rpc_log": [
+    "rpc status 9ms ok=True bytes=4886",
+    "rpc messages 0ms ok=True bytes=59",
+    "rpc status 9ms ok=True bytes=4886",
+    "rpc ping 0ms ok=True bytes=60",
+    "rpc status 2ms ok=True bytes=3911"
+  ]
+}

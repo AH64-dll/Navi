@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import socket
 import subprocess
@@ -76,4 +77,14 @@ class IsolatedStation:
         self.stop()
         subprocess.run(["tmux", "-S", str(self.data / "terminals.sock"), "kill-server"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self.environment)
         self.log.close()
-        self.temporary.cleanup()
+        # A dying gvfs daemon can hold its mount point for a moment, so the
+        # disposable directory is retried instead of failing the whole test.
+        for attempt in range(3):
+            try:
+                self.temporary.cleanup()
+                break
+            except OSError:
+                if attempt == 2:
+                    shutil.rmtree(self.temporary.name, ignore_errors=True)
+                else:
+                    time.sleep(.25)

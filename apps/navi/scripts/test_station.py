@@ -59,8 +59,8 @@ class StationTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_session_process_survives_daemon_restart_and_switch(self):
-        first=self.call("create",{"profile":"terminal","name":"first","cwd":str(self.folder)})
-        second=self.call("create",{"profile":"terminal","name":"second","cwd":str(self.folder)})
+        first=self.call("create",{"profile":"terminal","name":"first","cwd":str(self.folder),"allow_unregistered":True})
+        second=self.call("create",{"profile":"terminal","name":"second","cwd":str(self.folder),"allow_unregistered":True})
         self.assertTrue(first["ok"], first)
         self.assertTrue(second["ok"], second)
         target=first["result"]["id"]
@@ -79,6 +79,84 @@ class StationTests(unittest.TestCase):
         self.assertTrue(self.call("settings",settings)["ok"])
         self.assertFalse(self.call("create",{"profile":"missing","cwd":str(self.folder)})["ok"])
         self.assertEqual(self.call("status")["result"]["sessions"],[])
+
+    def test_permission_refusal_is_an_rpc_error(self):
+        """BUG-006: a refusing gateway is a failure, not an ok:true no-op."""
+        app = self.folder / "stub-app"
+        (app / "workers").mkdir(parents=True)
+        (app / "workers" / "opencode_gateway.py").write_text(
+            "import json, sys\n"
+            "args = sys.argv[1:]\n"
+            "ident = args[args.index('--id') + 1] if '--id' in args else ''\n"
+            "if ident.startswith('refuse'):\n"
+            "    print(json.dumps({'replied': False, 'error': 'a gated tool may not run this'}))\n"
+            "elif ident.startswith('silent'):\n"
+            "    print(json.dumps({'replied': False}))\n"
+            "else:\n"
+            "    print(json.dumps({'replied': True, 'endpoint': '/api/permission/ok'}))\n")
+        self.process.terminate(); self.process.wait(timeout=3)
+        self.environment["NAVI_APP_DIR"] = str(app)
+        self.start()
+        refused = self.call("permission_reply", {"id": "refuse-1", "decision": "deny"})
+        self.assertFalse(refused["ok"], refused)
+        self.assertIn("a gated tool may not run this", refused["error"])
+        silent = self.call("permission_reply", {"id": "silent-1", "decision": "deny"})
+        self.assertFalse(silent["ok"], silent)
+        self.assertIn("did not accept the permission decision", silent["error"])
+        allowed = self.call("permission_reply", {"id": "allow-1", "decision": "allow"})
+        self.assertTrue(allowed["ok"], allowed)
+        self.assertTrue(allowed["result"]["replied"])
+
+    def test_message_pages_walk_backwards_without_gaps(self):
+        """BUG-047: the rowid cursor pages past the 500-row cap."""
+        for index in range(3):
+            saved = self.call("message_save", {
+                "id": f"m{index}", "role": "user", "time": 1000 + index,
+                "parts": [{"type": "text", "text": f"question {index}"}]})
+            self.assertTrue(saved["ok"], saved)
+        newest = self.call("messages", {"limit": 2})
+        self.assertTrue(newest["ok"], newest)
+        first = newest["result"]
+        self.assertEqual([item["id"] for item in first["messages"]], ["m1", "m2"])
+        self.assertTrue(first["has_more"])
+        cursors = [item["cursor"] for item in first["messages"]]
+        self.assertEqual(cursors, sorted(cursors))
+        older = self.call("messages", {"limit": 2, "before": first["messages"][0]["cursor"]})
+        self.assertTrue(older["ok"], older)
+        self.assertEqual([item["id"] for item in older["result"]["messages"]], ["m0"])
+        self.assertFalse(older["result"]["has_more"])
+        empty = self.call("messages", {"limit": 2, "before": older["result"]["messages"][0]["cursor"]})
+        self.assertEqual(empty["result"]["messages"], [])
+        self.assertFalse(empty["result"]["has_more"])
+        project = self.call("project_add", {"name": "Paged", "path": str(self.folder)})["result"]["project"]
+        self.call("message_save", {"id": "p0", "role": "assistant", "time": 1003,
+                                   "project_id": project["id"],
+                                   "parts": [{"type": "text", "text": "scoped"}]})
+        scoped = self.call("messages", {"project_id": project["id"], "limit": 2})["result"]
+        self.assertEqual([item["id"] for item in scoped["messages"]], ["p0"])
+        self.assertEqual(scoped["messages"][0]["project_id"], project["id"])
+        self.assertFalse(scoped["has_more"])
+
+    def test_voice_confirm_claims_atomically_and_cancel_withdraws(self):
+        """BUG-056: exactly one side wins the claim that runs the transcript."""
+        claim = self.runtime / "voice.claim"
+        confirm = self.runtime / "voice.confirm"
+        self.assertFalse(claim.exists())
+        first = self.call("voice_confirm", {"accept": True})
+        self.assertTrue(first["ok"], first)
+        self.assertTrue(first["result"]["claimed"])
+        self.assertTrue(claim.exists())
+        second = self.call("voice_confirm", {"accept": True})
+        self.assertTrue(second["ok"], second)
+        self.assertFalse(second["result"]["claimed"])
+        self.assertTrue(second["result"]["already"])
+        confirm.write_text('{"accept": false}')
+        cancelled = self.call("voice_confirm", {"accept": False})
+        self.assertTrue(cancelled["ok"], cancelled)
+        self.assertTrue(cancelled["result"]["cancelled"])
+        self.assertEqual(json.loads(confirm.read_text()), {"accept": False})
+        self.assertFalse(claim.exists())
+        self.assertFalse(self.call("voice_confirm", {})["ok"])
 
     def test_unregistered_session_and_remote_chief_are_rejected(self):
         self.assertFalse(self.call("select",{"id":"other-user-session"})["ok"])
@@ -99,6 +177,25 @@ class StationTests(unittest.TestCase):
         self.assertFalse(self.call("settings", settings)["ok"])
         self.assertFalse((self.runtime / "desktop.pid").exists())
         self.assertFalse((self.runtime / "voice.pid").exists())
+
+    def test_navi_defaults_and_settings_validation(self):
+        settings = self.call("status")["result"]["settings"]
+        self.assertFalse(settings["speak"])
+        self.assertEqual(settings["persona"], "navi")
+        self.assertIn("Navi", settings["system_prompt"])
+        self.assertNotIn("Jarvis", settings["system_prompt"])
+        self.assertEqual(settings["assistant"]["agent"], "navi")
+        self.assertIn("/", settings["assistant"]["model"])
+        for field, value in [
+            ("assistant", {"model": "nonsense", "agent": "navi"}),
+            ("assistant", {"model": settings["assistant"]["model"], "agent": "bad agent!"}),
+            ("system_prompt", "x" * 8001),
+            ("system_prompt", "   "),
+            ("speak", "yes"),
+        ]:
+            broken = json.loads(json.dumps(settings))
+            broken[field] = value
+            self.assertFalse(self.call("settings", broken)["ok"], field)
 
     def test_stop_interrupts_inference_and_releases_command_lock(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
@@ -157,6 +254,73 @@ class StationTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 server.server_close()
+
+
+    def test_projects_graph_and_history_survive_restart(self):
+        self.assertFalse(self.call("project_add", {"name": "Missing", "path": "/definitely/not/here"})["ok"])
+        created = self.call("project_add", {"name": "Fixture", "path": str(self.folder)})
+        self.assertTrue(created["ok"], created)
+        project = created["result"]["project"]
+        self.assertEqual(project["path_state"], "ok")
+        self.assertEqual(project["name"], "Fixture")
+        self.assertFalse(self.call("project_add", {"name": "Fixture 2", "path": str(self.folder)})["ok"])
+
+        graph = self.call("graph_get", {"project_id": project["id"]})["result"]
+        self.assertIsNone(graph["percent"])
+        self.assertTrue(graph["percent_null"])
+        self.assertEqual(graph["confidence"], 0.0)
+
+        aspect = self.call("aspect_add", {"project_id": project["id"], "title": "Parsing"})["result"]
+        task = self.call("task_add", {"project_id": project["id"], "aspect_id": aspect["id"], "title": "Handle EOF"})["result"]
+        self.assertTrue(self.call("task_set", {"id": task["id"], "state": "done"})["ok"])
+        graph = self.call("graph_get", {"project_id": project["id"]})["result"]
+        self.assertEqual(graph["percent"], 100.0)
+        self.assertEqual(graph["verified"], 100.0)
+        self.assertEqual(graph["confidence"], 1.0)
+        self.assertEqual(graph["aspects"][0]["percent"], 100.0)
+
+        session = self.call("create", {"profile": "terminal", "name": "graph", "cwd": str(self.folder)})
+        self.assertTrue(session["ok"], session)
+        self.assertEqual(session["result"]["project_id"], project["id"])
+        events = self.call("session_events", {"id": session["result"]["id"]})["result"]["events"]
+        kinds = [event["kind"] for event in events]
+        self.assertEqual(kinds[:2], ["created", "launch_argv"])
+        self.assertIn("state", kinds)
+        launch = next(event for event in events if event["kind"] == "launch_argv")
+        self.assertEqual(launch["payload"]["harness"], "bash")
+        self.assertEqual(launch["payload"]["cwd"], str(self.folder))
+
+        first = self.call("status")["result"]
+        self.assertIsInstance(first["boot_id"], str)
+        self.assertGreater(first["events_from"], 0)
+        history = self.call("history", {"project_id": project["id"], "limit": 50})["result"]
+        self.assertTrue(any(event["kind"] in ("project", "launched", "session_state") for event in history["events"]))
+
+        self.process.terminate(); self.process.wait(timeout=3); self.start()
+        second = self.call("status")["result"]
+        self.assertNotEqual(second["boot_id"], first["boot_id"])
+        self.assertEqual(self.call("graph_get", {"project_id": project["id"]})["result"]["percent"], 100.0)
+        history = self.call("history", {"project_id": project["id"], "limit": 50})["result"]
+        self.assertTrue(any(event["kind"] == "launched" for event in history["events"]))
+
+
+    def test_crashed_worker_is_restarted_with_backoff(self):
+        script = self.folder / "fake_worker.py"
+        script.write_text("import sys, time\ntime.sleep(1.2)\nsys.exit(3)\n")
+        self.process.terminate(); self.process.wait(timeout=3)
+        self.environment["NAVI_TEST_WORKER_SCRIPT"] = str(script)
+        self.start()
+        self.assertTrue(self.call("voice_start")["ok"])
+        history = {"events": []}
+        deadline = time.monotonic() + 6
+        while time.monotonic() < deadline:
+            history = self.call("history", {"limit": 100})["result"]
+            if any(event["kind"] == "worker_restart" for event in history["events"]):
+                break
+            time.sleep(.25)
+        self.assertTrue(any(event["kind"] == "worker_restart" for event in history["events"]), history)
+        workers = self.call("status")["result"]["workers"]
+        self.assertIn("voice", workers)
 
 
 if __name__ == "__main__":

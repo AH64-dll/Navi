@@ -12,11 +12,11 @@ import persona
 
 class PersonaTests(unittest.TestCase):
     def test_builtins_resolve(self):
-        p = persona.get("jarvis")
-        self.assertEqual(p.name, "jarvis")
-        self.assertIn("Jarvis", p.system_prompt)
-        self.assertEqual(persona.get("concise").name, "concise")
-        self.assertEqual(persona.get("friendly").name, "friendly")
+        p = persona.get("navi")
+        self.assertEqual(p.name, "navi")
+        self.assertIn("Navi", p.system_prompt)
+        self.assertNotIn("Jarvis", p.system_prompt)
+        self.assertIsNone(persona.resolve("jarvis"))
 
     def test_unknown_persona_falls_back_to_default(self):
         p = persona.get("nonexistent-persona")
@@ -25,22 +25,19 @@ class PersonaTests(unittest.TestCase):
     def test_names_sorted_and_include_builtins(self):
         names = persona.names()
         self.assertEqual(names, sorted(names))
-        for name in ("jarvis", "friendly", "concise"):
-            self.assertIn(name, names)
+        self.assertEqual(names, ["navi"])
 
     def test_aliases_resolve(self):
         aliases = persona.aliases()
-        self.assertEqual(aliases["jarvis"], "jarvis")
-        self.assertEqual(aliases["concise"], "concise")
-        self.assertEqual(aliases["brief"], "concise")
-        self.assertEqual(aliases["casual"], "friendly")
+        self.assertEqual(aliases["navi"], "navi")
+        self.assertNotIn("jarvis", aliases)
 
     def test_user_file_overrides_builtin(self):
         with tempfile.TemporaryDirectory() as folder:
             override = Path(folder) / "personas.toml"
             override.write_text(
-                '[jarvis]\n'
-                'system_prompt = "custom jarvis"\n'
+                '[navi]\n'
+                'system_prompt = "custom navi"\n'
                 'voice = "en-test"\n'
                 'rate = "+99%"\n'
             )
@@ -49,8 +46,8 @@ class PersonaTests(unittest.TestCase):
             try:
                 persona.USER_PERSONAS_PATH = str(override)
                 persona._cache["mtime"] = 0.0  # force reload
-                p = persona.get("jarvis")
-                self.assertEqual(p.system_prompt, "custom jarvis")
+                p = persona.get("navi")
+                self.assertEqual(p.system_prompt, "custom navi")
                 self.assertEqual(p.voice, "en-test")
                 self.assertEqual(p.rate, "+99%")
             finally:
@@ -80,14 +77,14 @@ class PersonaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             override = Path(folder) / "personas.json"
             override.write_text(json.dumps({
-                "jarvis": {"system_prompt": "json override"},
+                "navi": {"system_prompt": "json override"},
             }))
             old = persona.USER_PERSONAS_PATH
             old_cache = dict(persona._cache)
             try:
                 persona.USER_PERSONAS_PATH = str(override)
                 persona._cache["mtime"] = 0.0
-                self.assertEqual(persona.get("jarvis").system_prompt, "json override")
+                self.assertEqual(persona.get("navi").system_prompt, "json override")
             finally:
                 persona.USER_PERSONAS_PATH = old
                 persona._cache.update(old_cache)
@@ -167,7 +164,7 @@ class SpeechOutTests(unittest.TestCase):
         try:
             speech_out._tts, speech_out._tts_checked = FakeTTS, True
             payload = speech_out.speak(
-                "One. Two! Three? Four. Five.", "concise"
+                "One. Two! Three? Four. Five.", "navi"
             )
         finally:
             speech_out._tts, speech_out._tts_checked = old_module, old_checked
@@ -175,17 +172,16 @@ class SpeechOutTests(unittest.TestCase):
         self.assertEqual(payload["spoken_text"], "One. Two! Three?")
         self.assertTrue(payload["spoken"])
         self.assertEqual(calls["text"], "One. Two! Three?")
-        self.assertEqual(calls["voice"], persona.get("concise").voice)
-        self.assertEqual(calls["rate"], persona.get("concise").rate)
+        self.assertEqual(calls["voice"], persona.get("navi").voice)
+        self.assertEqual(calls["rate"], persona.get("navi").rate)
 
 
 class ResolveTests(unittest.TestCase):
     def test_names_and_aliases_resolve(self):
-        self.assertEqual(persona.resolve("jarvis"), "jarvis")
-        self.assertEqual(persona.resolve("Concise"), "concise")
-        self.assertEqual(persona.resolve("brief"), "concise")
-        self.assertEqual(persona.resolve("iron man"), "jarvis")
-        self.assertEqual(persona.resolve("casual"), "friendly")
+        self.assertEqual(persona.resolve("navi"), "navi")
+        self.assertEqual(persona.resolve("Navi"), "navi")
+        self.assertIsNone(persona.resolve("concise"))
+        self.assertIsNone(persona.resolve("jarvis"))
         self.assertIsNone(persona.resolve("nonsense"))
         self.assertIsNone(persona.resolve(""))
 

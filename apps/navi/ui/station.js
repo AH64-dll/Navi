@@ -1,86 +1,3602 @@
-/* Native host transports structured RPC and a tmux attachment; no localhost web server. */
-const send = message => window.webkit?.messageHandlers?.navi?.postMessage(JSON.stringify(message));
+/* Native host transports structured RPC; the UI is the stage, a session strip,
+ * one chat panel, and an attached harness terminal. */
+/* naviHost is injected by window.py at document start: host flags that the page
+ * cannot read from the environment. Test hooks appear only in isolated mode. */
+const host = window.naviHost ?? {};
+const send = message => {
+  const bridge = window.webkit?.messageHandlers?.navi;
+  if (!bridge) return false;
+  try { bridge.postMessage(JSON.stringify(message)); } catch { return false; }
+  return true;
+};
 const element = id => document.getElementById(id);
-let snapshot, active, seq = 0, requests = 0, motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let snapshot, seq = 0, requests = 0, motion = !reducedMotion.matches;
 const pending = new Map();
-const terminal = new Terminal({allowTransparency:true, cursorBlink:true, fontFamily:'"Nimbus Mono PS", monospace',fontSize:13,scrollback:10000,theme:{background:'#00000000',foreground:'#cee9ee',cursor:'#8dffe0',selectionBackground:'#698bd166'}});
-terminal.open(element('terminal'));
-terminal.onData(data => send({type:'input',data}));
-terminal.onBinary(data => send({type:'binary',data:btoa(data)}));
-function rpc(op, params = {}) {
-  const ticket = ++requests;
-  return new Promise((resolve,reject) => {pending.set(ticket,{resolve,reject}); send({type:'rpc',ticket,request:{op,params}});});
+let busy = false;
+
+/* ---------------- transport: bounded, expiring, self-healing ---------------- */
+
+/* A reply is not guaranteed: the daemon can die, the host can lose the page, or
+ * a message can be malformed. Every request carries a delivery budget and is
+ * rejected by one sweeper instead of parking its promise forever. */
+const budgets={status:15000,ping:10000,window_state:10000,settings:20000,create:20000,
+  command:200000,prompt:20000,cancel:10000,select:10000,attach:10000,
+  voice_start:20000,voice_stop:20000,desktop_start:20000,desktop_stop:20000,
+  oc_models:30000,oc_agents:30000,oc_commands:30000,oc_new:30000};
+const DEFAULT_BUDGET=15000, PENDING_LIMIT=64, SWEEP_INTERVAL=5000, DIAGNOSTIC_LIMIT=200;
+const diagnostics=[];
+let timeouts=0, dropped=0, unknownReplies=0;
+const rpcLog=[];   // isolated-only: the operations this page actually sent
+const rpcCalls=[]; // isolated-only: every sent call with its params
+
+function record(level, message, stack) {
+  diagnostics.push({type:'log',at:new Date().toISOString(),level,message:String(message ?? ''),
+    ...(stack ? {stack:String(stack)} : {})});
+  while (diagnostics.length > DIAGNOSTIC_LIMIT) diagnostics.shift();
+  /* With NAVI_DEVTOOLS the host forwards console output to the terminal, so a
+   * failure is readable without attaching to the inspector. */
+  if (level === 'error' && host.devtools) console.error('[navi] ' + message + (stack ? '\n' + stack : ''));
 }
+function timeoutError(op, budget) {
+  const error=new Error(`timeout: ${op} got no reply within ${budget}ms`);
+  error.name='TimeoutError'; error.code='timeout'; error.op=op; error.budget=budget;
+  return error;
+}
+function rpc(op, params = {}, timeout = budgets[op] ?? DEFAULT_BUDGET) {
+  const ticket = ++requests;
+  /* Isolated-only: the workflow asserts which operations the UI actually sent
+   * (a permission decision, a model save) without depending on the daemon's reply. */
+  if (host.isolated===true) {
+    rpcLog.push(op);
+    while (rpcLog.length>200) rpcLog.shift();
+    rpcCalls.push({op,params});
+    while (rpcCalls.length>200) rpcCalls.shift();
+  }
+  /* Cap the map instead of growing without limit. The oldest entry is the most
+   * likely to be dead, so it loses; refusing fresh work would stall the UI. */
+  if (pending.size >= PENDING_LIMIT) {
+    const [oldest, entry] = pending.entries().next().value;
+    pending.delete(oldest);
+    record('warn', `pending overflow: evicted ${entry.op} ticket ${oldest}`);
+    entry.reject(timeoutError(entry.op, entry.budget));
+  }
+  return new Promise((resolve, reject) => {
+    const budget=Math.max(1, timeout);
+    pending.set(ticket, {op, resolve, reject, budget, expires:Date.now() + budget});
+    if (!send({type:'rpc', ticket, request:{op, params}})) {
+      pending.delete(ticket);
+      reject(new Error('Navi host is not connected'));
+    }
+  });
+}
+function sweep() {
+  const now=Date.now();
+  for (const [ticket, entry] of [...pending]) {
+    if (now < entry.expires) continue;
+    pending.delete(ticket);
+    timeouts++;
+    const error=timeoutError(entry.op, entry.budget);
+    record('error', error.message);
+    entry.reject(error);
+  }
+}
+setInterval(sweep, SWEEP_INTERVAL);
 function toast(message) {
   element('toast').textContent=message; element('toast').classList.add('visible');
   clearTimeout(toast.timer); toast.timer=setTimeout(()=>element('toast').classList.remove('visible'),6000);
 }
-function fit() {
-  const bounds=element('terminal').getBoundingClientRect();
-  const probe=document.createElement('span'); probe.textContent='WWWWWWWWWW';probe.style.cssText='position:absolute;visibility:hidden;white-space:pre;font:13px "Nimbus Mono PS",monospace';document.body.append(probe);
-  const width=probe.getBoundingClientRect().width/10;probe.remove();
-  const cols=Math.max(20,Math.floor((bounds.width-18)/width));const rows=Math.max(6,Math.floor((bounds.height-8)/16));
-  terminal.resize(cols,rows);send({type:'resize',cols,rows});
-  window.naviScene?.setLayout(document.body.classList.contains('focus-view')?.5:.18,document.body.classList.contains('focus-view')?.7:0);
+/* The clipboard API is not available on every file:// page, so the diagnostics
+ * path (a hidden textarea and execCommand) stays as the fallback. */
+async function copyText(value) {
+  const text=String(value??'');
+  try {
+    if (navigator.clipboard&&navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* fall through to the deprecated path */ }
+  const area=document.createElement('textarea');
+  area.value=text; area.setAttribute('readonly',''); area.style.cssText='position:fixed;top:-1000px';
+  document.body.append(area);
+  area.select();
+  let copied=false;
+  try { copied=document.execCommand('copy'); } catch (error) { record('warn','copy failed: '+error.message); }
+  area.remove();
+  return copied;
 }
-const resizeObserver=new ResizeObserver(()=>{clearTimeout(fit.timer);fit.timer=setTimeout(fit,80);});resizeObserver.observe(element('terminal'));
+
+/* ---------------- chat: the message model ----------------
+ * A message is data — `{id,turn,role,time,status,parts[],meta}` — and every row is a
+ * projection of it. Rows used to be text appends on a volatile event ring, so a
+ * stream could never be finalised in place, a repeated answer was suppressed by a
+ * 15 s text window, a failed turn left no trace at all, and nothing could be saved
+ * (BUG-037/045/046/047/048). Parts are ordered and typed: text, reasoning, tool,
+ * diff, error. Nothing here reads or writes innerHTML. */
+
+const RENDER_WINDOW=50;        // rows mounted either side of the viewport (±50)
+const ROW_ESTIMATE=44;         // px for a row that has never been measured
+const TOOL_TEXT_LIMIT=4000;    // a longer tool output is truncated in the row
+const STORE_TEXT_LIMIT=8000;   // a longer tool output is truncated in the database
+const SEEN_LIMIT=500;          // event seqs remembered for de-duplication
+const HISTORY_START=200, HISTORY_MAX=500;   // messages() caps at 500 server-side
+
+const messages=[];             // truth, oldest first; never capped or truncated
+const messageById=new Map();
+const rowHeights=new Map();    // id -> last measured height in px
+const mountedRows=new Map();   // id -> {row, version}
+const seenSeqs=new Set(), seenOrder=[];
+const failures=new Map();      // failure text -> when it was last shown
+let mountedOrder=[], spacerTop=0, spacerBottom=0;
+let turn=null;                 // the open turn: {message,user,started}
+let request=null;              // the in-flight submit: {text,user,done,queued}
+let activeText='';             // the prompt of the open turn, for Retry
+let turnLabel='', needsAttention=false, chatFrame=0;
+let identCount=0, historyLimit=HISTORY_START, pagingHistory=false;
+/* The active project is client state, not a setting (BUG-090): it belongs to
+ * this window, survives a reload in localStorage, and never rewrites the
+ * daemon's settings. A project-scoped action reads it; an event's own
+ * `project_id` never changes it. */
+const PROJECT_KEY='navi.project';
+let activeProject=readProject();
+function readProject() {
+  try {
+    const value=localStorage.getItem(PROJECT_KEY);
+    return typeof value==='string'&&value?value:null;
+  } catch { return null; }
+}
+function writeProject(id) {
+  try { localStorage.setItem(PROJECT_KEY,id); }
+  catch { /* storage can be unavailable; the choice still holds for this session */ }
+}
+/* Pending attachments (BUG-005): at most four, 2 MiB decoded each, read as base64
+ * and handed to the daemon with the prompt. A rejected file is visible at once;
+ * nothing is silently dropped. */
+const ATTACH_MAX=4, ATTACH_BYTES=2*1024*1024, ATTACH_NAME_MAX=120;
+let attachments=[];
+let lastCommand=null;
+/* Paging state: the oldest sqlite cursor this page holds, and whether the store
+ * still has rows before it (BUG-047). */
+let oldestCursor=null, historyHasMore=false;
+const chatLog=()=>element('chat-log');
+
+function uid(prefix){ identCount+=1; return prefix+'-'+Date.now().toString(36)+'-'+identCount.toString(36); }
+function clock(ms) {
+  const date=new Date(Number(ms)||Date.now());
+  return String(date.getHours()).padStart(2,'0')+':'+String(date.getMinutes()).padStart(2,'0');
+}
+function truncateText(value,limit) {
+  const text=String(value??'');
+  return text.length>limit?text.slice(0,limit)+'\n… truncated':text;
+}
+function fieldText(value) { return typeof value==='string'?value:JSON.stringify(value,null,2); }
+function sameList(a,b) {
+  if (a.length!==b.length) return false;
+  for (let index=0;index<a.length;index+=1) if (a[index]!==b[index]) return false;
+  return true;
+}
+function isModelRef(value) { return typeof value==='string'&&/^[^/\s]+\/\S+$/.test(value); }
+function modelRef() { return String(snapshot?.settings?.assistant?.model||''); }
+/* "commandcode/deepseek/deepseek-v4.1-flash" is a stored reference, not a name: the
+ * status line shows the short form and never a path with slashes (BUG-035). */
+function shortModel(reference) {
+  const value=String(reference||'').trim();
+  if (!value) return '';
+  const tail=value.includes('/')?value.slice(value.lastIndexOf('/')+1):value;
+  return tail.replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim()
+    .replace(/\b[a-z]/g,letter=>letter.toUpperCase());
+}
+function formatDuration(ms) {
+  if (typeof ms!=='number'||!isFinite(ms)||ms<0) return '';
+  return ms<1000?Math.round(ms)+'ms':(ms/1000).toFixed(1)+'s';
+}
+function usageLine(usage) {
+  if (!usage||typeof usage!=='object') return '';
+  const bits=[];
+  const tokens=usage.tokens;
+  let total=null;
+  if (typeof tokens==='number') total=tokens;
+  else if (tokens&&typeof tokens==='object') total=Object.values(tokens).reduce((sum,value)=>sum+(Number(value)||0),0);
+  if (total!==null&&total>0) bits.push(total>=1000?(total/1000).toFixed(1)+'k tok':total+' tok');
+  if (typeof usage.cost==='number'&&usage.cost>0) bits.push(usage.cost<0.01?'$'+usage.cost.toFixed(4):'$'+usage.cost.toFixed(3));
+  if (typeof usage.finish==='string'&&usage.finish) bits.push(usage.finish);
+  return bits.join(' · ');
+}
+
+/* -- model ---------------------------------------------------------------- */
+
+function addMessage(fields) {
+  const message={
+    id:fields.id||uid('m'),
+    cursor:Number.isFinite(Number(fields.cursor))?Number(fields.cursor):null,
+    turn:fields.turn??null,
+    role:['user','assistant','system'].includes(fields.role)?fields.role:'assistant',
+    time:Number(fields.time)||Date.now(),
+    status:fields.status||'complete',
+    parts:Array.isArray(fields.parts)?fields.parts:[],
+    meta:fields.meta||{},
+    version:0,
+    index:messages.length,
+  };
+  messages.push(message);
+  messageById.set(message.id,message);
+  chatChanged();
+  return message;
+}
+
+/* Hydration merges by id and keeps the log in time order; a message already on
+ * screen is never re-inserted, which is what makes a rehydrate idempotent.
+ * `older` pages arrive in cursor order and are strictly before everything already
+ * loaded, so they are prepended as a block: a shared timestamp can never reorder
+ * the transcript, and the two pages meet at a cursor rather than a time (BUG-047). */
+function hydrateMessages(rows, options={}) {
+  const fresh=[];
+  for (const row of rows||[]) {
+    const id=typeof row?.id==='string'?row.id:null;
+    if (!id||messageById.has(id)) continue;
+    const role=['user','assistant','system','tool'].includes(row.role)?row.role:'assistant';
+    fresh.push({
+      id, turn:row.turn??null,
+      cursor:Number.isFinite(Number(row.cursor))?Number(row.cursor):null,
+      role:role==='tool'?'system':role,
+      time:Number(row.time)||Date.now(),
+      status:'complete',
+      parts:Array.isArray(row.parts)?row.parts:[],
+      meta:{project_id:row.project_id||undefined},
+      version:0, index:0,
+    });
+  }
+  if (!fresh.length) return 0;
+  if (options.older===true) {
+    messages.unshift(...fresh);
+    for (const message of fresh) messageById.set(message.id,message);
+  } else {
+    for (const message of fresh) {
+      let position=messages.length;
+      while (position>0&&messages[position-1].time>message.time) position-=1;
+      messages.splice(position,0,message);
+      messageById.set(message.id,message);
+    }
+  }
+  reindex();
+  chatChanged();
+  return fresh.length;
+}
+function reindex() { messages.forEach((message,index)=>{ message.index=index; }); }
+function chatChanged() {
+  updateEmptyState();
+  if (!chatFrame) chatFrame=requestAnimationFrame(paintChat);
+}
+function bump(message) {
+  if (!message) return;
+  message.version+=1;
+  chatChanged();
+}
+function lastTextPart(message,create) {
+  const tail=message.parts.at(-1);
+  if (tail&&tail.type==='text') return tail;
+  if (!create) return null;
+  const part={type:'text',text:''};
+  message.parts.push(part);
+  return part;
+}
+function messageText(message) {
+  return message.parts.filter(part=>part.type==='text').map(part=>part.text||'').join('\n').trim();
+}
+function updateEmptyState() {
+  const empty=element('chat-empty');
+  if (!empty) return;
+  const conversation=messages.some(message=>message.role==='user'||message.role==='assistant'
+    ||(message.role==='system'&&message.status==='failed'));
+  empty.hidden=conversation;
+}
+
+/* -- rows and parts ------------------------------------------------------- */
+
+const SVG_NS='http://www.w3.org/2000/svg';
+function icon(path,size=12) {
+  const node=document.createElementNS(SVG_NS,'svg');
+  node.setAttribute('viewBox','0 0 24 24'); node.setAttribute('width',size); node.setAttribute('height',size);
+  node.setAttribute('aria-hidden','true');
+  const shape=document.createElementNS(SVG_NS,'path');
+  shape.setAttribute('d',path); shape.setAttribute('fill','currentColor');
+  node.append(shape);
+  return node;
+}
+const COPY_ICON='M16 1H4a2 2 0 0 0-2 2v14h2V3h12zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11z';
+const RETRY_ICON='M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z';
+const EDIT_ICON='M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
+
+/* A row always exists; text is a part inside it. The old factory refused an empty
+ * body, which is exactly why the streaming path was unreachable (BUG-048). */
+function row(role='assistant') {
+  const node=document.createElement('article');
+  node.className='msg '+(role==='assistant'?'navi':role);
+  node.dataset.role=role;
+  node.tabIndex=0;
+  const head=document.createElement('header'); head.className='msg-head';
+  const who=document.createElement('span'); who.className='who';
+  const time=document.createElement('span'); time.className='msg-time';
+  head.append(who,time);
+  const body=document.createElement('div'); body.className='msg-body';
+  const meta=document.createElement('div'); meta.className='msg-meta'; meta.hidden=true;
+  const actions=document.createElement('div'); actions.className='msg-actions';
+  node.append(head,body,meta,actions);
+  return node;
+}
+
+function createRow(message) {
+  const node=row(message.role);
+  node.dataset.id=message.id;
+  return node;
+}
+
+function whoLabel(message) {
+  if (message.role==='user') return 'You';
+  if (message.role==='system') return 'System';
+  return 'Navi';
+}
+function metaLine(message) {
+  const meta=message.meta||{};
+  const bits=[];
+  if (meta.model) {
+    const actual=shortModel(meta.model);
+    const requested=shortModel(modelRef());
+    const requestedFull=String(meta.requested||modelRef()||'');
+    bits.push(actual&&requestedFull&&meta.model!==requestedFull?actual+' (requested: '+requested+')':actual);
+  }
+  if (typeof meta.durationMs==='number') bits.push(formatDuration(meta.durationMs));
+  const usage=usageLine(meta.usage);
+  if (usage) bits.push(usage);
+  if (meta.agent) bits.push(meta.agent);
+  if (meta.session) bits.push('session '+String(meta.session).slice(0,8));
+  if (meta.source) bits.push(meta.source);
+  return bits.filter(Boolean).join(' · ');
+}
+
+function renderRow(node,message) {
+  node.className='msg '+(message.role==='assistant'?'navi':message.role)+(message.status==='streaming'?' streaming':'');
+  node.dataset.id=message.id;
+  node.dataset.status=message.status;
+  node.dataset.role=message.role;
+  const head=node.querySelector('.msg-head');
+  head.querySelector('.who').textContent=whoLabel(message);
+  const time=head.querySelector('.msg-time');
+  time.textContent=clock(message.time);
+  time.title=new Date(message.time).toLocaleString();
+  const body=node.querySelector('.msg-body');
+  body.replaceChildren(...message.parts.map(part=>renderPart(message,part)));
+  const meta=node.querySelector('.msg-meta');
+  const line=metaLine(message);
+  meta.hidden=!line;
+  meta.textContent=line;
+  buildActions(node,message);
+}
+
+function action(name,label,path,handler) {
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='msg-action';
+  button.dataset.action=name;
+  if (path) { button.append(icon(path)); const text=document.createElement('span'); text.textContent=label; button.append(text); button.title=label; button.setAttribute('aria-label',label); }
+  else button.textContent=label;
+  button.onclick=event=>{ event.preventDefault(); event.stopPropagation(); handler(); };
+  return button;
+}
+
+function buildActions(node,message) {
+  const bar=node.querySelector('.msg-actions');
+  bar.replaceChildren();
+  if (message.role==='system') return;
+  const text=messageText(message);
+  if (text) bar.append(action('copy','Copy',COPY_ICON,()=>{
+    copyText(text).then(ok=>toast(ok?'Message copied':'Could not copy the message'));
+  }));
+  if (message.role==='user') bar.append(action('edit','Edit and resend',EDIT_ICON,()=>editMessage(message)));
+  if (message.role==='assistant'&&message.meta?.request) {
+    bar.append(action('retry','Retry',RETRY_ICON,()=>retryMessage(message)));
+  }
+  if (message.meta?.source) {
+    const badge=document.createElement('span');
+    badge.className='msg-badge';
+    badge.textContent=message.meta.source;
+    bar.append(badge);
+  }
+}
+
+function copyMessage(message) {
+  copyText(messageText(message)).then(ok=>toast(ok?'Message copied':'Could not copy the message'));
+}
+function editMessage(message) {
+  const input=commandInput();
+  if (!input) return;
+  input.value=messageText(message);
+  input.focus();
+  input.setSelectionRange(input.value.length,input.value.length);
+  toast('Edit the message, then press Enter to resend it');
+}
+function retryMessage(message) {
+  const text=String(message.meta?.request||'').trim();
+  if (!text) { toast('There is nothing to retry for this message'); return; }
+  dispatch(text,{source:'retry'});
+}
+
+/* -- markdown: DOM only, never innerHTML ---------------------------------- */
+
+const INLINE=/`([^`\n]+)`|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"'`]+)/g;
+
+function linkButton(url,label) {
+  /* No navigation: the host blocks every non-local URI, and CSP has no network.
+   * The link is text the user can copy, which is the honest affordance. */
+  const node=document.createElement('button');
+  node.type='button';
+  node.className='md-link';
+  node.textContent=label||url;
+  node.title=url+' — click to copy this link';
+  node.onclick=event=>{
+    event.preventDefault();
+    copyText(url).then(ok=>toast(ok?'Link copied':'Could not copy the link'));
+  };
+  return node;
+}
+
+function renderInline(node,text) {
+  const value=String(text??'');
+  let index=0;
+  INLINE.lastIndex=0;
+  for (let match=INLINE.exec(value);match;match=INLINE.exec(value)) {
+    if (match.index>index) node.append(document.createTextNode(value.slice(index,match.index)));
+    if (match[1]!==undefined) {
+      const code=document.createElement('code'); code.className='md-code'; code.textContent=match[1]; node.append(code);
+    } else if (match[2]!==undefined||match[3]!==undefined) {
+      const strong=document.createElement('strong'); strong.textContent=match[2]??match[3]; node.append(strong);
+    } else if (match[4]!==undefined) {
+      node.append(linkButton(match[5],match[4]));
+    } else {
+      node.append(linkButton(match[5],match[5]));
+    }
+    index=match.index+match[0].length;
+  }
+  if (index<value.length) node.append(document.createTextNode(value.slice(index)));
+}
+
+function looksLikeDiff(value) {
+  const text=String(value??'');
+  if (!text) return false;
+  if (/^diff --git /m.test(text)) return true;
+  if (/^--- \S+/m.test(text)&&/^\+\+\+ \S+/m.test(text)) return true;
+  return /^@@ .* @@/m.test(text)&&/^[+-]/m.test(text);
+}
+function renderDiffLines(code,text) {
+  const lines=String(text??'').split('\n');
+  lines.forEach((line,index)=>{
+    const span=document.createElement('span');
+    let tone='';
+    if (/^(\+\+\+|---)/.test(line)) tone=' file';
+    else if (/^@@/.test(line)) tone=' hunk';
+    else if (/^\+/.test(line)) tone=' add';
+    else if (/^-/.test(line)) tone=' del';
+    span.className='diff-line'+tone;
+    span.textContent=line+(index<lines.length-1?'\n':'');
+    code.append(span);
+  });
+}
+
+function codeBlock(lang,text) {
+  const wrap=document.createElement('div'); wrap.className='code';
+  const head=document.createElement('div'); head.className='code-head';
+  const tag=document.createElement('span'); tag.className='code-lang'; tag.textContent=lang||'text';
+  const copy=document.createElement('button'); copy.type='button'; copy.className='code-copy'; copy.textContent='Copy';
+  copy.title='Copy this block';
+  copy.onclick=event=>{
+    event.preventDefault();
+    copyText(text).then(ok=>{ copy.textContent=ok?'Copied':'Failed'; setTimeout(()=>{ copy.textContent='Copy'; },1600); });
+  };
+  head.append(tag,copy);
+  const pre=document.createElement('pre');
+  const code=document.createElement('code');
+  code.className='lang-'+(lang||'text').replace(/[^a-z0-9+#-]/gi,'');
+  if ((lang||'').toLowerCase()==='diff'||looksLikeDiff(text)) renderDiffLines(code,text);
+  else code.textContent=text;
+  pre.append(code);
+  wrap.append(head,pre);
+  return wrap;
+}
+
+function renderMarkdown(container,text) {
+  const lines=String(text??'').split('\n');
+  let paragraph=[], list=null, listTag=null;
+  const flushParagraph=()=>{
+    if (!paragraph.length) return;
+    const node=document.createElement('p');
+    renderInline(node,paragraph.join('\n'));
+    container.append(node);
+    paragraph=[];
+  };
+  const closeList=()=>{ list=null; listTag=null; };
+  for (let index=0;index<lines.length;index+=1) {
+    const line=lines[index];
+    const fence=/^\s*(`{3,}|~{3,})\s*([\w.+#-]*)\s*$/.exec(line);
+    if (fence) {
+      flushParagraph(); closeList();
+      const marker=fence[1][0]==='`'?'`':'~';
+      const closing=new RegExp('^\\s*\\'+marker+'{3,}\\s*$');
+      const body=[];
+      for (index+=1;index<lines.length;index+=1) {
+        if (closing.test(lines[index])) break;
+        body.push(lines[index]);
+      }
+      container.append(codeBlock(fence[2]||'',body.join('\n')));
+      continue;
+    }
+    if (!line.trim()) { flushParagraph(); closeList(); continue; }
+    const bullet=/^\s*[-*+]\s+(.*)$/.exec(line);
+    const numbered=/^\s*\d{1,9}[.)]\s+(.*)$/.exec(line);
+    if (bullet||numbered) {
+      flushParagraph();
+      const tag=bullet?'ul':'ol';
+      if (!list||listTag!==tag) { list=document.createElement(tag); list.className='md-list'; listTag=tag; container.append(list); }
+      const item=document.createElement('li');
+      renderInline(item,(bullet||numbered)[1]);
+      list.append(item);
+      continue;
+    }
+    const heading=/^\s*(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushParagraph(); closeList();
+      const node=document.createElement(heading[1].length<=2?'h3':'h4');
+      renderInline(node,heading[2]);
+      container.append(node);
+      continue;
+    }
+    closeList();
+    paragraph.push(line);
+  }
+  flushParagraph();
+}
+
+function textPart(part) {
+  const box=document.createElement('div');
+  box.className='part text'+(part.tone?' tone-'+part.tone:'');
+  renderMarkdown(box,part.text||'');
+  return box;
+}
+
+function reasoningPart(part) {
+  const box=document.createElement('details');
+  box.className='part reasoning';
+  const summary=document.createElement('summary');
+  summary.textContent='Reasoning';
+  const body=document.createElement('div');
+  body.className='reasoning-body';
+  renderMarkdown(body,part.text||'');
+  box.append(summary,body);
+  return box;
+}
+
+function toolState(part) {
+  if (part.approval&&!part.approval.decision) return 'needs approval';
+  if (part.approval&&part.approval.decision) return 'approved: '+part.approval.decision;
+  const exit=part.exit;
+  const suffix=exit===null||exit===undefined||exit===''?'':' · exit '+exit;
+  return (part.status||'running')+suffix;
+}
+function toolBlock(label,value) {
+  const block=document.createElement('div');
+  block.className='tool-block';
+  const heading=document.createElement('span');
+  heading.className='tool-label'; heading.textContent=label;
+  const pre=document.createElement('pre');
+  pre.textContent=truncateText(fieldText(value),TOOL_TEXT_LIMIT);
+  block.append(heading,pre);
+  return block;
+}
+function diffPart(part) {
+  const wrap=document.createElement('div');
+  wrap.className='part diff';
+  if (part.path) {
+    const head=document.createElement('div'); head.className='diff-head'; head.textContent=part.path;
+    wrap.append(head);
+  }
+  const pre=document.createElement('pre'), code=document.createElement('code');
+  renderDiffLines(code,part.text||'');
+  pre.append(code); wrap.append(pre);
+  return wrap;
+}
+function approvalRow(message,part) {
+  const box=document.createElement('div');
+  box.className='approval';
+  const label=document.createElement('span');
+  label.className='approval-label';
+  label.textContent=part.approval.decision
+    ? 'Decision: '+part.approval.decision
+    : (part.approval.tool||'This tool')+' needs approval';
+  box.append(label);
+  if (!part.approval.decision) {
+    for (const decision of ['allow','deny']) {
+      const button=document.createElement('button');
+      button.type='button';
+      button.className='approval-'+decision;
+      button.textContent=decision==='allow'?'Allow':'Deny';
+      button.onclick=event=>{
+        event.preventDefault();
+        answerApproval(message,part,decision);
+      };
+      box.append(button);
+    }
+  }
+  return box;
+}
+function answerApproval(message,part,decision) {
+  const id=part.approval.id;
+  /* BUG-006: the daemon answers `{ok:false,error}` when it refuses the decision,
+   * and a transport failure rejects; either way the refusal is one failure surface
+   * with the daemon's own text — never a silent success, and never a second row. */
+  rpc('permission_reply',{id,decision}).then(result=>{
+    const refused=result&&(result.ok===false||result.replied===false);
+    if (refused) {
+      surfaceFailure(String(result.error||'The permission reply was not accepted'));
+      return;
+    }
+    part.approval.decision=decision;
+    part.status='decided';
+    bump(message);
+  }).catch(error=>surfaceFailure(error.message));
+}
+function toolPart(message,part) {
+  const box=document.createElement('details');
+  box.className='part tool';
+  box.dataset.tool=part.id||'';
+  box.dataset.status=part.approval&&!part.approval.decision?'approval':(part.status||'running');
+  if (part.final) box.dataset.final='true';
+  const summary=document.createElement('summary');
+  const name=document.createElement('span'); name.className='tool-name'; name.textContent=part.name||'tool';
+  const state=document.createElement('span'); state.className='tool-state'; state.textContent=toolState(part);
+  summary.append(name,state);
+  box.append(summary);
+  const body=document.createElement('div');
+  body.className='tool-body';
+  if (part.input!==undefined&&part.input!==null&&part.input!=='') body.append(toolBlock('input',part.input));
+  if (part.output!==undefined&&part.output!==null&&part.output!=='') {
+    if (looksLikeDiff(part.output)) {
+      const diff=diffPart({text:part.output});
+      diff.className='diff tool-diff';
+      body.append(diff);
+    } else body.append(toolBlock('output',part.output));
+  }
+  if (part.approval) body.append(approvalRow(message,part));
+  if (!body.children.length) {
+    const note=document.createElement('p');
+    note.className='tool-empty';
+    note.textContent='No details yet.';
+    body.append(note);
+  }
+  box.append(body);
+  return box;
+}
+function errorPart(message,part) {
+  const box=document.createElement('div');
+  box.className='part error';
+  const text=document.createElement('div');
+  text.className='error-text';
+  renderMarkdown(text,part.text||'The assistant failed');
+  box.append(text);
+  if (part.detail&&part.detail!==part.text) {
+    const detail=document.createElement('pre');
+    detail.className='error-detail';
+    detail.textContent=truncateText(part.detail,800);
+    box.append(detail);
+  }
+  if (part.retry!==false&&message.meta?.request) {
+    const retry=document.createElement('button');
+    retry.type='button'; retry.className='error-retry'; retry.textContent='Retry';
+    retry.onclick=event=>{ event.preventDefault(); retryMessage(message); };
+    box.append(retry);
+  }
+  return box;
+}
+function renderPart(message,part) {
+  switch (part.type) {
+    case 'reasoning': return reasoningPart(part);
+    case 'tool': return toolPart(message,part);
+    case 'diff': return diffPart(part);
+    case 'error': return errorPart(message,part);
+    default: return textPart(part);
+  }
+}
+
+/* -- painting: one frame at a time, one window of rows -------------------- */
+
+function heightOf(message) {
+  if (!message) return ROW_ESTIMATE;
+  const measured=rowHeights.get(message.id);
+  if (typeof measured==='number'&&measured>0) return measured;
+  const entry=mountedRows.get(message.id);
+  const live=entry?.row.getBoundingClientRect().height;
+  if (live&&live>0) return live;
+  return ROW_ESTIMATE;
+}
+function sumHeights(from,to) {
+  let total=0;
+  for (let index=from;index<to;index+=1) total+=heightOf(messages[index]);
+  return Math.round(total);
+}
+function indexAtOffset(offset) {
+  let run=0;
+  for (let index=0;index<messages.length;index+=1) {
+    run+=heightOf(messages[index]);
+    if (run>offset) return index;
+  }
+  return Math.max(0,messages.length-1);
+}
+function atBottom(log) {
+  if (!log) return true;
+  return log.scrollHeight-log.scrollTop-log.clientHeight<40;
+}
+function rememberHeight(id,node) {
+  const height=node?.getBoundingClientRect().height;
+  if (height&&height>0) rowHeights.set(id,height);
+}
+function rebuildLog(log,ids,top,bottom) {
+  const above=document.createElement('div');
+  above.className='chat-spacer'; above.style.height=top+'px';
+  const below=document.createElement('div');
+  below.className='chat-spacer'; below.style.height=bottom+'px';
+  const children=[above];
+  for (const id of ids) { const entry=mountedRows.get(id); if (entry) children.push(entry.row); }
+  children.push(below);
+  log.replaceChildren(...children);
+  mountedOrder=ids.slice(); spacerTop=top; spacerBottom=bottom;
+}
+function updatePill(log) {
+  const pill=element('chat-pill');
+  if (!pill) return;
+  pill.hidden=atBottom(log)||messages.length===0;
+}
+
+function paintChat() {
+  chatFrame=0;
+  const log=chatLog();
+  if (!log) return;
+  const total=messages.length;
+  const pinned=atBottom(log);
+  let start=0, end=total;
+  if (total>RENDER_WINDOW*2+1) {
+    if (pinned) {
+      start=Math.max(0,total-(RENDER_WINDOW*2+1));
+    } else {
+      const anchor=indexAtOffset(log.scrollTop+log.clientHeight*0.4);
+      start=Math.max(0,anchor-RENDER_WINDOW);
+      end=Math.min(total,Math.max(start+RENDER_WINDOW*2+1,anchor+RENDER_WINDOW+1));
+    }
+  }
+  const nextIds=[];
+  for (let index=start;index<end;index+=1) {
+    const message=messages[index];
+    if (!message) continue;
+    let entry=mountedRows.get(message.id);
+    if (!entry) { entry={row:createRow(message),version:-1}; mountedRows.set(message.id,entry); }
+    if (entry.version!==message.version) { renderRow(entry.row,message); entry.version=message.version; }
+    nextIds.push(message.id);
+  }
+  for (const [id,entry] of [...mountedRows]) {
+    if (nextIds.includes(id)) continue;
+    rememberHeight(id,entry.row);
+    mountedRows.delete(id);
+  }
+  const top=sumHeights(0,start), bottom=sumHeights(end,total);
+  if (!sameList(nextIds,mountedOrder)||top!==spacerTop||bottom!==spacerBottom) rebuildLog(log,nextIds,top,bottom);
+  if (pinned) log.scrollTop=log.scrollHeight;
+  updatePill(log);
+}
+/* Paint now instead of on the next frame: paging has to measure the height it
+ * added before the browser can show the jump. */
+function flushChat() {
+  if (chatFrame) { cancelAnimationFrame(chatFrame); chatFrame=0; }
+  paintChat();
+}
+
+/* -- one visible surface per failure (BUG-036/039) ------------------------ */
+
+function failureKey(text) { return String(text||'').trim().toLowerCase(); }
+/* A failure that already owns a row (the failed turn) only marks the badge and the
+ * de-duplication key; a failure with no row creates one system row. Either way the
+ * user sees one surface per failure (BUG-036/039). */
+function noteFailure(text) {
+  lastFailure=String(text||'Request failed');
+  needsAttention=true;
+  failures.set(failureKey(lastFailure),Date.now());
+  for (const [entry,at] of failures) if (Date.now()-at>60000) failures.delete(entry);
+  updateStatus();
+}
+function surfaceFailure(text) {
+  const message=String(text||'Request failed');
+  lastFailure=message;
+  needsAttention=true;
+  updateStatus();
+  const key=failureKey(message);
+  const seen=failures.get(key);
+  const now=Date.now();
+  if (seen&&now-seen<2000) return null;
+  failures.set(key,now);
+  for (const [entry,at] of failures) if (now-at>60000) failures.delete(entry);
+  const node=addMessage({
+    role:'system', time:now, status:'failed',
+    parts:[{type:'error',text:message,retry:false}],
+    meta:{source:'host',project_id:activeProjectId()||undefined},
+  });
+  return node;
+}
+function warningRow(text) {
+  const message=String(text||'Warning');
+  const seen=failures.get('warn:'+failureKey(message));
+  const now=Date.now();
+  if (seen&&now-seen<2000) return null;
+  failures.set('warn:'+failureKey(message),now);
+  return addMessage({
+    role:'system', time:now, status:'complete',
+    parts:[{type:'text',text:message,tone:'warning'}],
+    meta:{},
+  });
+}
+function clearAttention() { if (needsAttention) { needsAttention=false; updateStatus(); } }
+
+/* -- events -> messages --------------------------------------------------- */
+
+/* A turn that `turn_state` marked done keeps its row so the following `reply` event
+ * finalises it in place; `pendingFinalise` carries that row across the boundary when
+ * a new turn has already started. */
+let pendingFinalise=null;
+function startTurn() {
+  if (turn) {
+    if (!turn.done) return turn;
+    pendingFinalise=turn.message&&turn.message.status==='streaming'?turn.message:null;
+  }
+  turn={message:null,user:null,started:Date.now(),done:false};
+  updateStatus();
+  return turn;
+}
+/* A reply may carry a stable message id (`message_id`, or `id` on a `reply`): the
+ * row is keyed by it, so one reply delivered twice is one row and two different
+ * replies sharing text are two — the comparison is never made on text (BUG-046). */
+function messageIdentity(event) {
+  const details=event?.details||{};
+  if (typeof details.message_id==='string'&&details.message_id) return details.message_id;
+  if (typeof details.id==='string'&&details.id&&event?.kind==='reply') return details.id;
+  return null;
+}
+function assistantMessage(event) {
+  startTurn();
+  if (!turn.message) {
+    const identity=messageIdentity(event);
+    const existing=identity?messageById.get(identity):null;
+    turn.message=existing||addMessage({
+      id:identity||undefined,
+      role:'assistant', time:Number(event?.time)||Date.now(), status:'streaming',
+      parts:[],
+      meta:{request:activeText||undefined,project_id:activeProjectId()||undefined},
+    });
+  }
+  return turn.message;
+}
+function finalMessage(event) {
+  if (pendingFinalise&&pendingFinalise.status==='streaming') {
+    const message=pendingFinalise;
+    pendingFinalise=null;
+    return message;
+  }
+  if (turn?.message) return turn.message;   // the row turn_state already filled
+  const identity=messageIdentity(event);
+  const existing=identity?messageById.get(identity):null;
+  if (existing) return existing;
+  return assistantMessage(event);
+}
+function setTurnLabel(label) {
+  const next=label||'';
+  if (turnLabel===next) return;
+  turnLabel=next;
+  updateStatus();
+}
+function closeTurn() {
+  turn=null;
+  turnLabel='';
+  setBusy(false);
+  setPhase('idle');
+  updateStatus();
+}
+
+function beginTurn(event,reasoning) {
+  setBusy(true);
+  setPhase('working');
+  startTurn();
+  if (request&&request.queued) promoteQueued();
+  setTurnLabel(reasoning?'Thinking':'Working');
+  assistantMessage(event);
+}
+function promoteQueued() {
+  const user=request?.user;
+  request.queued=false;
+  if (!user) return;
+  user.status='complete';
+  bump(user);
+}
+function reasoningDelta(event) {
+  const details=event.details||{};
+  const text=typeof details.text==='string'?details.text:(event.message||'');
+  if (!text) return;
+  const message=assistantMessage(event);
+  let part=message.parts.at(-1);
+  if (!part||part.type!=='reasoning') { part={type:'reasoning',text:''}; message.parts.push(part); }
+  part.text+=text;
+  setTurnLabel('Thinking');
+  bump(message);
+}
+function replyDelta(event) {
+  const details=event.details||{};
+  const text=typeof details.text==='string'?details.text:(event.message||'');
+  const message=assistantMessage(event);
+  const part=lastTextPart(message,true);
+  /* A per-chunk delta appends; a cumulative payload (``turn``/``done``) replaces.
+   * Both shapes are accepted so the producer can coalesce without a UI change. */
+  const replace=details.cumulative===true||details.done===true||
+    details.replace===true||typeof details.turn==='string';
+  part.text=replace?text:(part.text||'')+text;
+  if (replace&&typeof details.turn==='string') message.turn=details.turn;   // bind the turn
+  message.status='streaming';
+  setTurnLabel('Replying');
+  setBusy(true);
+  bump(message);
+}
+function replyDone(event) {
+  const details=event.details||{};
+  const message=finalMessage(event);
+  const text=typeof details.text==='string'?details.text:(event.message||'');
+  const part=lastTextPart(message,true);
+  part.text=text;                     // the finished answer owns the row
+  const source=typeof details.source==='string'?details.source:'';
+  const stopped=details.stopped===true||source==='stopped';
+  message.status=stopped?'stopped':'complete';
+  message.meta={
+    ...(message.meta||{}),
+    request:activeText||message.meta?.request,
+    model:normalizeModel(details.actual_model),
+    requested:modelRef()||undefined,
+    agent:typeof details.actual_agent==='string'?details.actual_agent:undefined,
+    usage:details.usage||undefined,
+    sessionUsage:details.session_usage||undefined,
+    finish:typeof details.finish==='string'?details.finish:undefined,
+    session:typeof details.session==='string'?details.session:undefined,
+    source:source||undefined,
+    durationMs:turn&&turn.started?Date.now()-turn.started:undefined,
+    project_id:details.project_id||activeProjectId()||undefined,
+    warnings:Array.isArray(details.warnings)&&details.warnings.length?details.warnings:undefined,
+  };
+  if (Array.isArray(details.warnings)) for (const warning of details.warnings) warningRow(String(warning));
+  if (Array.isArray(details.attachments)&&details.attachments.length) {
+    warningRow('Attachments: '+details.attachments.length+' file'+(details.attachments.length===1?'':'s')+' used for this turn');
+  }
+  if (request) request.done=true;
+  closeTurn();
+  saveMessage(message);
+  clearAttention();
+  bump(message);
+}
+/* The daemon reports the answering model; a fallback is visible when it differs
+ * from the stored request (BUG-010). */
+function normalizeModel(actual) {
+  if (!actual) return undefined;
+  if (typeof actual==='string') return actual;
+  if (typeof actual!=='object') return undefined;
+  const provider=actual.providerID||actual.provider;
+  const id=actual.id||actual.modelID;
+  if (!id) return undefined;
+  return (provider?provider+'/':'')+id;
+}
+function toolUse(event) {
+  const details=event.details||{};
+  const message=assistantMessage(event);
+  const id=details.id===undefined||details.id===null?null:String(details.id);
+  let part=id?message.parts.find(entry=>entry.type==='tool'&&entry.id===id&&!entry.approval):null;
+  if (!part) {
+    part={type:'tool',id:id||uid('tool'),name:details.name||details.tool||'tool',status:details.status||'running'};
+    message.parts.push(part);
+  }
+  if (details.name||details.tool) part.name=details.name||details.tool;
+  if (details.status) part.status=details.status;
+  if (details.input!==undefined) part.input=details.input;
+  if (details.output!==undefined) part.output=details.output;
+  if (details.exit!==undefined) part.exit=details.exit;
+  if (details.progress!==undefined) part.progress=details.progress;
+  /* One final per tool id: the same record is upserted, never appended twice. */
+  if (details.final===true) part.final=true;
+  setBusy(true);
+  setTurnLabel('Working · '+part.name);
+  bump(message);
+}
+function approvalEvent(event) {
+  const details=event.details||{};
+  const message=assistantMessage(event);
+  const permissionId=details.id===undefined||details.id===null?uid('approval'):String(details.id);
+  let part=message.parts.find(entry=>entry.type==='tool'&&entry.approval&&entry.approval.id===permissionId);
+  if (!part) {
+    part={
+      type:'tool', id:'approval-'+permissionId, name:details.tool||details.name||'Tool',
+      status:'awaiting approval', input:details.input,
+      approval:{id:permissionId,tool:details.tool||details.name||'',decision:null},
+    };
+    message.parts.push(part);
+  }
+  setBusy(true);
+  setTurnLabel('Approval needed');
+  bump(message);
+}
+function failedEvent(event) {
+  const details=event.details||{};
+  const text=String(event.message||details.error||details.text||'Assistant unavailable');
+  const open=turn?.message;
+  if (open) {
+    open.status='failed';
+    open.parts=open.parts.filter(part=>part.type!=='error');
+    open.parts.push({type:'error',text:'Assistant unavailable',detail:text,retry:true});
+    open.meta={...(open.meta||{}),request:activeText||open.meta?.request,source:'unavailable'};
+    saveMessage(open);
+    closeTurn();
+    setPhase('error');
+    noteFailure(text);
+    bump(open);
+    if (request) request.done=true;
+    return;
+  }
+  surfaceFailure(text);
+  setPhase('error');
+}
+function stoppedEvent(event) {
+  const details=event.details||{};
+  const open=turn?.message;
+  if (open) {
+    if (open.status==='streaming') open.status='stopped';
+    bump(open);
+  }
+  if (Number(details.queued_dropped)>0) warningRow(Number(details.queued_dropped)+' queued request(s) dropped');
+  setBusy(false);
+  setPhase('idle');
+  updateStatus();
+}
+function queuedEvent(event) {
+  const details=event.details||{};
+  const position=Number(details.position)||0;
+  warningRow('Queued behind the running turn'+(position?' · position '+position:''));
+}
+function launchedEvent(event) {
+  const details=event.details||{};
+  toast('Harness session started: '+(details.name||details.id||'session'));
+  addMessage({
+    role:'system', time:Number(event.time)||Date.now(), status:'complete',
+    parts:[{type:'text',text:'Harness session started: '+(details.name||details.id||'session'),tone:'tool'}],
+    meta:{},
+  });
+}
+function transcriptEvent(event) {
+  /* A transcript event opens the user turn when the request came from outside the
+     composer (voice, host). Its id is the request id, so a re-sent copy merges. */
+  const details=event.details||{};
+  const text=String(details.text||event.message||'').trim();
+  if (!text) return;
+  const id=details.request_id||details.id||uid('u');
+  if (messageById.has(id)) return;
+  addMessage({
+    id, role:'user', time:Number(event.time)||Date.now(), status:'complete',
+    parts:[{type:'text',text}],
+    meta:{source:details.source||'transcript',project_id:event.project_id||activeProjectId()||undefined},
+  });
+  activeText=text;
+}
+function handleEvent(event) {
+  if (!event||typeof event!=='object') return;
+  switch (event.kind) {
+    case 'working': beginTurn(event,false); break;
+    case 'thinking': beginTurn(event,true); break;
+    case 'reasoning': reasoningDelta(event); break;
+    case 'reply_delta': replyDelta(event); break;
+    case 'reply': replyDone(event); break;
+    case 'tool_use': toolUse(event); break;
+    case 'approval': approvalEvent(event); break;
+    case 'warning': warningRow(String(event.message||event.details?.text||'Warning')); break;
+    case 'queued': queuedEvent(event); break;
+    case 'error': failedEvent(event); break;
+    case 'stopped': stoppedEvent(event); break;
+    case 'launched': launchedEvent(event); break;
+    case 'transcript': transcriptEvent(event); break;
+    /* A harness tail that produced evidence moves the graph; the panel follows
+     * without a reload (BUG-087/089). */
+    case 'harness': if (graphOpen) loadGraph(); break;
+    case 'command': closeTurn(); break;
+    case 'ready': break;   // the boot line carries no user-visible state
+    default: break;        // a newer kind renders nothing instead of throwing
+  }
+}
+
+/* -- persistence and paging ---------------------------------------------- */
+
+/* -- project scope: one active project drives cwd, graph, assistant, status -- */
+
+function projectList() {
+  return Array.isArray(snapshot?.projects)?snapshot.projects:[];
+}
+function activeProjectId() {
+  const list=projectList();
+  if (!list.length) return null;
+  if (activeProject&&list.some(project=>project.id===activeProject)) return activeProject;
+  const remembered=readProject();
+  if (remembered&&list.some(project=>project.id===remembered)) {
+    activeProject=remembered;
+    return remembered;
+  }
+  const first=list[0]?.id||null;
+  if (first) { activeProject=first; writeProject(first); }
+  return first;
+}
+function activeProjectRow() {
+  const id=activeProjectId();
+  return id?projectList().find(project=>project.id===id)||null:null;
+}
+function pathState(project) { return String(project?.path_state||'ok'); }
+
+/* The switcher lives in the strip: a button naming the project and its path
+ * state, and a menu of every registered project. */
+let switcherShell=null, switcherOpen=false, switcherSignature='';
+let assistantScope=null;
+
+function projectSwitcher() {
+  const bar=element('project-switcher');
+  if (!bar) return null;
+  if (switcherShell) return switcherShell;
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='project-button';
+  button.setAttribute('aria-haspopup','listbox');
+  button.setAttribute('aria-expanded','false');
+  const name=document.createElement('span'); name.className='project-name';
+  const state=document.createElement('span'); state.className='project-path-state';
+  const caret=document.createElement('span'); caret.className='project-caret'; caret.textContent='▾';
+  button.append(name,state,caret);
+  button.addEventListener('click',event=>{
+    event.stopPropagation();
+    switcherOpen=!switcherOpen;
+    renderProjectSwitcher();
+  });
+  const menu=document.createElement('div');
+  menu.className='project-menu';
+  menu.hidden=true;
+  menu.setAttribute('role','listbox');
+  menu.setAttribute('aria-label','Projects');
+  bar.append(button,menu);
+  document.addEventListener('click',event=>{
+    if (!switcherOpen) return;
+    if (bar.contains(event.target)) return;
+    switcherOpen=false;
+    renderProjectSwitcher();
+  });
+  bar.addEventListener('keydown',event=>{
+    if (event.key!=='Escape'||!switcherOpen) return;
+    switcherOpen=false;
+    renderProjectSwitcher();
+    button.focus();
+  });
+  switcherShell={bar,button,menu,name,state};
+  return switcherShell;
+}
+
+function renderProjectSwitcher(force) {
+  const shell=projectSwitcher();
+  if (!shell) return;
+  const list=projectList();
+  const active=activeProjectRow();
+  const signature=list.map(project=>`${project.id}:${project.path_state||'ok'}`).join('|')
+    +`#${active?.id||''}#${switcherOpen?'1':'0'}#${list.length}`;
+  if (!force&&signature===switcherSignature) return;
+  switcherSignature=signature;
+  shell.bar.hidden=!list.length;
+  shell.name.textContent=active?active.name:'No project';
+  shell.state.textContent=active?pathState(active):'';
+  shell.state.dataset.state=active?pathState(active):'none';
+  shell.button.title=active
+    ?`${active.path}\nCtrl+1..9 switches project`
+    :'Register a project in Settings';
+  shell.button.setAttribute('aria-expanded',String(switcherOpen));
+  shell.menu.hidden=!switcherOpen;
+  if (!switcherOpen) { shell.menu.replaceChildren(); return; }
+  shell.menu.replaceChildren(...list.map((project,index)=>{
+    const option=document.createElement('button');
+    option.type='button';
+    option.className='project-option';
+    option.dataset.project=String(project.id||'');
+    option.setAttribute('role','option');
+    option.setAttribute('aria-selected',String(project.id===active?.id));
+    const name=document.createElement('span'); name.className='project-name'; name.textContent=project.name||'project';
+    const path=document.createElement('span'); path.className='project-path'; path.textContent=project.path||'';
+    const badge=document.createElement('span'); badge.className='project-path-state';
+    badge.dataset.state=pathState(project); badge.textContent=pathState(project);
+    const key=document.createElement('span'); key.className='project-key';
+    key.textContent=index<9?'Ctrl+'+(index+1):'';
+    option.append(name,path,badge,key);
+    option.addEventListener('click',event=>{
+      event.stopPropagation();
+      switcherOpen=false;
+      renderProjectSwitcher(true);
+      switchProject(String(project.id||''));
+    });
+    return option;
+  }));
+}
+
+function updateProjectLine() {
+  const node=element('project-status');
+  if (!node) return;
+  const project=activeProjectRow();
+  node.textContent=project?project.name:'No project';
+  node.dataset.state=project?pathState(project):'none';
+  node.title=project
+    ?`${project.path}\n${pathState(project)}${project.git_head?' · '+String(project.git_head).slice(0,12):''}`
+    :'Register a project to scope the work';
+}
+
+/* One click changes what "this project" means everywhere: the new-session
+ * default cwd, the graph, the assistant session, and the status line (BUG-090). */
+function switchProject(id) {
+  const project=projectList().find(entry=>entry.id===id);
+  if (!project) return null;
+  const changed=activeProject!==id;
+  activeProject=id;
+  writeProject(id);
+  renderProjectSwitcher(true);
+  updateProjectLine();
+  loadGraph();
+  if (!changed) return project;
+  /* The assistant session is project-scoped: the daemon rebinds the directory
+   * its next turn, permission reply and interrupt use, without discarding the
+   * session the project already owns. */
+  rpc('assistant_scope',{project_id:id})
+    .then(scope=>{ assistantScope=scope; updateProjectLine(); })
+    .catch(error=>record('warn','assistant scope failed: '+error.message));
+  /* The transcript belongs to the project, so it is re-hydrated from its rows
+   * instead of being carried across. */
+  resetChat();
+  loadHistory();
+  return project;
+}
+
+/* Ctrl+1..9 selects the project at that position. */
+addEventListener('keydown',event=>{
+  if (!event.ctrlKey||event.metaKey||event.altKey||event.shiftKey) return;
+  if (!/^[1-9]$/.test(event.key)) return;
+  const target=projectList()[Number(event.key)-1];
+  if (!target) return;
+  event.preventDefault();
+  switchProject(String(target.id||''));
+});
+
+function serialiseParts(parts) {
+  return (parts||[]).map(part=>{
+    if (part.type==='tool') {
+      return {
+        type:'tool',id:part.id,name:part.name,status:part.status,exit:part.exit,
+        final:!!part.final,
+        input:part.input===undefined?undefined:truncateText(fieldText(part.input),TOOL_TEXT_LIMIT),
+        output:part.output===undefined?undefined:truncateText(fieldText(part.output),STORE_TEXT_LIMIT),
+        approval:part.approval||undefined,
+      };
+    }
+    if (part.type==='text') return {type:'text',text:String(part.text||''),tone:part.tone};
+    if (part.type==='reasoning') return {type:'reasoning',text:String(part.text||'')};
+    if (part.type==='error') return {type:'error',text:String(part.text||''),detail:part.detail?truncateText(String(part.detail),2000):undefined,retry:!!part.retry};
+    if (part.type==='diff') return {type:'diff',path:part.path,text:String(part.text||'')};
+    return {type:'text',text:String(part.text||'')};
+  });
+}
+function saveMessage(message) {
+  if (!message||!message.id) return;
+  if (message.role!=='user'&&message.role!=='assistant') return;
+  const payload={
+    id:message.id,
+    role:message.role,
+    parts:serialiseParts(message.parts),
+    time:message.time,
+    turn:message.turn===null||message.turn===undefined?undefined:String(message.turn),
+    project_id:message.meta?.project_id||activeProjectId()||undefined,
+    session_id:message.meta?.session||undefined,
+  };
+  rpc('message_save',payload).catch(error=>record('warn','message save failed: '+error.message));
+}
+function oldestLoadedCursor() {
+  let cursor=null;
+  for (const message of messages) {
+    if (!Number.isFinite(message.cursor)) continue;
+    if (cursor===null||message.cursor<cursor) cursor=message.cursor;
+  }
+  return cursor;
+}
+function historyParams(limit,before) {
+  const params={limit};
+  const project=activeProjectId();
+  if (project) params.project_id=project;
+  if (before!==null&&before!==undefined) params.before=before;
+  return params;
+}
+/* Hydration reads the newest page and remembers the oldest cursor it holds;
+ * `before` asks for the page in front of it, so a restart cannot skip a row and
+ * a repeated reply cannot duplicate one (BUG-047). */
+async function loadHistory(options={}) {
+  const before=options.before===undefined?null:options.before;
+  const limit=Math.max(1,Number(options.limit)||historyLimit);
+  try {
+    const result=await rpc('messages',historyParams(limit,before));
+    const rows=Array.isArray(result&&result.messages)?result.messages:[];
+    hydrateMessages(rows,before===null?{}:{older:true});
+    oldestCursor=oldestLoadedCursor();
+    historyHasMore=!!result&&result.has_more===true;
+    if (before===null) historyLimit=Math.min(HISTORY_MAX,limit);
+    updateEmptyState();
+    return rows;
+  } catch (error) {
+    record('warn','chat history unavailable: '+error.message);
+    return [];
+  }
+}
+/* Scrolling to the top pages backwards from the oldest cursor. The prepended page
+ * only keeps the reader's place if the scroll offset grows by the height it
+ * added, so the paint is forced and the offset corrected in the same frame. */
+async function loadOlder() {
+  if (pagingHistory||!historyHasMore||oldestCursor===null) return;
+  pagingHistory=true;
+  const log=chatLog();
+  const height=log?log.scrollHeight:0, top=log?log.scrollTop:0;
+  try {
+    const rows=await loadHistory({limit:historyLimit,before:oldestCursor});
+    if (log&&rows.length) {
+      flushChat();
+      log.scrollTop=top+(log.scrollHeight-height);
+    }
+  } finally { pagingHistory=false; }
+}
+
+/* Isolated-only: drop the local transcript so a test can prove that hydration
+ * rebuilds it from the daemon's store, not from a DOM snapshot. */
+function resetChat() {
+  messages.length=0;
+  messageById.clear();
+  rowHeights.clear();
+  mountedRows.clear();
+  mountedOrder=[];
+  spacerTop=0;
+  spacerBottom=0;
+  const log=chatLog();
+  if (log) log.replaceChildren();
+  turn=null;
+  request=null;
+  pendingFinalise=null;
+  activeText='';
+  turnLabel='';
+  busy=false;
+  failures.clear();
+  historyLimit=HISTORY_START;
+  oldestCursor=null;
+  historyHasMore=false;
+  pagingHistory=false;
+  updateEmptyState();
+  updateStatus();
+}
+
+/* -- status: a projection of the payload, not a side effect of an event --- */
+
+const STATUS_WORDS={ready:'Ready',working:'Working',attention:'Attention',offline:'Host not responding'};
+let statusPhase='ready', lastFailure='', polledOnce=false;
+function deriveStatus() {
+  if (offline) return 'offline';
+  if (busy||(turn&&!turn.done)) return 'working';
+  if (needsAttention) return 'attention';
+  return 'ready';
+}
+function updateStatus() {
+  const next=deriveStatus();
+  statusPhase=next;
+  const node=element('state');
+  if (node) {
+    /* Never "starting": the label is either derived from the last poll or the
+     * page has not polled yet, which reads as connecting (BUG-034). */
+    node.dataset.phase=next;
+    /* Before the first payload the only honest label is "connecting"; the four
+     * derived phases take over from the first poll onward (BUG-034). */
+    node.textContent=!polledOnce&&next==='ready'
+      ?'Connecting…'
+      :(next==='working'?(turnLabel||STATUS_WORDS.working):STATUS_WORDS[next]);
+    node.title=next==='offline'?'The host is not answering status requests'
+      :(lastFailure||'The status line follows the live daemon payload');
+  }
+  const stop=element('stop');
+  if (stop) stop.hidden=!(busy||turn);
+}
+
+/* -- dispatch: one turn, one user row, one outcome ----------------------- */
+
+function base64Bytes(data) {
+  const clean=String(data||'').replace(/\s+/g,'');
+  if (!clean) return 0;
+  const pad=clean.endsWith('==')?2:clean.endsWith('=')?1:0;
+  return Math.floor(clean.length*3/4)-pad;
+}
+function attachmentNameOk(name) {
+  return !!name&&name.length<=ATTACH_NAME_MAX&&!/[\u0000-\u001f\u007f]/.test(name);
+}
+function renderAttachments() {
+  const bar=element('attachment-chips');
+  if (!bar) return;
+  bar.hidden=!attachments.length;
+  bar.replaceChildren(...attachments.map((item,index)=>{
+    const chip=document.createElement('span');
+    chip.className='attachment-chip'; chip.setAttribute('role','listitem');
+    if (item.error) chip.dataset.state='error';
+    const name=document.createElement('span'); name.className='attachment-name'; name.textContent=item.name;
+    const size=document.createElement('span'); size.className='attachment-size';
+    size.textContent=item.error?'unreadable':item.data?Math.max(1,Math.round(item.size/1024))+' KiB':'reading…';
+    const remove=document.createElement('button');
+    remove.type='button'; remove.className='attachment-remove'; remove.textContent='×';
+    remove.setAttribute('aria-label','Remove '+item.name);
+    remove.addEventListener('click',()=>{ attachments.splice(index,1); renderAttachments(); });
+    chip.append(name,size,remove);
+    return chip;
+  }));
+}
+function acceptAttachment(item) {
+  if (attachments.length>=ATTACH_MAX) {
+    surfaceFailure('At most '+ATTACH_MAX+' attachments per prompt');
+    return false;
+  }
+  const name=String(item&&item.name||'').trim();
+  if (!attachmentNameOk(name)) { surfaceFailure('That attachment has an unusable name'); return false; }
+  const data=String(item&&item.data||'').replace(/\s+/g,'');
+  if (!data||!/^[A-Za-z0-9+/]*={0,2}$/.test(data)) { surfaceFailure(name+' is not valid base64'); return false; }
+  const size=base64Bytes(data);
+  if (size>ATTACH_BYTES) {
+    surfaceFailure(name+' is larger than 2 MiB');
+    return false;
+  }
+  attachments.push({name,size,data,error:null,pending:null});
+  renderAttachments();
+  return true;
+}
+function attachFiles(files) {
+  for (const file of [...files||[]]) {
+    if (attachments.length>=ATTACH_MAX) {
+      surfaceFailure('At most '+ATTACH_MAX+' attachments per prompt');
+      break;
+    }
+    const name=String(file&&file.name||'file');
+    if (!attachmentNameOk(name)) { surfaceFailure('That attachment has an unusable name'); continue; }
+    if (Number(file.size)>ATTACH_BYTES) {
+      surfaceFailure(name+' is larger than 2 MiB');
+      continue;
+    }
+    const entry={name,size:Number(file.size)||0,data:null,error:null,pending:null};
+    entry.pending=new Promise(resolve=>{
+      const reader=new FileReader();
+      reader.onload=()=>{
+        const result=String(reader.result||'');
+        entry.data=result.slice(result.indexOf(',')+1).replace(/\s+/g,'');
+        entry.size=base64Bytes(entry.data);
+        renderAttachments();
+        resolve();
+      };
+      reader.onerror=()=>{
+        entry.error='unreadable';
+        surfaceFailure(name+' could not be read');
+        renderAttachments();
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
+    attachments.push(entry);
+    renderAttachments();
+  }
+}
+async function readyAttachments() {
+  await Promise.all(attachments.map(entry=>entry.pending||Promise.resolve()));
+  if (attachments.some(entry=>entry.error)) {
+    surfaceFailure('Remove the unreadable attachment before sending');
+    return null;
+  }
+  return attachments.filter(entry=>entry.data).map(entry=>({name:entry.name,data:entry.data}));
+}
+function hasAttachments() { return attachments.length>0; }
+
+async function dispatch(text,options={}) {
+  const value=String(text||'').trim();
+  if (!value) return null;
+  const source=options.source||'typed';
+  activeText=value;
+  const user=options.userMessage||addMessage({
+    role:'user', time:Date.now(), status:'complete',
+    parts:[{type:'text',text:value}],
+    meta:{source,project_id:activeProjectId()||undefined},
+  });
+  saveMessage(user);
+  setBusy(true);
+  setPhase('working');
+  startTurn();
+  turn.user=user;
+  setTurnLabel('Working');
+  const pendingRequest={text:value,user,done:false,queued:false};
+  request=pendingRequest;
+  try {
+    /* The turn resolves this project's directory and its own assistant
+     * session, so a switch changes what "this project" means (BUG-088/090). */
+    const params={text:value,project_id:activeProjectId()||undefined};
+    if (Array.isArray(options.attachments)&&options.attachments.length) {
+      params.attachments=options.attachments;
+    }
+    lastCommand={text:value,project_id:params.project_id,
+      attachments:(params.attachments||[]).map(entry=>entry.name)};
+    const result=await rpc('command',params);
+    if (result&&result.queued===true) {
+      pendingRequest.queued=true;
+      user.status='queued';
+      bump(user);
+      queuedEvent({details:{position:result.position}});
+      return user;
+    }
+    if (pendingRequest.done) return user;         // the event already owned the row
+    const reply=result&&result.reply;
+    if (reply&&typeof reply==='object') replyDone({time:Date.now(),details:reply,message:reply.text||''});
+    else if (result&&result.stopped===true) closeTurn();
+    return user;
+  } catch (error) {
+    if (!pendingRequest.done) failTurn(error.message);
+    else record('warn','command rejected after the turn failed: '+error.message);
+    return user;
+  } finally {
+    if (request===pendingRequest) request=null;
+    updateStatus();
+  }
+}
+function failTurn(reason) {
+  const text=String(reason||'The assistant failed');
+  lastFailure=text;
+  const open=turn?.message;
+  let message=open;
+  if (!open) {
+    message=addMessage({
+      role:'assistant', time:Date.now(), status:'failed',
+      parts:[{type:'error',text:'Assistant unavailable',detail:text,retry:true}],
+      meta:{request:activeText||undefined,source:'unavailable',project_id:activeProjectId()||undefined},
+    });
+    if (turn) turn.message=message;
+  } else {
+    open.status='failed';
+    open.parts=open.parts.filter(part=>part.type!=='error');
+    open.parts.push({type:'error',text:'Assistant unavailable',detail:text,retry:true});
+    open.meta={...(open.meta||{}),request:activeText||open.meta?.request,source:'unavailable'};
+  }
+  if (request) request.done=true;
+  closeTurn();
+  setPhase('error');
+  noteFailure(text);
+  if (message) { saveMessage(message); bump(message); }
+}
+
+/* -- voice: display, confirm window, and the stop contract --------------- */
+
+const VOICE_WORDS={
+  off:'Mic off',listening:'Listening','waiting for window':'Waiting',transcribing:'Transcribing',
+  confirming:'Confirming',queued:'Queued','loading speech':'Loading voice',stopped:'Stopped',
+  discarded:'Mic off','deciding':'Working',
+};
+function voiceWord(status) {
+  const value=String(status||'off');
+  if (VOICE_WORDS[value]) return VOICE_WORDS[value];
+  if (/busy/i.test(value)) return 'Busy';
+  const first=value.split(/[;,·]/)[0].trim();
+  return first?first.charAt(0).toUpperCase()+first.slice(1):'Mic off';
+}
+function voiceNotes(voice) {
+  const bits=[];
+  const language=String(snapshot?.settings?.speech?.language||'en').trim()||'en';
+  bits.push(language);
+  if (typeof voice.confidence==='number') bits.push(Math.round(voice.confidence*100)+'%');
+  if (voice.source) bits.push(String(voice.source));
+  if (voice.unsure) bits.push('low confidence');
+  if (voice.truncated) bits.push('recording limit reached — text may be incomplete');
+  if (voice.gap) bits.push('audio gap');
+  return bits.join(' · ');
+}
+const confirmState={active:false,transcript:'',deadline:0,timer:null,filled:false};
+function setVoiceBanner(options) {
+  const banner=element('voice-banner');
+  if (!banner) return;
+  if (!options||!options.text) { banner.hidden=true; return; }
+  banner.hidden=false;
+  element('voice-source').textContent=options.notes||'';
+  element('voice-text').textContent=options.text;
+  element('voice-count').textContent=options.countdown||'';
+  element('voice-use').hidden=options.actions!==true;
+  element('voice-edit').hidden=options.actions!==true;
+}
+function beginConfirm(voice) {
+  const text=String(voice.transcript||'').trim();
+  if (!text) return;
+  const seconds=Number(voice.confirm_seconds)||1.5;
+  if (confirmState.active&&confirmState.transcript===text&&Date.now()<confirmState.deadline) return;
+  confirmState.active=true;
+  confirmState.transcript=text;
+  confirmState.deadline=Date.now()+seconds*1000;
+  const input=commandInput();
+  if (input&&(!input.value.trim()||input.value===text)) { input.value=text; confirmState.filled=true; }
+  setVoiceBanner({text,notes:voiceNotes(voice),countdown:seconds.toFixed(1)+'s',actions:true});
+  clearInterval(confirmState.timer);
+  confirmState.timer=setInterval(tickConfirm,100);
+  tickConfirm();
+}
+function tickConfirm() {
+  if (!confirmState.active) { clearInterval(confirmState.timer); confirmState.timer=null; return; }
+  const left=Math.max(0,(confirmState.deadline-Date.now())/1000);
+  const count=element('voice-count');
+  if (count) count.textContent=left.toFixed(1)+'s';
+  if (left<=0) {
+    /* The worker owns the dispatch at the end of its hold; the composer returns to
+       the user instead of sending the transcript a second time. */
+    finishConfirm({clear:true});
+  }
+}
+function finishConfirm(options={}) {
+  clearInterval(confirmState.timer);
+  confirmState.timer=null;
+  const wasActive=confirmState.active;
+  confirmState.active=false;
+  setVoiceBanner(null);
+  if (wasActive&&confirmState.filled&&options.clear) {
+    const input=commandInput();
+    if (input&&input.value===confirmState.transcript) input.value='';
+  }
+  confirmState.filled=false;
+}
+/* BUG-056: the worker dispatches the held transcript when its confirm window runs
+ * out, so Enter has to ask the daemon who won first. `claimed:true` means the UI
+ * owns the send; `claimed:false` means the command already left, and sending a
+ * second one would run it twice. Escape withdraws the hold instead. */
+async function useConfirm() {
+  if (!confirmState.active) { submitForm(); return; }
+  const input=commandInput();
+  const edited=input?input.value.trim():'';
+  const text=edited||confirmState.transcript;
+  finishConfirm({clear:true});
+  let claim;
+  try {
+    claim=await rpc('voice_confirm',{accept:true});
+  } catch (error) {
+    /* Nothing was sent and the claim is unknown, so keep the draft for a retry. */
+    if (text) { const field=commandInput(); if (field&&!field.value.trim()) field.value=text; }
+    surfaceFailure('Could not confirm the transcript: '+error.message);
+    return;
+  }
+  if (claim&&claim.claimed===false) {
+    toast('That transcript was already sent by the voice worker');
+    return;
+  }
+  if (text) dispatch(text,{source:'voice'});
+}
+function editConfirm() {
+  const input=commandInput();
+  const wasActive=confirmState.active;
+  finishConfirm();
+  if (wasActive) rpc('voice_confirm',{accept:false}).catch(error=>record('warn','voice hold cancel failed: '+error.message));
+  if (input) { input.focus(); input.setSelectionRange(input.value.length,input.value.length); }
+  toast('Edit the transcript, then press Enter to send it');
+}
+function applyVoice(voice) {
+  const status=String(voice.status||'off');
+  const pill=element('voice-pill');
+  if (pill) {
+    pill.textContent=voiceWord(status);
+    pill.dataset.status=status;
+    pill.title='Voice: '+status+(voice.wake_word?' · say “'+voice.wake_word+'”':'');
+  }
+  if (status==='confirming'&&voice.transcript) beginConfirm(voice);
+  else if (confirmState.active) finishConfirm({clear:true});
+  if (status==='transcribing'&&voice.partial) {
+    setVoiceBanner({text:String(voice.partial),notes:voiceNotes(voice)+' · transcribing',countdown:'',actions:false});
+  } else if (status!=='confirming'&&status!=='transcribing') {
+    const outcome=/^sent to |session busy|session unreachable|^queued$/.test(status)?status:'';
+    if (outcome) setVoiceBanner({text:outcome,notes:voiceNotes(voice),countdown:'',actions:false});
+    else if (!confirmState.active&&status!=='transcribing') setVoiceBanner(null);
+  }
+  const note=element('mic-note');
+  if (note) note.textContent=micExplanation(status);
+  const speech=element('chief-status');
+  if (speech) {
+    const language=String(snapshot?.settings?.speech?.language||'en').trim()||'en';
+    speech.textContent=language+' · wake word is English-only';
+    speech.title='Speech language: '+language+'. The wake-word model is English only; the transcript language follows the setting.';
+  }
+}
+function micExplanation(status) {
+  if (host.isolated===true) return 'The microphone is disabled in isolated mode: this window runs against a private daemon with no hardware access.';
+  if (!snapshot?.settings?.microphone) return 'The microphone is off. Enable it to speak; typing works either way.';
+  if (status==='off') return 'Microphone is enabled but the voice worker is not running yet.';
+  return 'Say “'+String(snapshot?.voice?.wake_word||'Hey Navi')+'”, then your request.';
+}
+
+function setBusy(value) {
+  busy=!!value;
+  const stop=element('stop');
+  if (stop) stop.hidden=!busy;
+  updateStatus();
+}
+
+/* ---------------- slash command suggestions ---------------- */
+
+/* The catalog is a cache with a 60 s TTL: it used to be fetched once and kept
+ * forever, including a failure, so suggestions never recovered (BUG-017). A failed
+ * read is never cached, and `oc_new` invalidates the whole set. */
+const CATALOG_TTL=60000;
+const catalogs={commands:{list:null,at:0},models:{list:null,at:0},agents:{list:null,at:0}};
+let slashCommands=null;
+async function catalog(name,op) {
+  const entry=catalogs[name];
+  if (entry.list&&Date.now()-entry.at<CATALOG_TTL) return entry.list;
+  const list=await rpc(op);
+  /* A gateway error arrives as a result object, not as a rejection: an error is not
+   * an empty catalog, and it must not be cached either (BUG-017). */
+  if (!Array.isArray(list)) {
+    throw new Error(String(list&&list.error||'the catalog returned no list'));
+  }
+  entry.list=list;
+  entry.at=Date.now();
+  if (name==='commands') {
+    slashCommands=entry.list.map(item=>({name:item.name||'',description:item.description||''})).filter(item=>item.name);
+  }
+  return entry.list;
+}
+function invalidateCatalogs() {
+  for (const entry of Object.values(catalogs)) { entry.list=null; entry.at=0; }
+  slashCommands=null;
+}
+async function commandCatalog() {
+  if (slashCommands&&Date.now()-catalogs.commands.at<CATALOG_TTL) return slashCommands;
+  try { await catalog('commands','oc_commands'); }
+  catch { slashCommands=null; }   // a failure is reported by the caller, never cached
+  return slashCommands||[];
+}
+const slashList=()=>element('slash-list'), commandInput=()=>element('command');
+let slashIndex=0, slashMatches=[], slashPrefix='';
+function hideSlash(){ slashList().hidden=true; slashMatches=[]; }
+function applySlash(command) {
+  const input=commandInput(), raw=input.value;
+  const rest=raw.slice(1).split(/\s/).slice(1).join(' ');
+  input.value='/' + command + (rest?' '+rest:' ');
+  hideSlash();
+}
+function pickSlash(index) {
+  if (slashMatches[index]) applySlash(slashMatches[index].name);
+}
+function renderSlash(prefix) {
+  slashPrefix=prefix;
+  slashMatches=(slashCommands||[]).filter(c=>!prefix||c.name.startsWith(prefix)).slice(0,12);
+  if (!slashMatches.length) { hideSlash(); return; }
+  slashIndex=Math.min(slashIndex,slashMatches.length-1);
+  const list=slashList(); list.replaceChildren();
+  slashMatches.forEach((command,index)=>{
+    const item=document.createElement('li');
+    item.id='slash-'+index; item.setAttribute('role','option');
+    if (index===slashIndex) item.classList.add('active');
+    const name=document.createElement('span'); name.className='slash-name'; name.textContent='/'+command.name;
+    const hint=document.createElement('span'); hint.className='slash-hint'; hint.textContent=command.description;
+    item.append(name,hint);
+    item.onmousedown=event=>{ event.preventDefault(); applySlash(command.name); };
+    list.append(item);
+  });
+  list.hidden=false;
+}
+async function updateSlash() {
+  const input=commandInput();
+  if (!input.value.startsWith('/')) { hideSlash(); return; }
+  const token=input.value.slice(1).split(/\s/)[0];
+  if (slashCommands===null) await commandCatalog();
+  if (input.value.startsWith('/')) renderSlash(token);
+}
+commandInput().addEventListener('input',updateSlash);
+commandInput().addEventListener('keydown',event=>{
+  if (slashList().hidden) return;
+  if (event.key==='ArrowDown') { slashIndex=(slashIndex+1)%slashMatches.length; renderSlash(slashPrefix); }
+  else if (event.key==='ArrowUp') { slashIndex=(slashIndex-1+slashMatches.length)%slashMatches.length; renderSlash(slashPrefix); }
+  else if (event.key==='Tab'||(event.key==='Enter'&&commandInput().value.slice(1).split(/\s/)[0]!==slashMatches[slashIndex]?.name)) {
+    event.preventDefault(); pickSlash(slashIndex);
+  }
+  else if (event.key==='Escape') { event.preventDefault(); hideSlash(); }
+});
+commandInput().addEventListener('blur',()=>setTimeout(hideSlash,150));
+
+/* ---------------- status feed ---------------- */
+
+/* `update` is the single entry point for the daemon payload: settings, sessions,
+ * voice and every event. The host can also push a payload straight in (`navi.push`)
+ * and a partial payload is merged over the last snapshot instead of replacing it. */
 function update(value) {
-  snapshot=value;
-  const settings=value.settings;
-  element('microphone').disabled=value.isolated;
-  element('desktop').disabled=value.isolated;
-  element('sessions').replaceChildren();
-  for(const session of value.sessions) {
-    const button=document.createElement('button');button.className='session'+(session.id===settings.active_session?' selected':'');button.disabled=!session.running;
-    const dot=document.createElement('span');dot.className='dot'+(session.running?'':' dead');
-    const label=document.createElement('span'),name=document.createElement('strong'),detail=document.createElement('small');name.textContent=session.name;detail.textContent=session.profile+' · '+(session.running?'running':'ended');label.append(name,detail);button.append(dot,label);
-    button.onclick=()=>rpc('select',{id:session.id}).catch(error=>toast(error.message));element('sessions').append(button);
+  if (!value||typeof value!=='object') return;
+  /* Only a payload that carries `settings` is the full snapshot; a sectioned push or
+   * an event-only page is merged over the last one, so a missing key keeps its value. */
+  const full=!!(value.settings&&typeof value.settings==='object');
+  const payload=full?value:{...(snapshot||{}),...value};
+  snapshot=payload;
+  polledOnce=true;
+  reconcileFeed(payload);
+  if (typeof payload.busy==='boolean') applyServerBusy(payload.busy);
+  surfaceSettings(payload);
+  renderSessions(payload.sessions||[]);
+  renderProjectSwitcher();
+  updateProjectLine();
+  applyVoice(payload.voice||{});
+  for (const event of payload.events||[]) {
+    if (!event||typeof event!=='object') continue;
+    /* De-duplicate by sequence number, never by text: two identical replies with
+     * different seqs are two messages, and one seq delivered twice is one (BUG-046). */
+    if (event.seq!==undefined&&event.seq!==null) {
+      if (seenSeqs.has(event.seq)) continue;
+      seenSeqs.add(event.seq);
+      seenOrder.push(event.seq);
+      while (seenOrder.length>SEEN_LIMIT) seenSeqs.delete(seenOrder.shift());
+      seq=Math.max(seq,Number(event.seq)||0);
+    }
+    /* An event's project_id attributes the row; it never moves the active
+     * project, which only the switcher and Ctrl+1..9 change (BUG-090). */
+    try { handleEvent(event); }
+    catch (error) { record('warn',`event ${event.kind} failed: ${error.message}`); }
   }
-  const current=value.sessions.find(session=>session.id===settings.active_session&&session.running);
-  if(current?.id!==active) {
-    active=current?.id;element('empty-session').hidden=Boolean(current);terminal.reset();
-    send({type:'attach',id:active||null});element('session-name').textContent=current?.name||'Navi';element('harness-name').textContent=current?.profile||'Station';
+  /* A coalesced turn payload replaces the live row's text; `done` ends the turn
+   * without waiting for the next poll (BUG-015/098). */
+  if (payload.turn_state) {
+    try { applyTurnState(payload.turn_state); }
+    catch (error) { record('warn','turn_state failed: '+error.message); }
   }
-  element('microphone').setAttribute('aria-pressed',String(settings.microphone));element('microphone').firstElementChild.textContent=settings.microphone?'Mic on':'Mic off';
-  element('chief-status').textContent=settings.model.name+' · '+value.voice.status;
-  element('browser-status').textContent=value.browser_connected?'Connected to Zen':'Extension disconnected';
-  element('desktop-status').textContent=value.desktop.status+(value.desktop.error?' · '+value.desktop.error:'');
-  for(const event of value.events) {
-    seq=Math.max(seq,event.seq);const line=document.createElement('div');line.textContent=new Date(event.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})+' '+event.message;element('syslog').prepend(line);while(element('syslog').children.length>5)element('syslog').lastChild.remove();
-    if(event.kind==='thinking'){element('state').textContent='deciding';window.naviScene?.setEnergy(.8);}
-    if(event.kind==='reply')toast(event.details?.text||event.message);
-    if(['command','error','stopped'].includes(event.kind)){element('state').textContent=event.kind==='error'?'attention':'ready';window.naviScene?.setEnergy(.1);if(event.kind==='error')toast(event.message);}
+  updateStatus();
+  hydrateOnce();
+  /* BUG-015: a page with more events behind it is fetched immediately. */
+  if (payload.has_more===true) {
+    clearTimeout(pollTimer);
+    pollTimer=setTimeout(poll,40);
   }
+}
+
+/* `status.busy` is the daemon's own view of the turn and it is authoritative — but a
+ * push prepared before our submit opened the turn must not clear the row we just made,
+ * so a submit in flight wins until its reply lands. */
+function applyServerBusy(serverBusy) {
+  if (request) return;
+  if (serverBusy===false&&turn&&turn.done!==true) {
+    turn.done=true;
+    const message=turn.message;
+    if (message&&message.status==='streaming') {
+      message.status='complete';
+      bump(message);
+    }
+  }
+  setBusy(serverBusy===true);
+}
+
+/* `turn_state` is the producer's coalesced view of the open turn:
+ * `{turn,text,done}`. It replaces (never appends) the live row and only applies
+ * when it describes the row that is actually on screen. */
+function applyTurnState(state) {
+  if (!state||typeof state!=='object') return;
+  const text=typeof state.text==='string'?state.text:null;
+  const turnId=state.turn===undefined||state.turn===null?null:String(state.turn);
+  const message=turn?.message||null;
+  const known=message&&message.turn!==undefined&&message.turn!==null?String(message.turn):null;
+  /* An empty, anonymous payload means "nothing is running": it must not rewrite or
+   * close a row the event feed opened. A payload describes a turn only when it names
+   * one or carries text. */
+  const describes=turnId!==null||(text!==null&&text.trim()!=='');
+  if (!describes) { updateStatus(); return; }
+  /* A row with no bound turn id only adopts a named *running* turn: a stale finished
+   * payload (the previous answer) must never fill or close a fresh row. */
+  const adopt=!known&&!!turnId&&state.done!==true;
+  const matches=known?(!turnId||known===turnId):adopt;
+  if (message&&text!==null&&matches) {
+    const part=lastTextPart(message,true);
+    part.text=text;
+    if (!message.turn&&turnId) message.turn=turnId;
+    message.status=state.done===true?'complete':'streaming';
+    bump(message);
+  }
+  if (matches) {
+    if (state.done===true) {
+      if (turn) turn.done=true;
+      setBusy(false);
+      setPhase('idle');
+    } else if (!turn||turn.done!==true) {
+      setBusy(true);
+      setPhase('working');
+    }
+  }
+  updateStatus();
+}
+
+/* BUG-099: a restarted daemon, or a cursor older than the retained ring, means the
+ * client is missing events. Reset the cursor and ask for one full snapshot. */
+let bootId=null, resyncing=false;
+function reconcileFeed(value) {
+  let reset=false;
+  if (typeof value.boot_id==='string'&&value.boot_id) {
+    if (bootId&&bootId!==value.boot_id) reset=true;
+    bootId=value.boot_id;
+  }
+  const oldest=Number(value.events_from);
+  if (Number.isFinite(oldest)&&oldest>1&&seq>0&&seq<oldest-1) reset=true;
+  if (!reset) return;
+  seq=0;
+  seenSeqs.clear(); seenOrder.length=0;
+  if (turn) {
+    const open=turn.message;
+    if (open&&open.status==='streaming') { open.status='stopped'; bump(open); }
+    closeTurn();
+  }
+  if (resyncing) return;
+  resyncing=true;
+  setTimeout(()=>{ resyncing=false; poll(); },0);
+}
+
+function surfaceSettings(value) {
+  const settings=value.settings||{};
+  const status=String(value.voice?.status||'off');
+  const mic=element('microphone');
+  if (mic) {
+    mic.disabled=value.isolated===true;
+    mic.setAttribute('aria-pressed',String(!!settings.microphone));
+    mic.firstElementChild.textContent=settings.microphone?'Mic on':'Mic off';
+    mic.title=micExplanation(status);
+  }
+  const emptyMic=element('empty-mic');
+  if (emptyMic) emptyMic.disabled=value.isolated===true||!!settings.microphone;
+  const note=element('mic-note');
+  if (note) note.textContent=micExplanation(status);
+  const switcher=element('model-switcher');
+  if (switcher) {
+    const reference=String(settings.assistant?.model||'');
+    switcher.textContent=shortModel(reference)||'Model';
+    switcher.title=reference?'Assistant model: '+reference:'No assistant model is saved';
+  }
+  const speechNote=element('speech-note');
+  if (speechNote) {
+    const language=String(settings.speech?.language||'en').trim()||'en';
+    speechNote.textContent='Speech language: '+language+' · the wake-word model is English-only.';
+  }
+}
+
+let hydratedChat=false;
+function hydrateOnce() {
+  if (hydratedChat||!snapshot?.settings) return;
+  hydratedChat=true;
+  loadHistory(HISTORY_START);
+}
+let polls=0, pollFailures=0, offline=false, backoff=700, pollTimer=null, polling=false, daemon=null;
+/* Isolated-only: the GUI workflow fabricates a turn, and the daemon's own idle
+ * payloads would (correctly) end it. Pausing the feed is the test's lever. */
+let pollPaused=false;
+
+async function refreshDaemon() {
+  try { daemon=await rpc('ping'); } catch { /* diagnostics report "unknown" */ }
+  return daemon;
 }
 async function poll() {
-  try {update(await rpc('status',{gui:true,since:seq}));}catch(error){toast(error.message);}
-  setTimeout(poll,700);
+  if (pollPaused) { pollTimer=null; return; }
+  if (polling) return;  // one request in flight, whoever calls us
+  polling=true; pollTimer=null;
+  try {
+    /* A status reply is the health signal: the attention badge is a transient
+     * projection, so a successful poll clears it while the error row stays in the
+     * transcript (BUG-036). */
+    needsAttention=false;
+    update(await rpc('status',{gui:true,since:seq}));
+    polls++;
+    pollFailures=0; backoff=700;
+    if (offline) { offline=false; toast('Reconnected to Navi'); updateStatus(); }
+    else updateStatus();
+    if (!daemon) refreshDaemon();
+  } catch (error) {
+    pollFailures++;
+    /* One toast per transition, not per failure: a daemon restart must not
+     * spray the chat with identical errors. */
+    if (!offline && pollFailures>=3) {
+      offline=true; lastFailure=error.message;
+      updateStatus(); toast(error.message);
+    }
+    backoff=Math.min(15000, backoff*2);
+  } finally {
+    // Always re-arm: a lost reply must never stop the status feed.
+    polling=false;
+    clearTimeout(pollTimer);
+    pollTimer=setTimeout(poll, backoff);
+  }
 }
-function launch() {
-  if(!snapshot)return;
-  element('launch-profile').replaceChildren();for(const profile of snapshot.settings.profiles){const option=document.createElement('option');option.value=profile.id;option.textContent=profile.name;element('launch-profile').append(option);}
-  element('launch-cwd').value=snapshot.settings.projects[0]?.path||'';element('launch-name').value='';element('launch-dialog').showModal();
-}
-element('new-session').onclick=launch;element('empty-launch').onclick=launch;
-element('launch-form').onsubmit=async event=>{event.preventDefault();try{await rpc('create',{profile:element('launch-profile').value,name:element('launch-name').value||undefined,cwd:element('launch-cwd').value});element('launch-dialog').close();}catch(error){toast(error.message);}};
-element('command-form').onsubmit=async event=>{event.preventDefault();const text=element('command').value.trim();if(!text)return;element('command').value='';try{const result=await rpc('command',{text});const reply=result.reply?.text||result.reply;const message=reply||result.trace.at(-1)?.result?.message;if(message)toast(message);}catch(error){toast(error.message);}};
-element('stop').onclick=()=>rpc('cancel').catch(error=>toast(error.message));
-element('microphone').onclick=async()=>{if(snapshot){try{await rpc('settings',{...snapshot.settings,microphone:!snapshot.settings.microphone});await rpc('voice_start');}catch(error){toast(error.message);}}};
-element('desktop').onclick=()=>rpc(snapshot?.desktop.status==='connected'?'desktop_stop':'desktop_start').then(()=>toast(snapshot?.desktop.status==='connected'?'Desktop disconnected':'Choose the target in the desktop consent dialog')).catch(error=>toast(error.message));
-element('settings-button').onclick=()=>{if(!snapshot)return;const settings=snapshot.settings;for(const key of ['profiles','projects','favorites'])element(key).value=JSON.stringify(settings[key],null,2);element('speech').value=JSON.stringify(settings.speech||{engine:'whistle',wake_score:1,wake_threshold:.25},null,2);for(const key of ['name','endpoint','server','weights','projection'])element('model-'+key).value=settings.model[key]||'';element('model-gpu').value=settings.model.gpu_layers;element('model-threads').value=settings.model.threads||2;element('model-confidence').value=settings.model.minimum_probability;element('listening').value=settings.listening;element('persona').value=settings.persona||'jarvis';element('settings-dialog').showModal();};
-element('settings-form').onsubmit=async event=>{event.preventDefault();try{const model={...snapshot.settings.model,gpu_layers:Number(element('model-gpu').value),threads:Number(element('model-threads').value),minimum_probability:Number(element('model-confidence').value)};for(const key of ['name','endpoint','server','weights','projection'])model[key]=element('model-'+key).value;const settings={...snapshot.settings,profiles:JSON.parse(element('profiles').value),projects:JSON.parse(element('projects').value),favorites:JSON.parse(element('favorites').value),speech:JSON.parse(element('speech').value),listening:element('listening').value,persona:element('persona').value,model};await rpc('settings',settings);element('settings-dialog').close();toast('Settings saved');}catch(error){toast(error.message);}};
-document.querySelectorAll('[data-close]').forEach(button=>{button.onclick=()=>element(button.dataset.close).close();});
-element('browser-folder').onclick=()=>send({type:'extension-folder'});
-function focusView(){document.body.classList.toggle('focus-view');setTimeout(fit,750);}
-element('focus-top').onclick=focusView;
-function setMotion(){window.naviScene?.setMotion(motion);document.body.classList.toggle('still',!motion);element('motion-button').setAttribute('aria-pressed',String(motion));}
-element('motion-button').onclick=()=>{motion=!motion;setMotion();};element('fullscreen-button').onclick=()=>send({type:'fullscreen'});
-addEventListener('keydown',event=>{const shortcuts=snapshot?.settings.shortcuts;if(event.key===shortcuts?.focus){event.preventDefault();focusView();}if(event.key===shortcuts?.fullscreen){event.preventDefault();send({type:'fullscreen'});}});
-window.navi={
-  reply(ticket,reply){const request=pending.get(ticket);if(request){pending.delete(ticket);if(reply.ok)request.resolve(reply.result);else request.reject(new Error(reply.error));}},
-  receive(encoded){terminal.write(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0)));},
-  notice:toast,
-  inspect(){return {renderer:element('field').dataset.renderer,sessions:snapshot?.sessions,active,terminal:terminal.buffer.active.getLine(0)?.translateToString(),title:element('session-name').textContent};}
+
+/* One submit path for typing, voice and the empty-state prompt. */
+element('chat-form').onsubmit=event=>{
+  event.preventDefault();
+  submitForm();
 };
-window.naviScene?.boot(()=>{document.body.classList.remove('booting');document.body.classList.add('booted');setMotion();fit();},true);
+async function submitForm() {
+  const input=commandInput();
+  const text=input?input.value.trim():'';
+  if (!text&&!hasAttachments()) return null;
+  /* A Send click during the confirm window is the same race as Enter, so it goes
+   * through the same claim instead of dispatching behind the worker's back. */
+  if (confirmState.active) return useConfirm();
+  const files=await readyAttachments();
+  if (files===null) return null;
+  if (!text&&!files.length) return null;
+  hideSlash();
+  input.value='';
+  if (files.length) { attachments=[]; renderAttachments(); }
+  return dispatch(text,{source:'typed',attachments:files});
+}
+const attachInput=element('attach-input');
+const attachButton=element('attach');
+if (attachButton&&attachInput) {
+  attachButton.onclick=()=>attachInput.click();
+  attachInput.onchange=()=>{
+    const files=attachInput.files;
+    attachInput.value='';
+    attachFiles(files);
+  };
+}
+
+element('stop').onclick=async()=>{
+  try {
+    const result=await rpc('cancel');
+    /* BUG-007: an unconfirmed interrupt is reported, never assumed. The daemon
+     * emits the same warning; the failure surface keeps it to one row. */
+    if (result&&result.interrupted===false) {
+      warningRow('Assistant turn may still be running: OpenCode did not confirm the interrupt');
+    }
+  } catch (error) { surfaceFailure(error.message); }
+  setBusy(false);
+  setPhase('idle');
+  updateStatus();
+};
+
+function toggleMicrophone() {
+  if (!snapshot) return;
+  if (snapshot.isolated===true) { toast('The microphone is disabled in isolated mode'); return; }
+  const settings=snapshot.settings||{};
+  const next={...settings,microphone:!settings.microphone};
+  rpc('settings',next).then(()=>{
+    snapshot.settings=next;
+    surfaceSettings(snapshot);
+    if (next.microphone) rpc('voice_start').catch(()=>null);
+  }).catch(error=>surfaceFailure(error.message));
+}
+element('microphone').onclick=toggleMicrophone;
+element('voice-pill').onclick=toggleMicrophone;
+element('voice-use').onclick=()=>useConfirm();
+element('voice-edit').onclick=()=>editConfirm();
+element('empty-mic').onclick=toggleMicrophone;
+element('empty-session').onclick=()=>openNewDialog();
+element('empty-settings').onclick=()=>openSettings();
+
+/* The reader owns the log: nothing auto-scrolls unless the view is already at the
+ * bottom, and a pill offers to jump when content lands below it (BUG-047). */
+chatLog().addEventListener('scroll',()=>{
+  const log=chatLog();
+  updatePill(log);
+  if (log.scrollTop<200) loadOlder();
+  if (messages.length>RENDER_WINDOW*2+1) chatChanged();
+});
+element('chat-pill').onclick=()=>{
+  const log=chatLog();
+  if (!log) return;
+  log.scrollTop=log.scrollHeight;
+  updatePill(log);
+};
+/* Enter accepts a voice transcript; Escape turns it into an editable draft. */
+commandInput().addEventListener('keydown',event=>{
+  if (!confirmState.active) return;
+  if (event.key==='Enter'&&!event.shiftKey) { event.preventDefault(); useConfirm(); }
+  else if (event.key==='Escape') { event.preventDefault(); editConfirm(); }
+});
+updateEmptyState();
+updateStatus();
+
+/* ---------------- harness sessions + terminal ---------------- */
+
+let term=null, termSession=null;
+function ensureTerm() {
+  if (term) return term;
+  term=new Terminal({cursorBlink:true,convertEol:true,allowProposedApi:true,
+    fontFamily:'ui-monospace,Menlo,Consolas,monospace',fontSize:12,
+    theme:{background:'#030a2b',foreground:'#d9eaff',cursor:'#8dffe0',
+      selectionBackground:'#3150a8aa'}});
+  term.onData(data=>{
+    send({type:'binary',data:btoa(data)});
+  });
+  term.open(element('terminal-host'));
+  return term;
+}
+function cellSize() {
+  const dims=term?._coreService?._renderService?.dimensions?.css?.cell;
+  if (dims?.width&&dims?.height) return dims;
+  const probe=document.createElement('span');
+  probe.style.cssText='position:absolute;visibility:hidden;white-space:pre;font:12px ui-monospace,Menlo,Consolas,monospace';
+  probe.textContent='M'.repeat(50);
+  document.body.append(probe);
+  const width=probe.getBoundingClientRect().width/50||7.2, height=parseFloat(getComputedStyle(probe).lineHeight)||16;
+  probe.remove();
+  return {width,height};
+}
+function fitTerm() {
+  if (!term||dockMode()==='closed'||element('terminal-pane').hidden) return;
+  const host=element('terminal-host'), box=host.getBoundingClientRect(), cell=cellSize();
+  const cols=Math.max(20,Math.floor((box.width-12)/cell.width));
+  const rows=Math.max(6,Math.floor((box.height-6)/cell.height));
+  if (cols!==term.cols||rows!==term.rows) term.resize(cols,rows);
+  send({type:'resize',cols,rows});
+}
+function openTerminal(session) {
+  if (!session?.running) { toast('Session is not running'); return; }
+  ensureTerm();
+  setDock(preferredDock());
+  element('terminal-title').textContent=session.name+' · '+profileLabel(session.profile);
+  termSession=session.id;
+  term.clear();
+  send({type:'attach',id:session.id});
+  /* Opening a session makes it the active one, which is what a spoken "tell this
+   * one…" resolves against and what the badge in the strip reports (BUG-065). */
+  rpc('select',{id:session.id}).catch(error=>record('warn','select failed: '+error.message));
+  renderSessions(snapshot?.sessions||[]);
+  scheduleFit();
+  requestAnimationFrame(()=>{ fitTerm(); term.focus(); });
+}
+function closeTerminal() {
+  setDock('closed');
+  termSession=null;
+  send({type:'attach'});
+  commandInput().focus();
+}
+element('terminal-close').onclick=closeTerminal;
+/* BUG-082: Stop reaches the harness itself, not just the assistant turn. The
+ * daemon sends the profile's interrupt keys and records the state event. */
+element('terminal-stop').onclick=async()=>{
+  const id=termSession;
+  if (!id) return;
+  try {
+    const result=await rpc('session_interrupt',{id});
+    toast(result&&result.killed?'Harness session stopped':'Interrupt sent to the harness');
+  } catch (error) { surfaceFailure(error.message); }
+};
+element('terminal-send').onclick=()=>{
+  const input=element('terminal-prompt'), text=input.value.trim();
+  if (!text||!termSession) return;
+  input.value='';
+  rpc('prompt',{id:termSession,text}).catch(error=>toast(error.message));
+};
+element('terminal-prompt').addEventListener('keydown',event=>{ if (event.key==='Enter') element('terminal-send').click(); });
+
+/* ---------------- layout: phase, dock, graph, and the stage frame ---------------- */
+
+/* The station owns the four layout facts the CSS cannot derive: the turn phase,
+ * which dock mode is live, how far the splitter was dragged, and whether the
+ * graph drawer is open. The scene is told the stage cell and the dim level so
+ * the artwork is framed by its own cell instead of the window. */
+
+let phase='idle';
+function setPhase(value) {
+  /* One call per transition: the scene glitches on the working edge, so a
+   * repeated setPhase('working') on every event would tear the stage per poll. */
+  const next=value==='working'||value==='error'?value:'idle';
+  if (next===phase) return;
+  phase=next;
+  window.naviScene?.setPhase?.(next);
+}
+
+/* Dock state is remembered under its own key: window_state belongs to the host
+ * and holds window geometry, so the two records must never collide. */
+const DOCK_KEY='navi.dock';
+const dockPane=()=>element('terminal-pane');
+const splitter=()=>element('dock-splitter');
+/* Seed from storage so a ratio remembered for the other orientation survives the
+ * next write. The shell starts closed in the DOM, not only in the CSS. */
+const rememberedDock=readDock();
+let dockRatios=rememberedDock.ratios&&typeof rememberedDock.ratios==='object'?rememberedDock.ratios:{};
+let lastDockMode=rememberedDock.mode==='bottom'?'bottom':'right';
+let fitTimer=null, graphOpen=false;
+document.body.dataset.dock='closed';
+document.body.dataset.graph='closed';
+
+function dockMode() { return document.body.dataset.dock||'closed'; }
+
+function readDock() {
+  try {
+    const value=JSON.parse(localStorage.getItem(DOCK_KEY)||'{}');
+    return value&&typeof value==='object'?value:{};
+  } catch { return {}; }
+}
+function writeDock() {
+  try { localStorage.setItem(DOCK_KEY,JSON.stringify({mode:lastDockMode,ratios:dockRatios})); }
+  catch { /* storage can be unavailable; the dock still works for this session */ }
+}
+function rememberDock(mode, ratio) {
+  if (mode==='right'||mode==='bottom') dockRatios={...dockRatios,[mode]:ratio};
+  clearTimeout(rememberDock.timer);
+  rememberDock.timer=setTimeout(writeDock,250);
+}
+
+/* The splitter axis follows the cell, not the stored mode: below 1200 px the
+ * CSS moves the dock under the stage and the splitter turns horizontal. */
+function dockAxis(mode=dockMode()) {
+  if (mode==='bottom') return 'y';
+  return matchMedia('(max-width:1199px)').matches?'y':'x';
+}
+function dockExtent(axis) { return axis==='y'?innerHeight:innerWidth; }
+function clampDock(axis, size) {
+  /* Both sides keep 120 px, so neither the stage nor the dock can collapse. */
+  const limit=Math.max(120,dockExtent(axis)-120);
+  return Math.round(Math.min(limit,Math.max(120,size)));
+}
+function applyDockSize(axis, size, mode=dockMode()) {
+  const value=clampDock(axis,size);
+  document.body.style.setProperty(axis==='y'?'--dock-h':'--dock',value+'px');
+  rememberDock(mode,value/dockExtent(axis));
+  return value;
+}
+function preferredDock() {
+  const mode=readDock().mode;
+  /* Open to the side only where the CSS can hold a second column. */
+  if ((mode==='right'||mode==='bottom')&&(mode==='right')===(innerWidth>=1200)) return mode;
+  return innerWidth>=1200?'right':'bottom';
+}
+
+function setDock(mode) {
+  const pane=dockPane();
+  if (!pane) return dockMode();
+  const requested=mode==='right'||mode==='bottom'||mode==='max'?mode:'closed';
+  /* Where the CSS can hold a second column the dock opens to the right; below
+   * 1200 px the same request becomes an under-stage dock. */
+  const next=requested==='closed'?'closed':requested==='max'?'max':(innerWidth>=1200?'right':'bottom');
+  document.body.dataset.dock=next;
+  pane.hidden=next==='closed';  // the attribute still hides the card if the CSS is lost
+  if (next==='right'||next==='bottom') {
+    lastDockMode=next;
+    const axis=dockAxis(next), stored=readDock().ratios?.[next];
+    if (typeof stored==='number') applyDockSize(axis,stored*dockExtent(axis),next);
+    else document.body.style.removeProperty(next==='right'?'--dock':'--dock-h');
+  }
+  splitter()?.setAttribute('aria-orientation',dockAxis()==='y'?'horizontal':'vertical');
+  writeDock();
+  syncFrame();
+  scheduleFit();
+  return next;
+}
+
+/* A resize can cross the 1200 px breakpoint, which moves the dock under the
+ * stage; keep `data-dock` honest so the stored mode always describes the cell. */
+function reconcileDock() {
+  const mode=dockMode();
+  if (mode==='right'&&innerWidth<1200) setDock('bottom');
+  else if (mode==='bottom'&&innerWidth>=1200) setDock('right');
+}
+
+let drag=null;
+function startDrag(event) {
+  if (event.button!==0) return;
+  const mode=dockMode();
+  if (mode!=='right'&&mode!=='bottom') return;
+  event.preventDefault();
+  const axis=dockAxis(mode), box=dockPane().getBoundingClientRect();
+  drag={axis,mode,pointer:event.pointerId,
+    origin:axis==='y'?event.clientY:event.clientX,
+    size:axis==='y'?box.height:box.width};
+  try { splitter().setPointerCapture?.(event.pointerId); }
+  catch { /* a pointer that is already gone cannot be captured */ }
+  document.body.classList.add('resizing');
+}
+function moveDrag(event) {
+  if (!drag||event.pointerId!==drag.pointer) return;
+  const now=drag.axis==='y'?event.clientY:event.clientX;
+  /* Dragging away from the stage grows the dock on both axes. */
+  applyDockSize(drag.axis,drag.size-(now-drag.origin),drag.mode);
+  scheduleFit();
+}
+function endDrag(event) {
+  if (!drag) return;
+  try { if (event) splitter()?.releasePointerCapture?.(drag.pointer); }
+  catch { /* the capture is dropped with the pointer anyway */ }
+  drag=null;
+  document.body.classList.remove('resizing');
+  writeDock();
+  fitTerm();
+}
+function toggleDockMax() {
+  const mode=dockMode();
+  if (mode==='max') setDock(lastDockMode);
+  else if (mode==='closed') setDock(preferredDock());
+  else setDock('max');
+}
+function nudgeDock(event) {
+  const mode=dockMode();
+  if (mode!=='right'&&mode!=='bottom') return;
+  const axis=dockAxis(mode), step=event.shiftKey?64:16;
+  const box=dockPane().getBoundingClientRect();
+  const size=axis==='y'?box.height:box.width;
+  const grow=axis==='y'?event.key==='ArrowUp':event.key==='ArrowLeft';
+  const shrink=axis==='y'?event.key==='ArrowDown':event.key==='ArrowRight';
+  if (!grow&&!shrink) return;
+  event.preventDefault();
+  applyDockSize(axis,size+(grow?step:-step),mode);
+  scheduleFit();
+}
+function scheduleFit() {
+  clearTimeout(fitTimer);
+  fitTimer=setTimeout(()=>{ fitTimer=null; fitTerm(); },80);
+}
+
+const splitterBar=splitter();
+if (splitterBar) {
+  splitterBar.addEventListener('pointerdown',startDrag);
+  splitterBar.addEventListener('pointermove',moveDrag);
+  splitterBar.addEventListener('pointerup',endDrag);
+  splitterBar.addEventListener('pointercancel',endDrag);
+  splitterBar.addEventListener('dblclick',toggleDockMax);
+  splitterBar.addEventListener('keydown',nudgeDock);
+}
+
+/* ---------------- project graph: derived numbers with their evidence --------
+ * Every value comes from `graph_get`, which derives it from the signals ledger.
+ * Unknown is an em dash, never 0 or 100, and verified and confidence sit beside
+ * the headline because a percentage alone cannot be judged (BUG-084/089). */
+
+let graphData=null, graphLoading=false, graphSeq=0;
+
+function graphNode(tag,className,text) {
+  const node=document.createElement(tag);
+  if (className) node.className=className;
+  if (text!==undefined) node.textContent=String(text);
+  return node;
+}
+function formatPercent(value) {
+  if (value===null||value===undefined) return '—';
+  const number=Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return (Number.isInteger(number)?String(number):number.toFixed(1))+'%';
+}
+function formatConfidence(value) {
+  if (value===null||value===undefined) return '—';
+  const number=Number(value);
+  if (!Number.isFinite(number)) return '—';
+  return Math.round(Math.max(0,Math.min(1,number))*100)+'%';
+}
+function formatStamp(value) {
+  const number=Number(value);
+  if (!Number.isFinite(number)||number<=0) return '—';
+  return new Date(number).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+/* A percentage is only shown when something in it is evidence-backed. A project
+ * with aspects but no covered task is unknown, not zero (BUG-084/089). */
+function graphUnknown(graph) {
+  if (!graph||graph.percent_null===true) return true;
+  const aspects=Array.isArray(graph.aspects)?graph.aspects:[];
+  if (!aspects.length) return true;
+  return !aspects.some(aspect=>Number(aspect.tasks)>Number(aspect.unknown||0));
+}
+function graphScoreLabel(graph) {
+  if (graphUnknown(graph)) return '—';
+  return formatPercent(graph.percent);
+}
+
+/* The panel is re-fetched for the project now active; a late reply from a
+ * previous project is dropped by the ticket instead of overwriting this one. */
+async function loadGraph() {
+  const region=element('graph-region');
+  if (!region) return null;
+  const project=activeProjectId();
+  const ticket=++graphSeq;
+  if (!project) {
+    graphData=null;
+    graphLoading=false;
+    renderGraph();
+    return null;
+  }
+  graphLoading=true;
+  try {
+    const result=await rpc('graph_get',{project_id:project});
+    if (ticket!==graphSeq) return null;
+    graphData=result&&result.project?result:null;
+    return graphData;
+  } catch (error) {
+    if (ticket===graphSeq) {
+      graphData=null;
+      record('warn','graph unavailable: '+error.message);
+    }
+    return null;
+  } finally {
+    if (ticket===graphSeq) {
+      graphLoading=false;
+      renderGraph();
+    }
+  }
+}
+
+function graphHeader(graph,project) {
+  const head=graphNode('header','graph-head');
+  const score=graphNode('div','graph-score');
+  const value=graphNode('strong','graph-percent',graphScoreLabel(graph));
+  value.dataset.null=String(graphUnknown(graph));
+  score.append(value,graphNode('span','graph-caption','complete'));
+  const stats=graphNode('div','graph-sub');
+  /* With no aspects there is no weight at all: verified and confidence are
+   * vacuous, so they read as dashes rather than 0% (BUG-089). */
+  const vacuous=!graph||graph.percent_null===true;
+  stats.append(graphStat('Verified',vacuous?'—':formatPercent(graph.verified)));
+  stats.append(graphStat('Confidence',vacuous?'—':formatConfidence(graph.confidence)));
+  head.append(score,stats);
+  const name=graphNode('p','graph-project',project?`${project.name} · ${pathState(project)}`:'No project');
+  name.title=project?String(project.path||''):'';
+  head.append(name);
+  return head;
+}
+function graphStat(label,value) {
+  const pair=graphNode('span','graph-stat');
+  pair.append(graphNode('span','graph-stat-label',label),graphNode('strong','graph-stat-value',value));
+  return pair;
+}
+function graphNotice(text) {
+  return graphNode('p','graph-note',text);
+}
+
+function aspectRow(aspect) {
+  const row=graphNode('li','aspect');
+  row.dataset.aspect=String(aspect.id||'');
+  const tasks=Number(aspect.tasks)||0;
+  /* An aspect whose tasks carry no evidence is unknown, not 0%: the bar is empty
+   * and the value is an em dash (BUG-084/089). */
+  const empty=aspect.percent_null===true||tasks===0||Number(aspect.unknown||0)>=tasks;
+  const head=graphNode('div','aspect-head');
+  head.append(graphNode('span','aspect-title',String(aspect.title||aspect.key||'Aspect')));
+  const value=graphNode('span','aspect-value',empty?'—':formatPercent(aspect.percent));
+  value.dataset.null=String(empty);
+  head.append(value);
+  row.append(head);
+  const bar=graphNode('div','aspect-bar');
+  bar.setAttribute('role','img');
+  bar.setAttribute('aria-label',`${aspect.title||'Aspect'}: ${empty?'unknown':formatPercent(aspect.percent)}`);
+  const fill=graphNode('i','aspect-fill');
+  fill.dataset.state=empty?'unknown':'known';
+  fill.style.width=empty?'0%':`${Math.max(0,Math.min(100,Number(aspect.percent)))}%`;
+  bar.append(fill);
+  row.append(bar);
+  const meta=graphNode('div','aspect-meta');
+  meta.append(graphNode('span','aspect-tasks',`${tasks} task${tasks===1?'':'s'}`));
+  if (Number(aspect.unknown)>0) {
+    meta.append(graphNode('span','aspect-unknown',`${aspect.unknown} without evidence`));
+  }
+  if (Number(aspect.weight)!==1) meta.append(graphNode('span','aspect-weight',`weight ${aspect.weight}`));
+  row.append(meta);
+  return row;
+}
+
+function emptyGraphState() {
+  const block=graphNode('section','graph-empty');
+  block.append(graphNode('h4','empty-title','No aspects defined'));
+  block.append(graphNode('p','empty-hint',
+    'An aspect groups the work; completion is derived from evidence — checkpoints, commits, and harness test lines — never typed in.'));
+  const form=graphNode('form','aspect-form');
+  form.autocomplete='off';
+  const input=document.createElement('input');
+  input.type='text';
+  input.id='aspect-title';
+  input.maxLength=120;
+  input.placeholder='e.g. Assistant server';
+  input.setAttribute('aria-label','Aspect title');
+  const submit=graphNode('button','primary','Add aspect');
+  submit.type='submit';
+  form.append(input,submit);
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const title=input.value.trim();
+    const project=activeProjectId();
+    if (!title||!project) { input.focus(); return; }
+    submit.disabled=true;
+    try {
+      await rpc('aspect_add',{project_id:project,title});
+      input.value='';
+      toast('Aspect added');
+      await loadGraph();
+    } catch (error) { toast(error.message); }
+    finally { submit.disabled=false; }
+  });
+  block.append(form);
+  block.append(graphNode('p','empty-note','A new project shows — until an aspect has a task with evidence.'));
+  return block;
+}
+
+function evidenceDrawer(signals) {
+  const drawer=graphNode('details','graph-evidence');
+  const shown=Math.min(signals.length,20);
+  drawer.append(graphNode('summary','graph-evidence-head',
+    shown<signals.length?`Evidence (${shown} of ${signals.length})`:`Evidence (${signals.length})`));
+  if (!signals.length) {
+    drawer.append(graphNotice('No evidence yet: a checkpoint, a commit, or a harness test line is what moves a number.'));
+    return drawer;
+  }
+  const list=graphNode('ul','evidence-list');
+  for (const signal of signals.slice(0,20)) {
+    const row=graphNode('li','evidence');
+    row.dataset.source=String(signal.source||'');
+    const head=graphNode('div','evidence-head');
+    head.append(graphNode('span','evidence-kind',String(signal.kind||'signal')));
+    head.append(graphNode('span','evidence-source',String(signal.source||'')));
+    if (Number.isFinite(Number(signal.id))) head.append(graphNode('span','evidence-id','#'+signal.id));
+    head.append(graphNode('span','evidence-time',formatStamp(signal.time)));
+    row.append(head);
+    row.append(graphNode('p','evidence-text',String(signal.evidence||'')));
+    if (signal.task_id) row.append(graphNode('span','evidence-task',String(signal.task_id)));
+    list.append(row);
+  }
+  drawer.append(list);
+  return drawer;
+}
+
+function renderGraph() {
+  const region=element('graph-region');
+  if (!region) return;
+  const graph=graphData;
+  const panel=graphNode('div','graph-panel');
+  panel.append(graphHeader(graph,activeProjectRow()));
+  if (!graph) {
+    panel.append(graphNotice(graphLoading
+      ?'Reading the graph…'
+      :'No project selected. Register one in Settings; the graph is derived per project.'));
+    region.replaceChildren(panel);
+    return;
+  }
+  const aspects=Array.isArray(graph.aspects)?graph.aspects:[];
+  if (aspects.length) {
+    const list=graphNode('ul','aspect-list');
+    list.setAttribute('aria-label','Aspects');
+    for (const aspect of aspects) list.append(aspectRow(aspect));
+    panel.append(list);
+  } else {
+    panel.append(emptyGraphState());
+  }
+  const risks=Array.isArray(graph.risks)?graph.risks:[];
+  if (risks.length) {
+    const block=graphNode('section','graph-risks');
+    block.append(graphNode('h4','graph-sub-title','Risks'));
+    const list=graphNode('ul','risk-list');
+    for (const risk of risks) list.append(graphNode('li','risk',String(risk)));
+    block.append(list);
+    panel.append(block);
+  }
+  panel.append(evidenceDrawer(Array.isArray(graph.signals)?graph.signals:[]));
+  const foot=graphNode('footer','graph-foot');
+  foot.append(graphNode('span','graph-stamp','as of '+formatStamp(graph.as_of)));
+  const refresh=graphNode('button','graph-refresh','Refresh');
+  refresh.type='button';
+  refresh.addEventListener('click',()=>loadGraph());
+  foot.append(refresh);
+  panel.append(foot);
+  region.replaceChildren(panel);
+}
+
+/* The rendered panel, not the payload: a test asserts what the reader sees. */
+function graphSnapshot() {
+  const region=element('graph-region');
+  const stat=label=>{
+    for (const pair of region?.querySelectorAll('.graph-stat')||[]) {
+      if (pair.querySelector('.graph-stat-label')?.textContent===label) {
+        return pair.querySelector('.graph-stat-value')?.textContent||null;
+      }
+    }
+    return null;
+  };
+  return {
+    open:graphOpen,
+    loading:graphLoading,
+    project_id:graphData?.project?.id||null,
+    percent:graphData?.percent??null,
+    percent_null:graphData?.percent_null===true,
+    unknown:graphUnknown(graphData),
+    label:region?.querySelector('.graph-percent')?.textContent||null,
+    verified:stat('Verified'),
+    confidence:stat('Confidence'),
+    aspects:[...(region?.querySelectorAll('.aspect')||[])].map(row=>({
+      title:row.querySelector('.aspect-title')?.textContent||'',
+      value:row.querySelector('.aspect-value')?.textContent||'',
+      width:row.querySelector('.aspect-fill')?.style.width||'',
+      empty:row.querySelector('.aspect-value')?.dataset.null==='true',
+    })),
+    risks:[...(region?.querySelectorAll('.risk')||[])].map(row=>row.textContent||''),
+    evidence:region?.querySelectorAll('.evidence').length||0,
+    evidenceTotal:region?.querySelector('.graph-evidence-head')?.textContent||null,
+    empty:!!region?.querySelector('.graph-empty'),
+    as_of:region?.querySelector('.graph-stamp')?.textContent||null,
+  };
+}
+
+/* The graph has its own cell; an empty panel is honest, invented edges are not. */
+function showGraph(open) {
+  const next=open===undefined?!graphOpen:!!open;
+  const region=element('graph-region');
+  graphOpen=next;
+  if (region) {
+    region.hidden=!next;
+    if (next) {
+      renderGraph();
+      loadGraph();
+    }
+  }
+  document.body.dataset.graph=next?'open':'closed';
+  element('graph-tab')?.setAttribute('aria-pressed',String(next));
+  syncFrame();
+  scheduleFit();
+  return next;
+}
+element('graph-tab')?.addEventListener('click',()=>showGraph(graphOpen?false:true));
+
+/* The scene measures #stage-region itself; the station only reports that rect on
+ * a layout change and owns the dim channel, which no observer can infer. Below
+ * 1280 px the graph becomes a drawer over the stage's right side, so the region is
+ * not all visible: the art is framed by the largest sliver the drawer leaves.
+ * Framed by the full region it ran under the graph and was cut by its straight
+ * edge (BUG-023). */
+function visibleSliver(cell, drawer) {
+  const x0=Math.max(cell.x,drawer.x), x1=Math.min(cell.x+cell.w,drawer.x+drawer.w);
+  const y0=Math.max(cell.y,drawer.y), y1=Math.min(cell.y+cell.h,drawer.y+drawer.h);
+  if (x1-x0<=1||y1-y0<=1) return cell;  // the drawer misses the cell
+  let best=null;
+  for (const part of [
+    {x:cell.x,y:cell.y,w:x0-cell.x,h:cell.h},
+    {x:x1,y:cell.y,w:cell.x+cell.w-x1,h:cell.h},
+    {x:cell.x,y:cell.y,w:cell.w,h:y0-cell.y},
+    {x:cell.x,y:y1,w:cell.w,h:cell.y+cell.h-y1},
+  ]) if (part.w>1&&part.h>1&&(!best||part.w*part.h>best.w*best.h)) best=part;
+  return best||cell;
+}
+function stageRect() {
+  const region=element('stage-region');
+  if (!region) return null;
+  const box=region.getBoundingClientRect();
+  if (box.width<=1||box.height<=1) return null;
+  const cell={x:box.x,y:box.y,w:box.width,h:box.height};
+  const drawer=graphOpen?element('graph-region'):null;
+  if (!drawer||drawer.hidden) return cell;
+  const open=drawer.getBoundingClientRect();
+  if (open.width<=1||open.height<=1) return cell;
+  return visibleSliver(cell,{x:open.x,y:open.y,w:open.width,h:open.height});
+}
+function panelsOpen() { return dockMode()!=='closed'||graphOpen; }
+/* The station is the only writer of the stage cell: it knows which drawers cover
+ * the region, and it is the side that can observe the region. Watching it here
+ * (rather than in the scene) means an early measurement — a boot that runs before
+ * the stylesheet has laid the grid out — is corrected the moment the real cell
+ * exists instead of framing the art to the window (BUG-020). */
+function syncFrame() {
+  const api=window.naviScene;
+  if (typeof api?.setFrame!=='function') return;
+  api.setFrame(stageRect(),panelsOpen()?1:0);
+}
+const stageRegion=element('stage-region');
+if (stageRegion&&typeof ResizeObserver==='function') new ResizeObserver(()=>syncFrame()).observe(stageRegion);
+
+addEventListener('resize',()=>{ reconcileDock(); syncFrame(); scheduleFit(); });
+
+/* The strip is a session list, not a table dump: live sessions first, dead ones
+ * collapsed under Recent, duplicates disambiguated, profile *names* instead of ids,
+ * state and last activity visible, and every chip reconciled in place by id so the
+ * 700 ms poll never rebuilds the row under the pointer (BUG-043). */
+const sessionsBar=()=>element('sessions');
+const sessionNodes=new Map();
+let recentWrap=null, recentToggle=null, recentChips=null, addChip=null;
+let recentList=[], recentOpen=false;
+
+function profileLabel(id) {
+  const profiles=snapshot?.settings?.profiles||[];
+  const match=profiles.find(profile=>profile.id===id);
+  return match?(match.name||match.id):(id||'harness');
+}
+function relativeTime(ms) {
+  const value=Number(ms)||0;
+  if (!value) return 'unknown';
+  const delta=Date.now()-value;
+  if (delta<60000) return 'just now';
+  if (delta<3600000) return Math.round(delta/60000)+'m ago';
+  if (delta<86400000) return Math.round(delta/3600000)+'h ago';
+  return Math.round(delta/86400000)+'d ago';
+}
+function createSessionChip(session) {
+  const node=document.createElement('div');
+  node.className='session-chip';
+  node.setAttribute('role','button');
+  node.tabIndex=0;
+  node.dataset.id=session.id;
+  const dot=document.createElement('span'); dot.className='session-dot'; dot.setAttribute('aria-hidden','true');
+  const name=document.createElement('span'); name.className='session-name';
+  const state=document.createElement('span'); state.className='session-state';
+  node.append(dot,name,state);
+  return node;
+}
+function updateSessionChip(node,session,label) {
+  const live=session.running===true;
+  node.dataset.live=String(live);
+  node.dataset.state=String(session.state||(live?'running':'exited'));
+  node.classList.toggle('dead',!live);
+  node.classList.toggle('attached',session.id===termSession);
+  node.classList.toggle('active',session.active===true);
+  if (session.active===true) node.setAttribute('aria-current','true'); else node.removeAttribute('aria-current');
+  node.querySelector('.session-name').textContent=label;
+  const stateText=node.querySelector('.session-state');
+  stateText.textContent=live?String(session.state||'running'):'exited';
+  node.title=[profileLabel(session.profile),session.cwd||'','last active '+relativeTime(session.last_active)].filter(Boolean).join(' · ');
+  node.onclick=event=>{
+    if (event.target.closest('.session-drop')) return;
+    openTerminal(session);
+  };
+  node.onkeydown=event=>{
+    if (event.key!=='Enter'&&event.key!==' ') return;
+    event.preventDefault();
+    openTerminal(session);
+  };
+  /* Dead rows can be pruned on request; a live row keeps its terminal. */
+  const drop=node.querySelector('.session-drop');
+  if (live) { if (drop) drop.remove(); return; }
+  let button=drop;
+  if (!button) {
+    button=document.createElement('button');
+    button.type='button';
+    button.className='session-drop';
+    button.textContent='×';
+    button.onclick=event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      removeSession(session);
+    };
+    node.append(button);
+  }
+  button.title='Remove this finished session';
+  button.setAttribute('aria-label','Remove session '+label);
+}
+function removeSession(session) {
+  rpc('session_remove',{id:session.id})
+    .then(()=>{ const node=sessionNodes.get(session.id); if (node) node.remove(); sessionNodes.delete(session.id); })
+    .catch(error=>surfaceFailure(error.message));
+}
+/* Move only what is out of order and drop only what left the list: a chip that is
+ * still in the strip is never detached and re-inserted, so a click being dispatched
+ * cannot land on a detached node (the strip is reconciled in place, never rebuilt). */
+function orderNodes(parent,desired) {
+  let cursor=parent.firstChild;
+  for (const node of desired) {
+    if (!node) continue;
+    if (node===cursor) { cursor=cursor.nextSibling; continue; }
+    parent.insertBefore(node,cursor);
+  }
+  while (cursor) {
+    const next=cursor.nextSibling;
+    if (!desired.includes(cursor)) cursor.remove();
+    cursor=next;
+  }
+}
+function ensureSessionShell(bar) {
+  if (!recentWrap) {
+    recentWrap=document.createElement('div');
+    recentWrap.className='sessions-recent';
+    recentToggle=document.createElement('button');
+    recentToggle.type='button';
+    recentToggle.className='session-chip recent-toggle';
+    recentToggle.onclick=()=>{ recentOpen=!recentOpen; renderSessions(snapshot?.sessions||[]); };
+    recentChips=document.createElement('div');
+    recentChips.className='sessions-recent-chips';
+    recentWrap.append(recentToggle,recentChips);
+  }
+  if (!addChip) {
+    addChip=document.createElement('button');
+    addChip.type='button';
+    addChip.className='session-chip new';
+    addChip.textContent='+ session';
+    addChip.onclick=()=>openNewDialog();
+  }
+  return bar;
+}
+function renderSessions(list) {
+  const bar=sessionsBar();
+  if (!bar) return;
+  const sessions=Array.isArray(list)?list:[];
+  bar.hidden=false;
+  ensureSessionShell(bar);
+  const live=sessions.filter(session=>session.running===true)
+    .sort((a,b)=>(Number(a.created)||0)-(Number(b.created)||0));
+  const dead=sessions.filter(session=>session.running!==true)
+    .sort((a,b)=>(Number(b.last_active)||0)-(Number(a.last_active)||0));
+  const counts=new Map();
+  for (const session of sessions) counts.set(session.name,(counts.get(session.name)||0)+1);
+  const seen=new Map();
+  const liveIds=[], deadIds=[];
+  for (const session of [...live,...dead]) {
+    const index=(seen.get(session.name)||0)+1;
+    seen.set(session.name,index);
+    const label=(counts.get(session.name)||0)>1?session.name+' #'+index:session.name;
+    let node=sessionNodes.get(session.id);
+    if (!node) { node=createSessionChip(session); sessionNodes.set(session.id,node); }
+    updateSessionChip(node,session,label);
+    (session.running===true?liveIds:deadIds).push(session.id);
+  }
+  for (const [id,node] of [...sessionNodes]) {
+    if (sessions.some(session=>session.id===id)) continue;
+    node.remove();
+    sessionNodes.delete(id);
+  }
+  /* The switcher is the strip's first control: `orderNodes` removes every child
+   * it is not given, so it must be part of the desired list (BUG-090). */
+  const desired=[element('project-switcher'),...liveIds.map(id=>sessionNodes.get(id))]
+    .filter(Boolean);
+  if (deadIds.length) {
+    recentWrap.hidden=false;
+    recentToggle.textContent='Recent ('+deadIds.length+')';
+    recentToggle.setAttribute('aria-expanded',String(recentOpen));
+    recentChips.hidden=!recentOpen;
+    if (!sameList(recentList,deadIds)) {
+      orderNodes(recentChips,deadIds.map(id=>sessionNodes.get(id)).filter(Boolean));
+      recentList=deadIds.slice();
+    }
+    desired.push(recentWrap);
+  } else {
+    recentWrap.hidden=true;
+    recentChips.hidden=true;
+    recentList=[];
+    orderNodes(recentChips,[]);
+  }
+  desired.push(addChip);
+  orderNodes(bar,desired);
+}
+
+/* New-session dialog: pick a harness profile, project, optional prompt. */
+const newDialog=element('new-dialog');
+function openNewDialog() {
+  const settings=snapshot?.settings||{};
+  const profile=element('new-profile'); profile.replaceChildren();
+  for (const p of settings.profiles||[]) {
+    const entry=document.createElement('option'); entry.value=p.id; entry.textContent=p.name||p.id;
+    if (p.executable==='/bin/bash') entry.textContent+=' (terminal)';
+    profile.append(entry);
+  }
+  /* The default directory is the active project, not the first one: the
+   * switcher decides where a new session lands (BUG-090). */
+  const cwd=element('new-cwd');
+  const active=activeProjectRow();
+  cwd.value=active?.path||projectList()[0]?.path||'';
+  const datalist=element('new-projects'); datalist.replaceChildren();
+  for (const project of projectList()) {
+    const entry=document.createElement('option'); entry.value=project.path; entry.label=project.name;
+    datalist.append(entry);
+  }
+  element('new-name').value=''; element('new-prompt').value='';
+  newDialog.showModal();
+}
+element('new-cancel').onclick=()=>newDialog.close();
+element('new-form').onsubmit=async event=>{
+  event.preventDefault();
+  const profile=element('new-profile').value, cwd=element('new-cwd').value.trim();
+  if (!profile||!cwd) { toast('Pick a harness and a project directory'); return; }
+  const params={profile,cwd};
+  const name=element('new-name').value.trim(); if (name) params.name=name;
+  const prompt=element('new-prompt').value.trim(); if (prompt) params.prompt=prompt;
+  try {
+    const session=await rpc('create',params);
+    newDialog.close();
+    /* A session launched in another project makes that project active, so the
+     * four scopes never disagree about where the work is (BUG-090). */
+    if (session&&session.project_id&&session.project_id!==activeProjectId()) {
+      switchProject(String(session.project_id));
+    }
+    openTerminal(session);
+  } catch (error) { toast(error.message); }
+};
+
+/* ---- settings: model combobox, agent, harnesses, speech ---- */
+const dialog=element('settings-dialog');
+function option(select, value, label) {
+  const entry=document.createElement('option'); entry.value=value; entry.textContent=label; select.append(entry);
+}
+
+/* One option list feeds two surfaces: the settings dialog and the composer
+ * switcher. The current reference is always seeded, so a catalog that lacks the
+ * saved model can never turn the field into an empty string (BUG-044). */
+const modelState={value:'',filter:'',index:-1,open:false};
+const composerModel={open:false,index:-1};
+
+function modelChoices() {
+  const choices=[];
+  for (const item of catalogs.models.list||[]) {
+    if (!item||!item.id) continue;
+    const provider=String(item.providerID||'other');
+    choices.push({value:provider+'/'+item.id,provider,label:String(item.name||item.id)});
+  }
+  const current=modelRef();
+  if (current&&!choices.some(choice=>choice.value===current)) {
+    choices.unshift({value:current,provider:current.split('/')[0]||'current',label:shortModel(current)+' (saved)'});
+  }
+  return choices;
+}
+function filterChoices(choices,query) {
+  const needle=String(query||'').trim().toLowerCase();
+  if (!needle) return choices;
+  return choices.filter(choice=>choice.value.toLowerCase().includes(needle)
+    ||choice.label.toLowerCase().includes(needle)
+    ||choice.provider.toLowerCase().includes(needle));
+}
+function renderModelOptions(list,prefix,choices,value,activeIndex,onPick) {
+  list.replaceChildren();
+  let provider=null;
+  choices.forEach((choice,index)=>{
+    if (choice.provider!==provider) {
+      provider=choice.provider;
+      const group=document.createElement('li');
+      group.className='combobox-group';
+      group.setAttribute('role','presentation');
+      group.textContent=provider;
+      list.append(group);
+    }
+    const item=document.createElement('li');
+    item.className='combobox-option'+(index===activeIndex?' active':'');
+    item.id=prefix+'-option-'+index;
+    item.dataset.value=choice.value;
+    item.setAttribute('role','option');
+    if (choice.value===value) item.setAttribute('aria-selected','true');
+    const name=document.createElement('span'); name.className='option-name'; name.textContent=choice.label;
+    const ref=document.createElement('span'); ref.className='option-ref'; ref.textContent=choice.value;
+    item.append(name,ref);
+    /* mousedown, not click: the field keeps focus, so blur cannot close the list
+     * between the press and the release. */
+    item.onmousedown=event=>{ event.preventDefault(); onPick(choice.value); };
+    list.append(item);
+  });
+  return choices;
+}
+
+const settingsModelList=()=>element('model-options');
+function settingsModelRender() {
+  const input=element('setting-model');
+  const choices=filterChoices(modelChoices(),modelState.filter);
+  renderModelOptions(settingsModelList(),'model-option',choices,modelState.value,modelState.index,chooseSettingsModel);
+  settingsModelList().hidden=!modelState.open||!choices.length;
+  input.setAttribute('aria-expanded',String(modelState.open&&choices.length>0));
+  return choices;
+}
+function chooseSettingsModel(value) {
+  if (!isModelRef(value)) { toast('A model must look like provider/id'); return; }
+  modelState.value=value;
+  modelState.open=false;
+  modelState.index=-1;
+  const input=element('setting-model');
+  input.value=value;
+  input.setAttribute('aria-expanded','false');
+  settingsModelList().hidden=true;
+}
+element('setting-model').addEventListener('focus',()=>{
+  modelState.open=true; modelState.filter=''; modelState.index=-1;
+  settingsModelRender();
+});
+element('setting-model').addEventListener('input',()=>{
+  modelState.open=true;
+  modelState.filter=element('setting-model').value;
+  modelState.index=-1;
+  settingsModelRender();
+});
+element('setting-model').addEventListener('blur',()=>setTimeout(()=>{
+  modelState.open=false;
+  settingsModelList().hidden=true;
+  element('setting-model').setAttribute('aria-expanded','false');
+},150));
+element('setting-model').addEventListener('keydown',event=>{
+  const choices=filterChoices(modelChoices(),modelState.filter);
+  if (!modelState.open||!choices.length) return;
+  if (event.key==='ArrowDown') {
+    event.preventDefault();
+    modelState.index=(modelState.index+1)%choices.length;
+    settingsModelRender();
+  } else if (event.key==='ArrowUp') {
+    event.preventDefault();
+    modelState.index=(modelState.index-1+choices.length)%choices.length;
+    settingsModelRender();
+  } else if (event.key==='Enter') {
+    event.preventDefault();   // pick, never submit the dialog from the field
+    const choice=choices[modelState.index>=0?modelState.index:0];
+    if (choice) chooseSettingsModel(choice.value);
+  } else if (event.key==='Escape') {
+    event.preventDefault();
+    modelState.open=false;
+    settingsModelList().hidden=true;
+  }
+});
+
+/* Composer switcher: the same catalog, one keystroke away from the message box. */
+function openModelPopup() {
+  if (!snapshot) return;
+  composerModel.open=true;
+  composerModel.index=-1;
+  element('model-pop').hidden=false;
+  element('model-switcher').setAttribute('aria-expanded','true');
+  element('model-search').value='';
+  composerModelRender();
+  element('model-search').focus();
+  if (!catalogs.models.list) {
+    catalog('models','oc_models').then(()=>composerModelRender()).catch(()=>{
+      /* The seeded current model is still listed; the failure is not a dead end. */
+    });
+  }
+}
+function closeModelPopup() {
+  composerModel.open=false;
+  element('model-pop').hidden=true;
+  element('model-switcher').setAttribute('aria-expanded','false');
+}
+function composerModelRender() {
+  const choices=filterChoices(modelChoices(),element('model-search').value);
+  renderModelOptions(element('model-list'),'composer-model-option',choices,modelRef(),composerModel.index,chooseModel);
+  element('model-list').hidden=!choices.length;
+  return choices;
+}
+async function chooseModel(value) {
+  if (!isModelRef(value)) { toast('A model must look like provider/id'); return; }
+  closeModelPopup();
+  if (!snapshot) return;
+  const previous=String(snapshot.settings?.assistant?.model||'');
+  if (value===previous) return;
+  const next={...snapshot.settings,assistant:{...(snapshot.settings.assistant||{}),model:value}};
+  try {
+    await rpc('settings',next);
+    snapshot.settings=next;
+    surfaceSettings(snapshot);
+    toast('Model set to '+shortModel(value));
+  } catch (error) { surfaceFailure('Could not change the model: '+error.message); }
+}
+element('model-switcher').onclick=()=>{ if (composerModel.open) closeModelPopup(); else openModelPopup(); };
+element('model-search').addEventListener('input',()=>composerModelRender());
+element('model-search').addEventListener('keydown',event=>{
+  const choices=filterChoices(modelChoices(),element('model-search').value);
+  if (!choices.length) return;
+  if (event.key==='ArrowDown') {
+    event.preventDefault();
+    composerModel.index=(composerModel.index+1)%choices.length;
+    composerModelRender();
+  } else if (event.key==='ArrowUp') {
+    event.preventDefault();
+    composerModel.index=(composerModel.index-1+choices.length)%choices.length;
+    composerModelRender();
+  } else if (event.key==='Enter') {
+    event.preventDefault();
+    const choice=choices[composerModel.index>=0?composerModel.index:0];
+    if (choice) chooseModel(choice.value);
+  } else if (event.key==='Escape') {
+    event.preventDefault();
+    closeModelPopup();
+    element('model-switcher').focus();
+  }
+});
+document.addEventListener('mousedown',event=>{
+  if (!composerModel.open) return;
+  if (element('model-pop').contains(event.target)||element('model-switcher').contains(event.target)) return;
+  closeModelPopup();
+});
+
+async function fillSettingsSelects(settings) {
+  const agent=element('setting-agent');
+  const agentId=settings.assistant?.agent||'navi';
+  modelState.value=String(settings.assistant?.model||modelRef());
+  element('setting-model').value=modelState.value;
+  element('setting-model').setAttribute('aria-expanded','false');
+  element('model-note').textContent='The answering model is reported with every reply.';
+  try {
+    await catalog('models','oc_models');
+    /* A catalog that lands after the field was focused must reach the open list. */
+    if (modelState.open) settingsModelRender();
+  } catch (error) {
+    element('model-note').textContent='Model catalog unavailable: '+error.message+' — the saved model is kept.';
+  }
+  /* The seeded agent is always selectable: a catalog that arrives later replaces the
+   * list in one synchronous step, so a save can never read an empty field. */
+  agent.replaceChildren();
+  option(agent,agentId,agentId);
+  agent.value=agentId;
+  try {
+    const agents=await catalog('agents','oc_agents');
+    const known=agents.filter(item=>item&&item.id);
+    if (known.length) {
+      agent.replaceChildren();
+      for (const item of known) option(agent,item.id,item.name||item.id);
+      if (![...agent.options].some(entry=>entry.value===agentId)) option(agent,agentId,agentId);
+    }
+    agent.value=agentId;
+  } catch (error) {
+    agent.replaceChildren();
+    option(agent,agentId,agentId);
+    agent.value=agentId;
+    toast('OpenCode agents unavailable: '+error.message);
+  }
+}
+function profileRow(profile={id:'',name:'',executable:'',args:[]}) {
+  const row=document.createElement('div'); row.className='profile-row';
+  /* The daemon's id is not derivable from the display name ("Claude Code" is
+   * `claude`), so the row carries it: a save must not read as a rename. */
+  row.dataset.id=profile.id||'';
+  const make=(cls,placeholder,value)=>{
+    const field=document.createElement('input'); field.className=cls; field.placeholder=placeholder; field.value=value;
+    row.append(field); return field;
+  };
+  make('profile-name','Name',profile.name||'');
+  make('profile-exec','Executable',profile.executable||'');
+  /* BUG-077: a JSON array round-trips spaces and quoting exactly; the old
+   * whitespace join destroyed `--flag "two words"` on every save. */
+  make('profile-args','Args (JSON array)',JSON.stringify(profile.args||[]));
+  const drop=document.createElement('button'); drop.type='button'; drop.className='icon profile-remove'; drop.textContent='×'; drop.title='Remove harness';
+  drop.onclick=()=>row.remove();
+  row.append(drop);
+  return row;
+}
+function collectProfiles() {
+  /* The editor edits three fields and the daemon owns the rest (harness, env,
+   * cwd, resume policy), so a known profile is rebuilt from the daemon's own
+   * record: sending a stripped copy read as a removal and the save was refused. */
+  const known=new Map((snapshot?.settings?.profiles||[]).map(profile=>[profile.id,profile]));
+  const profiles=[];
+  for (const row of element('profiles-editor').children) {
+    const name=row.querySelector('.profile-name').value.trim();
+    const exec=row.querySelector('.profile-exec').value.trim();
+    const original=known.get(row.dataset.id);
+    if (!exec&&!original) continue;  // a fresh row nobody filled in
+    const raw=row.querySelector('.profile-args').value.trim()||'[]';
+    let args;
+    try { args=JSON.parse(raw); }
+    catch { throw new Error('Args for "'+(name||exec||'profile')+'" must be a JSON array'); }
+    if (!Array.isArray(args)||args.some(arg=>typeof arg!=='string')) {
+      throw new Error('Args for "'+(name||exec||'profile')+'" must be an array of strings');
+    }
+    profiles.push({
+      ...original,
+      id:original?original.id
+        :(name||exec).toLowerCase().replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'')||exec,
+      name:name||original?.name||exec,
+      executable:exec||original?.executable||'',
+      args,
+    });
+  }
+  return profiles;
+}
+element('profile-add').onclick=()=>element('profiles-editor').append(profileRow());
+function openSettings() {
+  if (!snapshot) { toast('Navi is still connecting'); return; }
+  const settings=snapshot.settings;
+  element('setting-speak').checked=!!settings.speak;
+  element('setting-mic').checked=!!settings.microphone;
+  element('setting-prompt').value=settings.system_prompt||'';
+  const language=String(settings.speech?.language||'en').trim()||'en';
+  element('setting-language').value=language;
+  element('speech-note').textContent='Speech language: '+language+' · the wake-word model is English-only.';
+  const editor=element('profiles-editor');
+  editor.replaceChildren();
+  for (const profile of settings.profiles||[]) editor.append(profileRow(profile));
+  dialog.showModal();
+  fillSettingsSelects(settings);
+  fillDiagnostics();
+}
+element('settings-button').onclick=()=>openSettings();
+element('settings-cancel').onclick=()=>dialog.close();
+element('settings-new').onclick=async()=>{
+  try {
+    await rpc('oc_new',{project_id:activeProjectId()||undefined});
+    invalidateCatalogs();     // a new gateway session can expose a different catalog
+    toast('Started a new OpenCode session');
+  } catch (error) { toast(error.message); }
+};
+element('settings-form').onsubmit=async event=>{
+  event.preventDefault();
+  if(!snapshot)return;
+  /* BUG-044: an empty or malformed reference breaks every later turn, so an
+   * invalid field is refused instead of written over a working model. */
+  const candidate=modelState.value||element('setting-model').value.trim()||modelRef();
+  if (!isModelRef(candidate)) {
+    element('model-note').textContent='Keep a model reference shaped like provider/model.';
+    toast('Save refused: the assistant model must look like provider/model');
+    return;
+  }
+  /* An empty field falls back to the stored value: a save must never write a broken
+   * agent reference either (BUG-044 covers the model, the same rule holds here). */
+  const agentValue=element('setting-agent').value||snapshot.settings.assistant?.agent||'navi';
+  let profiles;
+  try { profiles=collectProfiles(); }
+  catch (error) { toast(error.message); return; }
+  /* BUG-057: the transcript/TTS language is a setting, never a hardcoded "en".
+   * BCP-47-ish codes only; the wake-word model itself stays English-only. */
+  const language=String(element('setting-language').value||'en').trim().toLowerCase();
+  if (!/^[a-z]{2,3}(-[a-z]{2})?$/.test(language)) {
+    toast('Speech language must be a code like en, ar or pt-br');
+    element('setting-language').focus();
+    return;
+  }
+  const next={
+    ...snapshot.settings,
+    speak:element('setting-speak').checked,
+    microphone:element('setting-mic').checked,
+    speech:{...(snapshot.settings.speech||{}),language},
+    system_prompt:element('setting-prompt').value,
+    assistant:{
+      ...(snapshot.settings.assistant||{}),
+      model:candidate,
+      agent:agentValue,
+    },
+    profiles,
+  };
+  try {
+    await rpc('settings',next);
+    snapshot.settings=next;
+    modelState.value=candidate;
+    try { await rpc('voice_start'); } catch (error) { /* workers stay off in isolated mode */ }
+    dialog.close();
+    surfaceSettings(snapshot);
+    toast('Settings saved');
+  } catch (error) { surfaceFailure(error.message); }
+};
+
+/* ---------------- diagnostics: visible state, no network ---------------- */
+
+function diagnosticsBlock() {
+  let block=element('diagnostics');
+  if (block) return block;
+  const form=element('settings-form');
+  block=document.createElement('section');
+  block.id='diagnostics';
+  block.setAttribute('aria-label','Diagnostics');
+  block.style.cssText='margin-top:12px;padding:10px;border:1px solid rgba(141,255,224,.22);border-radius:6px;background:rgba(3,10,43,.5)';
+  const title=document.createElement('b');
+  title.textContent='Diagnostics';
+  const body=document.createElement('pre');
+  body.id='diagnostics-body';
+  body.style.cssText='margin:6px 0;white-space:pre-wrap;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace';
+  body.textContent='collecting…';
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;gap:8px;flex-wrap:wrap';
+  const reload=document.createElement('button');
+  reload.type='button'; reload.id='diagnostics-reload'; reload.textContent='Reload UI';
+  reload.onclick=()=>{ if(!send({type:'reload'})) location.reload(); toast('Reloading the interface'); };
+  const copy=document.createElement('button');
+  copy.type='button'; copy.id='diagnostics-copy'; copy.textContent='Copy diagnostics';
+  copy.onclick=copyDiagnostics;
+  row.append(reload,copy);
+  block.append(title,body,row);
+  const actions=form.querySelector('.actions');
+  if (actions) form.insertBefore(block,actions); else form.append(block);
+  return block;
+}
+function diagnosticsText() {
+  const ratio=window.naviScene?.renderer?.getPixelRatio?.();
+  const lines=[
+    `renderer   ${element('field').dataset.renderer||'unknown'}${typeof ratio==='number'?' · pixel ratio '+ratio:''}`,
+    `dpr        ${devicePixelRatio||1}`,
+    `viewport   ${innerWidth}×${innerHeight}`,
+    `daemon     ${daemon?'navid '+daemon.version+' pid '+daemon.pid:'not reachable'}`,
+    `pending    ${pending.size} · ${timeouts} timeouts · ${dropped} dropped`,
+    `cursor     ${seq} · boot ${snapshot?.boot_id ?? 'unknown'}`,
+    `chat       ${messages.length} messages · ${mountedRows.size} mounted · ${statusPhase}${turn?' · turn open':''}`,
+    `voice      ${voiceWord(snapshot?.voice?.status)}${confirmState.active?' · confirming':''}`,
+    `workers    voice ${snapshot?.voice?.status||'unknown'} · desktop ${snapshot?.desktop?.status||'unknown'}`,
+    `feed       ${offline?'offline':'online'} · ${polls} polls · ${pollFailures} failures · backoff ${backoff}ms`,
+  ];
+  const last=diagnostics.at(-1);
+  if (last) lines.push(`last log   ${last.level}: ${last.message}`);
+  return lines.join('\n');
+}
+async function fillDiagnostics() {
+  diagnosticsBlock();
+  if (!daemon) await refreshDaemon();
+  const body=element('diagnostics-body');
+  if (body) body.textContent=diagnosticsText();
+}
+function copyDiagnostics() {
+  const text=`Navi diagnostics\n${diagnosticsText()}\n\n${JSON.stringify(window.navi.inspect(),null,2)}`;
+  const area=document.createElement('textarea');
+  area.value=text; area.setAttribute('readonly',''); area.style.cssText='position:fixed;top:-1000px';
+  document.body.append(area); area.select();
+  let copied=false;
+  try { copied=document.execCommand('copy'); } catch (error) { record('warn','copy diagnostics failed: '+error.message); }
+  area.remove();
+  toast(copied?'Diagnostics copied':'Could not copy diagnostics');
+}
+
+/* Panels that carry content the user reads; the stage is a measurement cell and
+ * is inspected separately, because a drawer is allowed to sit on it by design. */
+const LAYOUT_PANELS=['sessions','chat','terminal','graph'];
+function rectOf(target) {
+  const node=typeof target==='string'?document.querySelector(target):target;
+  if (!node) return null;
+  const box=node.getBoundingClientRect(), style=getComputedStyle(node);
+  return {x:Math.round(box.x),y:Math.round(box.y),width:Math.round(box.width),height:Math.round(box.height),
+    visible:style.display!=='none'&&style.visibility!=='hidden'&&box.width>1&&box.height>1};
+}
+function intersects(a,b) {
+  return Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)>1
+    && Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y)>1;
+}
+/* The boot overlay is a flex box in the stylesheet, so `hidden` alone would not
+ * close it; the evidence asserts the computed display instead of the flag. */
+function bootOverlay() {
+  const node=element('boot');
+  if (!node) return null;
+  const style=getComputedStyle(node);
+  return {display:style.display,hidden:node.hidden,opacity:style.opacity};
+}
+function layoutSnapshot() {
+  const layout={
+    stage:rectOf('#stage-region'),
+    chat:rectOf('.chat'),
+    terminal:rectOf('#terminal-pane'),
+    sessions:rectOf('#sessions'),
+    graph:rectOf('#graph-region'),
+  };
+  /* The graph becomes a drawer over the stage cell below 1280 px and the terminal
+   * takes that cell below 900, so the stage is excluded from the pair list: two
+   * content panels over each other is the defect this reports. */
+  const overlaps=[];
+  for (let a=0;a<LAYOUT_PANELS.length;a++) for (let b=a+1;b<LAYOUT_PANELS.length;b++) {
+    const first=layout[LAYOUT_PANELS[a]], second=layout[LAYOUT_PANELS[b]];
+    if (first?.visible&&second?.visible&&intersects(first,second)) overlaps.push(LAYOUT_PANELS[a]+'/'+LAYOUT_PANELS[b]);
+  }
+  return {...layout,overlaps};
+}
+
+window.navi={
+  reply(ticket,reply){
+    /* Isolated-only test hook: prove a lost reply becomes a timeout instead of
+     * a permanently parked promise. */
+    if (host.dropReply>0) { host.dropReply--; dropped++; record('warn',`dropped reply for ticket ${ticket}`); return; }
+    const request=pending.get(ticket);
+    if(!request) { unknownReplies++; record('warn',`reply for unknown ticket ${ticket}`); return; }
+    pending.delete(ticket);
+    if(reply?.ok) { request.resolve(reply.result); return; }
+    const error=new Error((reply&&reply.error)||'Request failed');
+    record('error',`rpc ${request.op} failed: ${error.message}`);
+    request.reject(error);
+  },
+  receive(data){term?.write(Uint8Array.from(atob(data),c=>c.charCodeAt(0)));},
+  notice:toast,
+  /* BUG-015 push channel: the host delivers a `status` payload over the existing
+   * message bridge (40 ms while a turn is open, 700 ms idle). The poll stays as the
+   * fallback and both paths go through the same applier. */
+  push(value){
+    try { update(value); }
+    catch (error) { record('warn','push failed: '+error.message); }
+  },
+  inspect(){
+    const ratio=window.naviScene?.renderer?.getPixelRatio?.();
+    const chat=document.querySelector('.chat');
+    /* The computed display is the truth: the `hidden` attribute alone would miss
+     * a panel the CSS closed (and vice versa). */
+    const terminalDisplay=getComputedStyle(element('terminal-pane')).display;
+    return {
+      renderer:element('field').dataset.renderer||'unknown',
+      pixelRatio:typeof ratio==='number'?ratio:null,
+      dpr:devicePixelRatio||1,
+      viewport:{width:innerWidth,height:innerHeight},
+      chatOpacity:chat?getComputedStyle(chat).opacity:null,
+      booted,degraded,boot:bootSource,
+      bootOverlay:bootOverlay(),
+      /* The painted art, not the layout: a layout probe can only see panel
+       * rects, so the stage reports where its own drawing actually landed. */
+      art:window.naviScene?.bounds?.() ?? null,
+      devtools:host.devtools===true,isolated:host.isolated===true,
+      pending:pending.size,
+      pendingOps:[...pending.values()].map(entry=>entry.op),
+      /* A healthy request can still be in flight when a snapshot is taken; a
+       * request older than its delivery budget is the parked promise the sweep
+       * exists to prevent. */
+      pendingStale:[...pending.values()]
+        .filter(entry=>Date.now()-(entry.expires-entry.budget)>entry.budget).length,
+      pendingOldestMs:[...pending.values()]
+        .reduce((oldest,entry)=>Math.max(oldest,Date.now()-(entry.expires-entry.budget)),0),
+      cursor:seq,
+      polls,pollFailures,offline,backoff,
+      timeouts,dropped,unknownReplies,
+      daemon:daemon||null,
+      workers:{voice:snapshot?.voice?.status||'unknown',desktop:snapshot?.desktop?.status||'unknown'},
+      errors:diagnostics.filter(entry=>entry.level==='error'),
+      diagnostics:diagnostics.slice(),
+      sessions:snapshot?.sessions,
+      title:'Navi',
+      messages:document.querySelectorAll('#chat-log .msg').length,
+      chat:{
+        count:messages.length,
+        mounted:mountedRows.size,
+        rows:document.querySelectorAll('#chat-log .msg').length,
+        empty:!element('chat-empty').hidden,
+        emptyVisible:!element('chat-empty').hidden,
+        streaming:!!turn&&turn.done!==true,
+        turnDone:!!turn&&turn.done===true,
+        status:statusPhase,
+        label:element('state').textContent,
+        failed:messages.filter(message=>message.status==='failed').length,
+        ids:messages.map(message=>message.id),
+        cursors:messages.map(message=>message.cursor),
+        savedIds:messages.filter(message=>message.role==='user'||message.role==='assistant').map(message=>message.id),
+        lastId:messages.at(-1)?.id||null,
+        lastText:messages.length?messageText(messages.at(-1)):'',
+        lastStatus:messages.at(-1)?.status||null,
+        pendingFinalise:pendingFinalise?pendingFinalise.id:null,
+        history:{limit:historyLimit,hasMore:historyHasMore,oldestCursor},
+        lastFailure:lastFailure||null,
+        attachments:attachments.map(entry=>({name:entry.name,size:entry.size,
+          ready:!!entry.data,error:entry.error||null})),
+        lastCommand,
+      },
+      voice:{
+        status:snapshot?.voice?.status||'unknown',
+        label:voiceWord(snapshot?.voice?.status),
+        transcript:snapshot?.voice?.transcript||null,
+        confirming:confirmState.active,
+        countdown:element('voice-count')?.textContent||'',
+        banner:!element('voice-banner').hidden,
+      },
+      model:shortModel(modelRef()),
+      modelPicker:{value:modelState.value,filter:modelState.filter,open:modelState.open,
+        choices:modelChoices().length,catalog:(catalogs.models.list||[]).length,
+        options:document.querySelectorAll('#model-options .combobox-option').length},
+      rpcOps:rpcLog.slice(-40),
+      rpcCalls:rpcCalls.slice(),
+      slash:slashMatches.length,
+      busy,
+      terminal:terminalDisplay!=='none',
+      terminalDisplay,
+      dock:dockMode(),
+      graphOpen,
+      phase,
+      /* The active project and the rendered graph, so a test asserts the same
+       * frame the reader sees (BUG-089/090). */
+      project:{
+        id:activeProjectId(),
+        name:activeProjectRow()?.name||null,
+        path:activeProjectRow()?.path||null,
+        path_state:activeProjectRow()?pathState(activeProjectRow()):null,
+        label:element('project-status')?.textContent||'',
+        switcher:switcherOpen,
+        options:projectList().length,
+        scope:assistantScope,
+      },
+      graph:graphSnapshot(),
+      layout:layoutSnapshot(),
+    };
+  },
+  /* Programmatic layout controls: the dock is also driven by the session chips,
+   * and the graph panel by its own refresh and tab. */
+  setDock:mode=>setDock(mode),
+  showGraph:open=>showGraph(open),
+  switchProject:id=>switchProject(id),
+  loadGraph:()=>loadGraph(),
+  graph:()=>graphSnapshot(),
+};
+
+/* Isolated-only hooks: the GUI workflow drives the real page, so it needs a way to
+ * reset the transcript and re-hydrate it from the daemon's own store. */
+if (host.isolated===true) {
+  window.navi.hooks={
+    update,
+    push:value=>{ try { update(value); } catch (error) { record('warn','push failed: '+error.message); } },
+    resetChat:()=>resetChat(),
+    pausePoll:value=>{
+      pollPaused=!!value;
+      if (!pollPaused) poll();
+    },
+    hydrate:options=>loadHistory(options||{}),
+    dispatch:(text,options)=>dispatch(text,options||{}),
+    attach:(items)=>{
+      let accepted=0;
+      for (const item of items||[]) if (acceptAttachment(item)) accepted+=1;
+      renderAttachments();
+      return {accepted,count:attachments.length};
+    },
+    clearAttachments:()=>{ attachments=[]; renderAttachments(); },
+    lastCommand:()=>lastCommand,
+    ids:()=>messages.map(message=>message.id),
+    rpcOps:()=>rpcLog.slice(),
+  };
+}
+
+/* ---------------- boot, degradation, and stage DPR ---------------- */
+
+/* The station owns booting: the scene callback, the first uncaught error, and a
+ * deadline that fires even when the scene never calls back. */
+let booted=false, degraded=false, bootTimer=null, bootSource='scene';
+/* Isolated mode boots instantly (there is no entrance to watch), so the title is
+ * closed outright instead of fading: a capture taken mid-fade carries a ghost of
+ * "Navi online" over the chat. Production keeps the 900 ms hold and the fade
+ * (BUG-029); the stylesheet's `display:flex` would beat the `hidden` attribute, so
+ * both are set. */
+const instantBoot=host.isolated===true;
+function hideBootOverlay() {
+  const overlay=element('boot');
+  if (!overlay) return;
+  overlay.hidden=true;
+  overlay.style.display='none';
+}
+function markBooted(source) {
+  /* A late scene or failure callback may relabel a boot the deadline forced, but
+   * the deadline must never overwrite a stage that already reported (BUG-029). */
+  if (booted) {
+    if (source!=='deadline'&&bootSource==='deadline') bootSource=source;
+    return;
+  }
+  bootSource=source;
+  booted=true;
+  clearTimeout(bootTimer);
+  document.body.classList.remove('booting');
+  document.body.classList.add('booted');
+  if (instantBoot) hideBootOverlay();
+  syncFrame();
+  setMotion();
+}
+function degrade(reason) {
+  const first=!degraded;
+  degraded=true;
+  document.body.classList.add('degraded');
+  const field=element('field');
+  if (field) field.dataset.renderer=window.naviScene?'fallback':'missing';
+  const chat=document.querySelector('.chat');
+  if (chat) chat.style.opacity='1';  // a dead stage must never hide the chat
+  markBooted('degraded');
+  if (first) record('warn','stage unavailable: '+reason);
+}
+addEventListener('error',event=>{
+  record('error',event.error?.message||event.message||'script error',event.error?.stack);
+  markBooted('error');
+});
+addEventListener('unhandledrejection',event=>{
+  const reason=event.reason;
+  record('error',reason?.message||String(reason||'unhandled rejection'),reason?.stack);
+  markBooted('rejection');
+});
+addEventListener('navi:degraded',event=>{
+  degrade((event.detail&&event.detail.reason)||'the stage reported a failure');
+});
+
+/* The scene re-evaluates devicePixelRatio inside resize() and clamps it to
+ * window.naviDprCap, so the station owns the cap and moving between displays
+ * keeps the stage sharp without unbounded overdraw. */
+const DPR_CAP=2;
+function syncPixelRatio() {
+  window.naviDprCap=DPR_CAP;
+  const api=window.naviScene;
+  if (typeof api?.setPixelRatio==='function') api.setPixelRatio(Math.min(devicePixelRatio||1,DPR_CAP));
+}
+addEventListener('resize',syncPixelRatio);
+
+function setMotion(){window.naviScene?.setMotion(motion);document.body.classList.toggle('still',!motion);}
+/* The scene follows the OS query on its own; the station mirrors the same value
+ * so `body.still` and the scene never disagree about motion. */
+reducedMotion.addEventListener('change',event=>{ motion=!event.matches; setMotion(); });
+/* Isolated-only: force the degraded path so the recovery contract is testable. */
+if (host.webglFail) {
+  window.naviScene?.degrade?.('NAVI_FORCE_WEBGL_FAIL');
+  degrade('forced WebGL failure (NAVI_FORCE_WEBGL_FAIL)');
+}
+/* The scene may have fallen back before this file ran (its event would be
+ * missed), so report the state it left on the canvas as well. */
+const field=element('field');
+if (field && (field.dataset.renderer==='fallback' || (window.naviScene && !window.naviScene.renderer))) {
+  degrade('the stage could not create a WebGL context');
+}
+
+/* Boot is never blocked on the stage: the deadline fires even when the bundle is
+ * missing, and a missing bundle is reported as a degradation, not a blank page. */
+bootTimer=setTimeout(()=>{
+  if (!window.naviScene) degrade('the stage bundle did not load');
+  markBooted('deadline');
+},1200);
+/* `instant` skips the entrance for tests only: in production the scene holds the
+ * title and flies in, and the station waits for its callback before marking the
+ * page booted. */
+window.naviScene?.boot(()=>markBooted('scene'),instantBoot);
+syncPixelRatio();
 send({type:'ready'});poll();

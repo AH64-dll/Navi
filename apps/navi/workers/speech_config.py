@@ -27,11 +27,11 @@ SECRETS_FILE = Path(os.environ.get("NAVI_SECRETS_FILE", CONFIG_DIR / "secrets.en
 SPEECH_FILE = Path(os.environ.get("NAVI_SPEECH_CONFIG", CONFIG_DIR / "speech.json"))
 
 # Credentials each provider needs before it is attempted.
-KEY_NAMES = ("GROQ_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "GEMINI_API_KEY")
+KEY_NAMES = ("DEEPGRAM_API_KEY", "GROQ_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "GEMINI_API_KEY")
 
 CLOUD_TTS = ("edge", "cloudflare", "gemini")
 LOCAL_TTS = ("piper",)
-CLOUD_STT = ("groq", "cloudflare", "gemini")
+CLOUD_STT = ("deepgram", "groq", "cloudflare", "gemini")
 LOCAL_STT = ("sherpa",)
 
 DEFAULTS = {
@@ -41,8 +41,60 @@ DEFAULTS = {
     "disabled": [],
     "timeout_seconds": 3.0,
     "breaker_seconds": 300.0,
+    "breaker_failures": 2,
+    "retry_attempts": 1,
     "tts_voice": "en-GB-RyanNeural",
+    "language": "",
+    "min_confidence": 0.6,
+    "confirm_seconds": 1.5,
 }
+
+def language():
+    """Configured speech language (BUG-057); defaults from the locale."""
+    lang = str(speech().get("language") or "").strip()
+    if lang:
+        return lang.split("-")[0].split("_")[0].lower()
+    loc = (os.environ.get("LC_ALL") or os.environ.get("LANG") or "").split(".")[0]
+    if not loc:
+        import locale
+        try:
+            loc = locale.getlocale()[0] or "en"
+        except Exception:  # noqa: BLE001 - odd locales still default to English
+            loc = "en"
+    return (loc or "en").split("_")[0].lower()
+
+
+def breaker_failures():
+    """Consecutive failures before a provider breaker opens (BUG-059)."""
+    try:
+        return max(1, int(speech()["breaker_failures"]))
+    except (TypeError, ValueError, KeyError):
+        return DEFAULTS["breaker_failures"]
+
+
+def retry_attempts():
+    """Extra retries per provider on transient errors (BUG-059)."""
+    try:
+        return max(0, int(speech()["retry_attempts"]))
+    except (TypeError, ValueError, KeyError):
+        return DEFAULTS["retry_attempts"]
+
+
+def min_confidence():
+    """Below this provider confidence a transcript is held for confirmation."""
+    try:
+        return float(speech()["min_confidence"])
+    except (TypeError, ValueError, KeyError):
+        return DEFAULTS["min_confidence"]
+
+
+def confirm_seconds():
+    """Seconds the final transcript waits in the composer (BUG-056)."""
+    try:
+        return max(0.0, float(speech()["confirm_seconds"]))
+    except (TypeError, ValueError, KeyError):
+        return DEFAULTS["confirm_seconds"]
+
 
 MODES = ("cloud-first", "local-only", "cloud-only")
 

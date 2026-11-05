@@ -19,34 +19,21 @@ from dataclasses import dataclass
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "config")
 DEFAULT_PERSONAS_PATH = os.path.join(CONFIG_DIR, "personas.json")
 USER_PERSONAS_PATH = os.path.expanduser("~/.config/navi/personas.toml")
-DEFAULT_PERSONA_NAME = "jarvis"
+DEFAULT_PERSONA_NAME = "navi"
+NAVI_PROMPT = (
+    "You are Navi, the user's voice assistant on their own machine. Your name "
+    "is Navi; that is your only name. Answer directly and concisely — one to "
+    "three short sentences unless the user asks for detail. Plain prose: no "
+    "markdown, no code blocks, no emoji, because your replies may be spoken "
+    "aloud. You run inside the Navi desktop app and OpenCode provides your "
+    "tools; use them when a request needs real work on the machine."
+)
 
 BUILTIN = {
-    "jarvis": {
-        "system_prompt": (
-            "You are Jarvis, a calm, precise technical assistant inside the "
-            "Navi voice pipeline. Answer in one or two short spoken sentences, "
-            "no markdown, no code blocks, no lists."
-        ),
-        "voice": "en-US-ChristopherNeural",
-        "rate": "+5%",
-    },
-    "friendly": {
-        "system_prompt": (
-            "You are a warm, upbeat friend inside the Navi voice pipeline. "
-            "Keep replies short, casual and spoken; no markdown or code."
-        ),
-        "voice": "en-US-JennyNeural",
+    "navi": {
+        "system_prompt": NAVI_PROMPT,
+        "voice": "en-GB-RyanNeural",
         "rate": "+0%",
-    },
-    "concise": {
-        "system_prompt": (
-            "You are a terse assistant inside the Navi voice pipeline. Reply "
-            "with the shortest possible spoken answer; no markdown, no code, "
-            "no filler."
-        ),
-        "voice": "en-US-ChristopherNeural",
-        "rate": "+15%",
     },
 }
 
@@ -156,17 +143,10 @@ def names():
 
 
 def aliases():
-    """Voice-command aliases -> persona name."""
+    """Voice-command aliases -> persona name. Navi is the only identity."""
     out = {}
     for name in personas():
         out[name] = name
-    out.setdefault("jarvis", "jarvis")
-    out.setdefault("iron man", "jarvis")
-    out.setdefault("short", "concise")
-    out.setdefault("brief", "concise")
-    out.setdefault("terse", "concise")
-    out.setdefault("casual", "friendly")
-    out.setdefault("warm", "friendly")
     return out
 
 
@@ -177,7 +157,7 @@ def get(name):
     return Persona(
         name=resolved,
         system_prompt=spec.get("system_prompt") or spec.get("prompt") or "",
-        voice=spec.get("voice") or spec.get("tts_voice") or "en-US-ChristopherNeural",
+        voice=spec.get("voice") or spec.get("tts_voice") or "en-GB-RyanNeural",
         rate=spec.get("rate") or spec.get("tts_rate") or "+0%",
     )
 

@@ -1,0 +1,83 @@
+{
+  "ok": true,
+  "steps": [
+    "Status derived Ready \u2192 Working \u2192 Ready without a \"starting\" placeholder",
+    "Streaming row grew 23\u219250 chars and finalised in place",
+    "Identical text with different ids rendered twice; one id rendered once",
+    "One tool chip per id, upserted to its single final state",
+    "Reasoning collapsed, approval sent permission_reply, one error surface per failure",
+    "Fenced code rendered with a copy affordance; raw HTML stayed text",
+    "Transcript rehydrated from the daemon store (8 messages)",
+    "Older history paged by cursor: 3 saved rows in two pages, one request, has_more false",
+    "Voice confirm claimed the hold before dispatch; a lost claim sent nothing and said so; Escape cancelled",
+    "A refused permission decision stayed undecided and showed the daemon text once",
+    "A text attachment was read and sent with the prompt; a 3 MiB file was refused visibly"
+  ],
+  "chat": {
+    "status": "Ready",
+    "empty": true,
+    "paging": {
+      "page": 2,
+      "loaded": 3,
+      "hasMore": false,
+      "before": 2,
+      "cursors": [
+        1,
+        2,
+        3
+      ]
+    },
+    "ready": "Ready",
+    "streaming": {
+      "first": 23,
+      "second": 50
+    },
+    "turn_state": {
+      "replaced": true,
+      "done": true
+    },
+    "dedupe": {
+      "rows": 6
+    },
+    "tool": {
+      "status": "completed"
+    },
+    "errors": {
+      "rows": 2
+    },
+    "permission": {
+      "rows": 2,
+      "text": "Invalid permission id",
+      "decided": false,
+      "replies": [
+        "deny",
+        "allow"
+      ]
+    },
+    "markdown": {
+      "code": true,
+      "safe": true
+    },
+    "rehydrated": 8,
+    "voice": {
+      "confirming": true,
+      "claimed": true,
+      "dispatched": true,
+      "already": true,
+      "cancel": true,
+      "claims": 2,
+      "cancels": 1,
+      "commands": 1
+    },
+    "attachments": {
+      "sent": 1,
+      "refused": true,
+      "names": [
+        "notes.txt"
+      ]
+    },
+    "count": 13,
+    "empty_final": false,
+    "label": "Attention"
+  }
+}

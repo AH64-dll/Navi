@@ -1,44 +1,34 @@
-"""Live smoke test: one prompt through the running `opencode serve`.
+"""Live smoke against the running OpenCode service: models, one prompt, /help.
 
-Uses the user service on NAVI_OPENCODE_URL (default http://127.0.0.1:49374)
-and its password from ~/.config/opencode/service.json (or the
-NAVI_OPENCODE_PASSWORD / OPENCODE_SERVER_PASSWORD env vars). Never spawns or
-stops a server.
-
-    python3 smoke_opencode.py [prompt]
+Never starts, stops or restarts the shared OpenCode service.
 """
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workers"))
-import opencode_bridge as bridge
-import persona
+import opencode_gateway as gateway_module
 
 
 def main():
-    client = bridge.OpenCodeBridge(autospawn=False)
-    if not client.reachable():
-        print(f"FAIL: opencode serve unreachable at {client.base_url}")
-        print("hint: start `opencode serve` or check NAVI_OPENCODE_PASSWORD")
-        return 1
-    p = persona.get("jarvis")
-    prompt = " ".join(sys.argv[1:]) or "Say exactly the word: smoke-ok"
-    print(f"server:  {client.base_url}")
-    print(f"model:   {client.model_ref}")
-    print(f"persona: {p.name}")
-    started = time.time()
-    try:
-        reply = client.prompt(prompt, system_prompt=p.system_prompt or None)
-    except bridge.BridgeError as error:
-        print(f"FAIL: {error}")
-        return 1
-    elapsed = time.time() - started
-    print(f"reply ({elapsed:.1f}s): {reply}")
-    print(f"session: {client.session_id}")
+    gateway = gateway_module.Gateway()
+    models = gateway.models()
+    print(f"models: {len(models)} (first: {models[0]['providerID']}/{models[0]['id']})")
+    print("agents:", ", ".join(item["id"] for item in gateway.agents() if item["id"] != "navi") or "-")
+    commands = gateway.commands()
+    print(f"commands: {len(commands)} (first: /{commands[0]['name']})")
+    records = []
+    reply = gateway.ask("Say exactly: smoke ok", emit=records.append)
+    deltas = sum(1 for record in records if record.get("type") == "delta")
+    tools = sum(1 for record in records if record.get("type") == "tool")
+    usage = (gateway.last_result or {}).get("usage") or {}
+    print(f"prompt reply: {reply!r} ({deltas} deltas, {tools} tools, "
+          f"tokens={usage.get('tokens')}, cost={usage.get('cost')})")
+    assert "smoke ok" in reply.lower(), reply
     print("PASS")
-    return 0
-
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        main()
+    except Exception as error:  # noqa: BLE001 - smoke output
+        print(f"FAIL: {type(error).__name__}: {error}")
+        sys.exit(1)

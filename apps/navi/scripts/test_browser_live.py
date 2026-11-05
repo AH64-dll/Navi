@@ -27,6 +27,22 @@ class Fixture(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path.startswith("/api/"):
+            if self.path.startswith("/api/command"):
+                payload = [{"name": "help", "description": "show help"},
+                           {"name": "init", "description": "guided setup"},
+                           {"name": "review", "description": "review changes"}]
+            elif self.path.startswith("/api/model"):
+                payload = [{"providerID": "fixture", "modelID": "f-1", "name": "Fixture Model", "type": "chat"}]
+            elif self.path.startswith("/api/agent"):
+                payload = [{"id": "navi", "name": "Navi", "mode": "primary"}]
+            else:
+                payload = {"status": "ok"}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(payload).encode())
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/html" if self.path.startswith("/page") else "application/json")
         self.end_headers()
