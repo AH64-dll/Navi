@@ -2464,7 +2464,7 @@ impl App {
                             // Dropped tasks leave the graph and its percent.
                             self.set_task(&json!({"id": task["id"], "state": "dropped"}))?;
                             self.remember_change(&id, before, restore, &format!("dropping “{title}”"))?;
-                            self.event_for(Some(&id), None, "progress", &format!("Dropped “{title}”"), json!({"task": task["id"]}));
+                            self.event_for(Some(&id), None, "progress", &format!("Dropped “{title}”"), json!({"task": task["id"], "source": "user"}));
                             let graph = self.graph_get(Some(&id))?;
                             format!("Dropped “{title}”; it no longer counts. {}", store::progress_sentence(&graph))
                         } else {
@@ -2875,7 +2875,7 @@ impl App {
                         "aspect_id": part.as_ref().map(|part| part["id"].clone())}))?;
                     self.remember_change(&id, before, added["id"].as_str().map(|task| (task, "dropped")),
                         &format!("adding “{title}”"))?;
-                    self.event_for(Some(&id), None, "progress", &format!("Added task “{title}”"), json!({"task": added["id"]}));
+                    self.event_for(Some(&id), None, "progress", &format!("Added task “{title}”"), json!({"task": added["id"], "source": "user"}));
                     let graph = self.graph_get(Some(&id))?;
                     match part_title {
                         Some(part) => format!("Added “{title}” to {part}. {}", store::progress_sentence(&graph)),
@@ -2895,7 +2895,7 @@ impl App {
                         if let Some(change) = self.last_change.lock().unwrap().as_mut() {
                             change["aspect_added"] = added["id"].clone();
                         }
-                        self.event_for(Some(&id), None, "progress", &format!("Added part “{title}”"), json!({"aspect": added["id"]}));
+                        self.event_for(Some(&id), None, "progress", &format!("Added part “{title}”"), json!({"aspect": added["id"], "source": "user"}));
                         format!("Added the part {title}. Say “add a task called … to {title}” to fill it.")
                     }
                     Err(error) if error.contains("already exists") => format!("There is already a part called {title}."),

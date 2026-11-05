@@ -2460,7 +2460,9 @@ impl App {
                 .map_err(|error| error.to_string())?;
         }
         drop(state);
-        self.event_for(Some(project_id), None, "progress", "Undid the last progress change", change.clone());
+        let mut details = change.clone();
+        details["source"] = json!("user");
+        self.event_for(Some(project_id), None, "progress", "Undid the last progress change", details);
         Ok(removed)
     }
 
