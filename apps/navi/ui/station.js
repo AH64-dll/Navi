@@ -1157,6 +1157,8 @@ function replyDone(event) {
   };
   if (Array.isArray(details.warnings)) for (const warning of details.warnings) warningRow(String(warning));
   if (!event.replayed&&Array.isArray(details.choices)&&details.choices.length) offerChoices(message,details.choices,requestId);
+  /* "Mark barge-in done": one click takes the change back, as saying “undo” does. */
+  else if (!event.replayed&&typeof details.undo==='string'&&details.undo) offerChoices(message,['Undo'],requestId);
   if (Array.isArray(details.attachments)&&details.attachments.length) {
     warningRow('Attachments: '+details.attachments.length+' file'+(details.attachments.length===1?'':'s')+' used for this turn');
   }

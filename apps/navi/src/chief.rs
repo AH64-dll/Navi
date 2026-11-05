@@ -3421,6 +3421,8 @@ impl App {
             self.pending_choice.lock().unwrap().take()
         };
         *self.pronoun_target.lock().unwrap() = None;
+        // A progress change this command makes gets an Undo button.
+        let change_before = self.last_change.lock().unwrap().clone();
         let mut choice = pending
             .as_ref()
             .filter(|_| steps == 1)
@@ -3617,6 +3619,13 @@ impl App {
         if !spoken.is_empty() && reply.is_object() {
             reply["text"] = json!(spoken.join(" "));
             reply["speech"] = if speech == spoken { Value::Null } else { json!(speech.join(" ")) };
+        }
+        if reply.is_object()
+            && reply["choices"].is_null()
+            && let Some(change) = self.last_change.lock().unwrap().as_ref()
+            && change_before.as_ref() != Some(change)
+        {
+            reply["undo"] = change["label"].clone();
         }
         if !shown_action.is_null()
             && reply.is_object()

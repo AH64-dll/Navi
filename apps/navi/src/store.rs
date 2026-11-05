@@ -1004,7 +1004,8 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
     }
     if stale_parts > 0 {
         risks.push(format!(
-            "{stale_parts} part(s) have no evidence from the last two weeks"
+            "{} no evidence from the last two weeks",
+            counted_have(stale_parts as u64, "part")
         ));
     }
     // Work committed after the number was set is work the number has not seen.
@@ -1032,16 +1033,14 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         ));
     }
     if unknown_tasks > 0 {
-        risks.push(format!("{unknown_tasks} task(s) have no evidence"));
+        risks.push(format!("{} no evidence", counted_have(unknown_tasks as u64, "task")));
     }
     if !unassigned.is_empty() {
-        risks.push(format!("{} task(s) have no aspect", unassigned.len()));
+        risks.push(format!("{} no part", counted_have(unassigned.len() as u64, "task")));
     }
     if counts["blocked"].as_u64().unwrap_or(0) > 0 {
-        risks.push(format!(
-            "{} task(s) are blocked",
-            counts["blocked"].as_u64().unwrap_or(0)
-        ));
+        let blocked = counts["blocked"].as_u64().unwrap_or(0);
+        risks.push(format!("{} {} blocked", counted(blocked, "task"), if blocked == 1 { "is" } else { "are" }));
     }
     let (why, basis_value) = match (basis, &project_estimate) {
         ("estimate", Some(estimate)) => (
@@ -1055,11 +1054,16 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         ),
         ("parts", _) => {
             let mut text = format!(
-                "Weighted mean of {contributing} part(s); {covered_tasks} of {total_tasks} tasks carry evidence"
+                "Weighted mean of {}; {covered_tasks} of {} {}",
+                counted(contributing as u64, "part"),
+                counted(total_tasks as u64, "task"),
+                if total_tasks == 1 { "carries evidence" } else { "carry evidence" }
             );
             if standing_in > 0 {
                 text.push_str(&format!(
-                    "; {standing_in} part(s) without a value use the whole-project estimate"
+                    "; {} without a value {} the whole-project estimate",
+                    counted(standing_in as u64, "part"),
+                    if standing_in == 1 { "uses" } else { "use" }
                 ));
             }
             (
@@ -1431,7 +1435,7 @@ pub fn progress_text(graph: &Value) -> String {
                 "estimate by {}",
                 source_name(aspect["estimate"]["source"].as_str().unwrap_or("assistant"))
             ),
-            Some("tasks") => format!("{} task(s)", aspect["tasks"]),
+            Some("tasks") => counted(aspect["tasks"].as_u64().unwrap_or(0), "task"),
             _ => "no evidence".into(),
         };
         lines.push(format!("- {title}: {value} ({basis})"));
@@ -2867,6 +2871,16 @@ pub(crate) fn git(path: &str, arguments: &[&str]) -> Option<String> {
             }
         }
     }
+}
+
+/// "1 task", "3 tasks".
+fn counted(count: u64, noun: &str) -> String {
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
+/// "1 task has", "3 tasks have".
+fn counted_have(count: u64, noun: &str) -> String {
+    format!("{} {}", counted(count, noun), if count == 1 { "has" } else { "have" })
 }
 
 #[cfg(test)]
