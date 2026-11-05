@@ -35,7 +35,10 @@ Progress requests never need a model: `How far along is the project?`,
 `Show the progress`, `Assess the project`, `Set the UI to 80%`,
 `Mark barge-in done`, `Reopen barge-in`. See [Project progress](#project-progress).
 Neither do session requests: `Is Codex done?`, `What's running?`, `Stop Codex`,
-`Close terminal 2`, `Reopen Codex`, `Tell Codex to run the tests`, `/help`.
+`Close terminal 2`, `Reopen Codex`, `Tell Codex to run the tests` (held until a busy
+pane is free), `Ask Claude to fix the build` (opens Claude Code first when it is
+closed), `/help`. When Navi asks "Which one?", the next command can be just the answer
+("the second one"). The same commands run from a shell with `navid ask "…"`.
 
 Every harness Navi opens is linked to the progress graph. The model reads the
 recorded completion and reports its own estimate per part through Navi's MCP server, or
