@@ -1456,6 +1456,13 @@ impl App {
             return Ok(None);
         }
         let short = lower.split_whitespace().count() <= 14;
+        // "Close the progress", "hide the graph": the panel is window state.
+        if short
+            && ["close", "hide", "dismiss"].iter().any(|word| mentioned(&lower, word))
+            && ["progress", "graph", "panel"].iter().any(|word| mentioned(&lower, word))
+        {
+            return Ok(Some(json!({"kind":"progress_hide"})));
+        }
         if short && let Some((part, percent)) = parse_set_progress(&lower) {
             return Ok(Some(json!({"kind":"progress_set","part":part,"percent":percent})));
         }
@@ -1469,7 +1476,9 @@ impl App {
             "whats the progress", "project status", "status of the project", "show progress",
             "show the progress", "show me the progress", "open the progress", "open progress",
             "check progress", "check the progress", "how is the project", "how's the project",
-            "how are we doing",
+            "how are we doing", "what's left", "what is left", "whats left", "what remains",
+            "what's remaining", "what is remaining", "how much remains", "show the graph",
+            "show me the graph", "open the graph", "progress graph", "progress panel",
         ]
         .iter()
         .any(|phrase| lower.contains(phrase));
@@ -1484,7 +1493,11 @@ impl App {
             .any(|word| mentioned(&lower, word))
             && progress_subject(&lower);
         let whole = matches!(last, "project" | "repo" | "repository" | "codebase" | "progress"
-            | "completion" | "detector" | "percentage");
+            | "completion" | "detector" | "percentage")
+            || (!last.is_empty()
+                && self.projects()?.iter().any(|project| {
+                    project["name"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(last))
+                }));
         let assess = ["detect", "assess", "reassess", "re-assess", "evaluate", "analyze",
             "analyse", "scan", "estimate", "re-estimate", "reestimate"]
             .iter()
@@ -1502,11 +1515,15 @@ impl App {
             let show = ["show", "open", "display"].iter().any(|word| mentioned(&lower, word));
             return Ok(Some(json!({"kind":"progress","show":show})));
         }
+        if short && let Some(status) = self.session_status_intent(&lower)? {
+            return Ok(Some(status));
+        }
         if !immediate_request(&lower) {
             return Ok(None);
         }
         let settings = self.settings();
-        let switching = ["switch", "go back", "return to", "select", "focus"]
+        let switching = ["switch", "go back", "go to", "return to", "select", "focus", "jump to",
+            "change to", "move to"]
             .iter()
             .any(|word| mentioned(&lower, word));
         let resuming = ["resume", "continue", "existing"]
@@ -1549,7 +1566,8 @@ impl App {
             .filter(|profile| {
                 mentioned(&lower, profile["name"].as_str().unwrap_or(""))
                     || mentioned(&lower, profile["id"].as_str().unwrap_or(""))
-                    || (profile["id"] == "opencode" && lower.contains("open code"))
+                    // "open codex" contains the letters "open code".
+                    || (profile["id"] == "opencode" && mentioned(&lower, "open code"))
             })
             .collect();
         let specific: Vec<&Value> = named
@@ -1560,9 +1578,68 @@ impl App {
         let chosen = match (specific.len(), named.len()) {
             (1, _) => specific[0],
             (0, 1) => named[0],
+            (0, 0) => {
+                // "Open the acme-api project" names a project, not a harness.
+                let projects = self.projects()?;
+                let named: Vec<&Value> = projects
+                    .iter()
+                    .filter(|project| mentioned(&lower, project["name"].as_str().unwrap_or("")))
+                    .collect();
+                if named.len() == 1 {
+                    return Ok(Some(json!({"kind":"project_switch","id":named[0]["id"],
+                        "name":named[0]["name"]})));
+                }
+                return Ok(None);
+            }
             _ => return Ok(None),
         };
         Ok(Some(json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]})))
+    }
+
+    /// "Is Codex done?", "what is Claude doing", "what's running", "does
+    /// anything need my input": a question about open harness sessions, read
+    /// from their pane state instead of a model.
+    fn session_status_intent(&self, lower: &str) -> Result<Option<Value>> {
+        let waiting = ["need my input", "needs my input", "need input", "needs input",
+            "waiting for me", "waiting on me", "need me", "needs me"]
+            .iter()
+            .any(|phrase| lower.contains(phrase));
+        let overview = ["what's running", "what is running", "whats running", "what's open",
+            "what is open", "which sessions", "which harnesses", "sessions doing",
+            "harnesses doing", "status of the sessions", "status of the harnesses",
+            "session status", "harness status"]
+            .iter()
+            .any(|phrase| lower.contains(phrase));
+        let yes_no = ["is ", "are ", "has ", "did "].iter().any(|prefix| lower.starts_with(prefix))
+            && ["done", "finished", "ready", "waiting", "working", "busy", "still", "stuck",
+                "running", "idle", "alive", "blocked", "asking", "thinking"]
+                .iter()
+                .any(|word| mentioned(lower, word));
+        let asking = yes_no
+            || ["doing", "status of", "state of", "check on", "up to"]
+                .iter()
+                .any(|phrase| mentioned(lower, phrase));
+        if !(waiting || overview || asking) {
+            return Ok(None);
+        }
+        let sessions = self.sessions()?;
+        let ids: Vec<Value> = sessions
+            .iter()
+            .filter(|session| session["running"] == true)
+            .filter(|session| {
+                ["name", "profile", "harness"].iter().any(|key| {
+                    mentioned(lower, session[*key].as_str().unwrap_or(""))
+                }) || (session["profile"] == "claude" && mentioned(lower, "claude code"))
+            })
+            .map(|session| session["id"].clone())
+            .collect();
+        Ok(if !ids.is_empty() {
+            Some(json!({"kind":"session_status","ids":ids,"waiting":waiting}))
+        } else if waiting || overview {
+            Some(json!({"kind":"session_status","all":true,"waiting":waiting}))
+        } else {
+            None
+        })
     }
 
     /// Run one fast intent and build its reply. `run_command` posts the reply
@@ -1763,6 +1840,72 @@ impl App {
                 };
                 Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
             }
+            "progress_hide" => Ok(json!({"reply": reply(None, "Closed the progress panel.".into(),
+                json!({"action":"hide_graph"}))})),
+            "session_status" => {
+                let sessions = self.sessions()?;
+                let projects = self.projects()?;
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                let chosen: Vec<&Value> = sessions
+                    .iter()
+                    .filter(|session| session["running"] == true)
+                    .filter(|session| match action["ids"].as_array() {
+                        Some(ids) => ids.contains(&session["id"]),
+                        None => here.is_none() || session["project_id"].as_str() == here.as_deref(),
+                    })
+                    .filter(|session| action["waiting"] != true || session["state"] == "needs_input")
+                    .collect();
+                let describe = |session: &Value| {
+                    let state = match session["state"].as_str().unwrap_or_default() {
+                        "needs_input" => "is waiting for your input",
+                        "busy" => "is running a command",
+                        "running" => "is working",
+                        "idle" => "is idle at its shell prompt",
+                        "exited" => "has exited",
+                        "starting" | "created" => "is starting",
+                        _ => "is open",
+                    };
+                    // Numbered as the session strip numbers live sessions:
+                    // by creation, among same-named ones of one project.
+                    let name = session["name"].as_str().unwrap_or("A session");
+                    let mut twins: Vec<&Value> = sessions
+                        .iter()
+                        .filter(|other| {
+                            other["running"] == true
+                                && other["name"] == session["name"]
+                                && other["project_id"] == session["project_id"]
+                        })
+                        .collect();
+                    twins.sort_by_key(|other| other["created"].as_i64().unwrap_or(0));
+                    let label = match twins.iter().position(|other| other["id"] == session["id"]) {
+                        Some(index) if twins.len() > 1 => format!("{name} #{}", index + 1),
+                        _ => name.to_string(),
+                    };
+                    let mut line = format!("{label} {state}");
+                    // A session from another project says where it is.
+                    if let Some(project_id) = session["project_id"].as_str()
+                        && here.as_deref() != Some(project_id)
+                        && let Some(name) = projects
+                            .iter()
+                            .find(|project| project["id"] == project_id)
+                            .and_then(|project| project["name"].as_str())
+                    {
+                        line.push_str(&format!(" in {name}"));
+                    }
+                    line
+                };
+                let text = match (chosen.len(), action["waiting"] == true) {
+                    (0, true) => "Nothing is waiting for your input.".to_string(),
+                    (0, false) => "No harness is open here. Say “open Codex” to start one.".to_string(),
+                    (1, _) => format!("{}.", describe(chosen[0])),
+                    _ => format!(
+                        "{} sessions: {}.",
+                        chosen.len(),
+                        chosen.iter().map(|session| describe(session)).collect::<Vec<_>>().join("; ")
+                    ),
+                };
+                Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
+            }
             "project_switch" => {
                 // The active project is window state, so the reply carries the
                 // switch to the station; later steps of the command use it too.
@@ -1787,6 +1930,33 @@ impl App {
                 let id = project["id"].as_str().unwrap_or_default().to_string();
                 let path = project["path"].as_str().unwrap_or_default();
                 let name = literal_name(clause);
+                // "Open Codex" with Codex already open in this project brings
+                // that session forward; "a new Codex" or a name opens another.
+                let another = ["new", "another", "fresh", "second", "create", "one more"]
+                    .iter()
+                    .any(|word| mentioned(clause, word));
+                if !another && name.is_none() && action["profile"] != "terminal" {
+                    let sessions = self.sessions()?;
+                    let open: Vec<&Value> = sessions
+                        .iter()
+                        .filter(|session| {
+                            session["running"] == true
+                                && session["profile"] == action["profile"]
+                                && session["project_id"].as_str() == Some(id.as_str())
+                        })
+                        .collect();
+                    if let Some(session) = open.iter().max_by_key(|session| session["last_active"].as_i64()) {
+                        let target = session["id"].as_str().unwrap_or_default();
+                        self.session_target(&json!({"id":target}))?;
+                        let label = session["name"].as_str().unwrap_or("The harness");
+                        let harness = action["name"].as_str().unwrap_or("it");
+                        let text = format!(
+                            "{label} is already open in {}; switched to it. Say “open a new {harness}” for another.",
+                            project["name"].as_str().unwrap_or("the project")
+                        );
+                        return Ok(json!({"id":target,"reply":reply(Some(&id), text, json!({"session": target}))}));
+                    }
+                }
                 let session = self.create_session(
                     &json!({"profile":action["profile"],"cwd":path,"name":name}),
                 )?;
@@ -2420,6 +2590,10 @@ fn immediate_request(text: &str) -> bool {
         "create",
         "switch",
         "go back",
+        "go to",
+        "jump to",
+        "change to",
+        "move to",
         "return",
         "select",
         "resume",

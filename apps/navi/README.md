@@ -395,12 +395,14 @@ model and without the assistant:
 
 | Say or type | Effect |
 | --- | --- |
-| "How far along is the project?", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; "show …" also opens the panel |
-| "Assess the project", "re-estimate the project", `/assess` | Runs the detector |
+| "How far along is the project?", "what's left", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; "show …" (or "show me the graph") also opens the panel |
+| "Close the progress", "hide the graph" | Closes the progress panel |
+| "Assess the project", "reassess acme-api", `/assess` | Runs the detector |
 | "Set the UI to 80%", "put voice at 60 percent", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |
 | "Mark barge-in done", "check off barge-in", "reopen barge-in", `/mark barge-in in progress` | Sets a task's state as a user verdict; with no matching task, "mark <part> done" puts the part at 100% |
-| "Open Codex", `/open claude code` | Launches the harness in the active project |
-| "Switch to acme-api", "go back to the Navi project" | Makes that project active in the station (a session with that name wins) and speaks its headline |
+| "Open Codex", `/open claude code` | Brings forward the Codex already open in the active project, else launches one; "open a new Codex" (or "… called X") always launches |
+| "Switch to acme-api", "go to acme-api", "open the acme-api project" | Makes that project active in the station (a session with that name wins) and speaks its headline |
+| "Is Codex done?", "what is Claude doing", "what's running", "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them |
 
 Steps chain with "then" (or "and" when every half is one of these commands), at most
 four: "switch to acme-api then assess the project" assesses acme-api, because a step

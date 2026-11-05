@@ -1127,6 +1127,7 @@ function replyDone(event) {
       return;
     }
     if (details.action==='show_graph') showGraph(true);
+    if (details.action==='hide_graph') showGraph(false);
     if (details.action==='show_graph'||details.progress_recorded>0) scheduleGraph(300);
     const project=String(details.project_id||'');
     if (assessing&&assessing.via==='assistant'&&project===assessing.project&&details.source!=='navi') endAssessment(project);
