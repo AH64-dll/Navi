@@ -137,7 +137,8 @@ says so in plain words and lists the Navi commands that still work without it. A
 run shows an empty-state block with one-click Open <harness> (the first installed
 harness), Assess progress, New session, Settings and Enable mic, and the mic button
 explains why it is unavailable. Typing `/` opens a filtered list that starts with
-Navi's own commands (`/progress`, `/assess`, `/open`, `/mark`, `/set`), which never
+Navi's own commands (`/progress`, `/left`, `/blocked`, `/assess`, `/open`, `/mark`, `/set`,
+`/add`, `/undo`, `/stop`, `/close`), which never
 reach the assistant, followed by the OpenCode slash commands (arrows/Tab to complete); a
 Stop button appears while a request runs and
 cancels it, reporting when the server did not confirm the interrupt. A session strip at

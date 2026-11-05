@@ -2264,16 +2264,22 @@ const NAVI_COMMANDS=[
   {name:'help',description:'What Navi does without a model'},
   {name:'sessions',description:'What each open harness is doing'},
   {name:'progress',description:'How far along the active project is, and its parts'},
+  {name:'left',description:'The unfinished parts and open tasks'},
+  {name:'blocked',description:'The blocked tasks and their parts'},
   {name:'assess',description:'Scan the project and ask a harness to estimate each part'},
   {name:'open',description:'Open a harness in the active project: /open claude code'},
   {name:'mark',description:'Set a task’s state: /mark barge-in done'},
   {name:'set',description:'Set a part’s percent: /set voice to 80%'},
+  {name:'add',description:'Add a task: /add fix login to daemon'},
+  {name:'undo',description:'Take back the last progress change'},
+  {name:'stop',description:'Interrupt a session: /stop codex, or every session'},
+  {name:'close',description:'Close a session: /close terminal'},
 ];
 function renderSlash(prefix) {
   slashPrefix=prefix;
   const own=new Set(NAVI_COMMANDS.map(command=>command.name));
   slashMatches=[...NAVI_COMMANDS,...(slashCommands||[]).filter(command=>!own.has(command.name))]
-    .filter(c=>!prefix||c.name.startsWith(prefix)).slice(0,12);
+    .filter(c=>!prefix||c.name.startsWith(prefix)).slice(0,20);
   if (!slashMatches.length) { hideSlash(); return; }
   slashIndex=Math.min(slashIndex,slashMatches.length-1);
   const list=slashList(); list.replaceChildren();
@@ -2288,6 +2294,8 @@ function renderSlash(prefix) {
     list.append(item);
   });
   list.hidden=false;
+  /* Thirteen own commands overflow the 240 px list: keep the arrow-key pick in view. */
+  list.children[slashIndex]?.scrollIntoView({block:'nearest'});
 }
 async function updateSlash() {
   const input=commandInput();

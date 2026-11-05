@@ -1649,25 +1649,15 @@ impl App {
     /// switch to a session, ask for or set progress, run the detector. `None`
     /// leaves the clause to the model and the conversation bridge.
     fn fast_intent(&self, clause: &str) -> Result<Option<Value>> {
-        let text = conversational_text(clause);
+        // Navi's own slash commands read as the sentence they stand for; any
+        // other slash command belongs to the assistant.
+        let text = slash_sentence(&conversational_text(clause));
         let lower = text
             .to_lowercase()
             .trim()
             .trim_end_matches(['.', '!', '?'])
             .trim()
             .to_string();
-        // Navi's own slash commands read as the sentence they stand for; any
-        // other slash command belongs to the assistant.
-        let lower = match lower.split_once(' ').map_or((lower.as_str(), ""), |(head, rest)| (head, rest)) {
-            ("/progress", _) => "show the progress".to_string(),
-            ("/help", _) => "help".to_string(),
-            ("/sessions", _) => "what's running".to_string(),
-            ("/assess", _) => "assess the project".to_string(),
-            ("/open" | "/mark" | "/set" | "/reopen", rest) if !rest.trim().is_empty() => {
-                lower.trim_start_matches('/').to_string()
-            }
-            _ => lower,
-        };
         if matches!(lower.as_str(), "help" | "what can you do" | "what can i say" | "what can i ask"
             | "what can you do for me" | "what commands are there")
         {
@@ -4546,18 +4536,46 @@ const HELP_SPOKEN: &str = "I can open harnesses and give them tasks, report and 
 /// What Navi answers itself, without a model, as the chat shows it.
 const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “add a task called fix login to the daemon”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”, “give Codex the next task”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”, “stop everything”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
 
+/// Navi's own slash commands: the sentence each stands for alone and with
+/// words after it (`{}`), and its usage. An empty form means that form is
+/// not accepted, so "/open" alone gets the usage.
+const NAVI_SLASH: [(&str, &str, &str, &str); 14] = [
+    ("/help", "help", "", "Use /help to see what Navi does without a model"),
+    ("/sessions", "what's running", "", "Use /sessions to hear what each open harness is doing"),
+    ("/progress", "show the progress", "", "Use /progress to see how far along the active project is"),
+    ("/left", "what's left", "", "Use /left to hear the unfinished parts and open tasks"),
+    ("/blocked", "what's blocked", "", "Use /blocked to hear the blocked tasks"),
+    ("/assess", "assess the project", "", "Use /assess to scan the project and ask a harness to estimate it"),
+    ("/open", "", "open {}", "Use /open <harness>, for example /open claude code"),
+    ("/mark", "", "mark {}", "Use /mark <task> done, in progress, blocked or todo"),
+    ("/reopen", "", "reopen {}", "Use /reopen <task>, for example /reopen barge-in"),
+    ("/set", "", "set {}", "Use /set <part> to <percent>%, for example /set voice to 80%"),
+    ("/add", "", "add a task called {}", "Use /add <task>, or /add <task> to <part>"),
+    ("/undo", "undo", "", "Use /undo to take back the last progress change"),
+    ("/stop", "stop everything", "stop {}", "Use /stop <session>, or /stop alone for every session"),
+    ("/close", "", "close {}", "Use /close <session>, for example /close terminal"),
+];
+
+/// "/add fix login to daemon" reads as "add a task called fix login to
+/// daemon". Other text, and a Navi command in a form it does not accept,
+/// stay as they are; the latter then gets its usage.
+fn slash_sentence(text: &str) -> String {
+    let trimmed = text.trim();
+    let (head, rest) = trimmed.split_once(char::is_whitespace).unwrap_or((trimmed, ""));
+    let rest = rest.trim();
+    let Some((_, bare, with, _)) = NAVI_SLASH.iter().find(|(name, ..)| head.eq_ignore_ascii_case(name)) else {
+        return text.to_string();
+    };
+    match (rest.is_empty(), bare.is_empty(), with.is_empty()) {
+        (true, false, _) => bare.to_string(),
+        (false, _, false) => with.replace("{}", rest),
+        _ => text.to_string(),
+    }
+}
+
 fn navi_slash(text: &str) -> Option<&'static str> {
-    let head = text.split_whitespace().next()?.to_lowercase();
-    Some(match head.as_str() {
-        "/help" => "Use /help to see what Navi does without a model",
-        "/sessions" => "Use /sessions to hear what each open harness is doing",
-        "/progress" => "Use /progress to see how far along the active project is",
-        "/assess" => "Use /assess to scan the project and ask a harness to estimate it",
-        "/open" => "Use /open <harness>, for example /open claude code",
-        "/mark" | "/reopen" => "Use /mark <task> done, in progress, blocked or todo",
-        "/set" => "Use /set <part> to <percent>%, for example /set voice to 80%",
-        _ => return None,
-    })
+    let head = text.split_whitespace().next()?;
+    NAVI_SLASH.iter().find(|(name, ..)| head.eq_ignore_ascii_case(name)).map(|(.., usage)| *usage)
 }
 
 /// A title reduced to lowercase words, so "Barge-in" and "barge in" match.
