@@ -4116,16 +4116,23 @@ async function quickLaunch(profile) {
     return null;
   }
 }
-/* Last seen state per session, so a harness that starts waiting for input is
- * announced once, on the transition, and never on the first render. */
+/* Last seen state per session, so a harness that starts waiting for input (or
+ * finishes a long stretch of work) is announced once, on the transition, and
+ * never on the first render. */
 const sessionStates=new Map();
+const busySince=new Map();
+const DONE_AFTER_MS=20000;   // as the voice worker: a quick shell command is not news
 function noteWaiting(session,label) {
   const before=sessionStates.get(session.id);
   sessionStates.set(session.id,session.state);
-  if (before===undefined||before==='needs_input'||session.state!=='needs_input') return;
+  if (session.state==='busy') { if (before!=='busy'||!busySince.has(session.id)) busySince.set(session.id,Date.now()); }
+  const since=busySince.get(session.id);
+  if (session.state!=='busy') busySince.delete(session.id);
+  if (before===undefined) return;
   /* The pane on screen already shows its own prompt. */
   if (session.id===termSession&&!element('terminal-pane')?.hidden) return;
-  toast(`${label} is waiting for your input`);
+  if (before!=='needs_input'&&session.state==='needs_input') toast(`${label} is waiting for your input`);
+  else if (before==='busy'&&session.state==='idle'&&since&&Date.now()-since>=DONE_AFTER_MS) toast(`${label} is done`);
 }
 function renderSessions(list) {
   const bar=sessionsBar();
