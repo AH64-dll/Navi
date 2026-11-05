@@ -1534,6 +1534,18 @@ impl App {
         {
             return Ok(Some(json!({"kind":"help"})));
         }
+        // Only a wake word or filler ("Navi?", "okay"): ask what they need;
+        // the question also opens the voice follow-up window.
+        let only_leads = lower
+            .split(|c: char| c.is_whitespace() || matches!(c, ',' | ':' | '.' | '!' | '?'))
+            .filter(|word| !word.is_empty())
+            .all(|word| {
+                matches!(word, "hey" | "hi" | "hello" | "navi" | "okay" | "ok" | "umm" | "um" | "uhh"
+                    | "uh" | "erm" | "hmm" | "alright")
+            });
+        if only_leads && !lower.is_empty() {
+            return Ok(Some(json!({"kind":"ack","reply":"Say “help” for a list. What do you need?"})));
+        }
         // "Thanks, Navi", "never mind": answered here instead of waking the
         // assistant (or the slower model route) for a one-word courtesy.
         let bare = lower.strip_suffix(" navi").unwrap_or(&lower).trim_end_matches([',', ' ']);
