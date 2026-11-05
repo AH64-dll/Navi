@@ -2418,6 +2418,41 @@ impl App {
         )
     }
 
+    /// The newest signal id, so a change can name the rows it added.
+    pub fn last_signal_id(&self) -> Result<i64> {
+        let state = self.state.lock().unwrap();
+        state
+            .db
+            .query_row("SELECT COALESCE(MAX(id),0) FROM signals", [], |row| row.get(0))
+            .map_err(|error| error.to_string())
+    }
+
+    /// Take back one change the user made through Navi: the user signals it
+    /// added (ids in `after..=until`) and, for a task, its previous state.
+    pub fn undo_change(&self, change: &Value) -> Result<usize> {
+        let project_id = change["project_id"].as_str().ok_or("Missing project")?;
+        let state = self.state.lock().unwrap();
+        let removed = state
+            .db
+            .execute(
+                "DELETE FROM signals WHERE project_id=?1 AND id>?2 AND id<=?3 AND source='user'",
+                params![project_id, change["after"].as_i64().unwrap_or(i64::MAX), change["until"].as_i64().unwrap_or(0)],
+            )
+            .map_err(|error| error.to_string())?;
+        if let (Some(task), Some(previous)) = (change["task_id"].as_str(), change["task_state"].as_str()) {
+            state
+                .db
+                .execute(
+                    "UPDATE tasks SET state=?1,updated=?2 WHERE id=?3 AND project_id=?4",
+                    params![previous, now(), task, project_id],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        drop(state);
+        self.event_for(Some(project_id), None, "progress", "Undid the last progress change", change.clone());
+        Ok(removed)
+    }
+
     /// Store one captured pane screen unless the newest stored screen for the
     /// session is byte-identical (BUG-087). The hash, not the timestamp, is the
     /// key: a sampler that reads the same screen ten times writes one row, so a

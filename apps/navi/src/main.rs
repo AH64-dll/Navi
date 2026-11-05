@@ -82,6 +82,8 @@ pub struct App {
     pending_choice: Mutex<Option<Value>>,
     /// Prompts waiting for a busy session to free up, in order, per session.
     held_prompts: Mutex<HashMap<String, Vec<String>>>,
+    /// The last progress change made through Navi's own commands, for "undo".
+    last_change: Mutex<Option<Value>>,
     pub generation: AtomicU64,
     pub config_version: AtomicU64,
     workers: Mutex<Vec<(String, Child)>>,
@@ -388,6 +390,7 @@ impl App {
             current_project: Mutex::new(None),
             pending_choice: Mutex::new(None),
             held_prompts: Mutex::new(HashMap::new()),
+            last_change: Mutex::new(None),
             generation: AtomicU64::new(0),
             config_version: AtomicU64::new(0),
             workers: Mutex::new(Vec::new()),

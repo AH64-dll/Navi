@@ -750,6 +750,15 @@ impl App {
 
     /// The choices of a "Which one" this command just asked, for the chat to
     /// offer as buttons (a pending question from before was taken already).
+    /// Remember a progress change for "undo": the user signals it added and
+    /// the task state it replaced.
+    fn remember_change(&self, project_id: &str, before: i64, task: Option<(&str, &str)>, label: &str) -> Result<()> {
+        let until = self.last_signal_id()?;
+        *self.last_change.lock().unwrap() = Some(json!({"time":now(),"project_id":project_id,"after":before,
+            "until":until,"task_id":task.map(|task| task.0),"task_state":task.map(|task| task.1),"label":label}));
+        Ok(())
+    }
+
     fn choice_extra(&self) -> Value {
         match self.pending_choice.lock().unwrap().as_ref() {
             Some(pending) => {
@@ -1672,6 +1681,11 @@ impl App {
             | "unmute replies" => Some(("speak", true)),
             _ => None,
         };
+        if matches!(bare, "undo" | "undo that" | "undo it" | "undo the last change" | "undo my last change"
+            | "take that back" | "revert that" | "scratch that" | "that was wrong" | "that's wrong")
+        {
+            return Ok(Some(json!({"kind":"undo"})));
+        }
         if let Some((key, on)) = toggle {
             return Ok(Some(json!({"kind":"setting","key":key,"on":on})));
         }
@@ -2303,6 +2317,7 @@ impl App {
                         .as_str()
                         .is_some_and(|name| name.eq_ignore_ascii_case(part))
                 });
+                let before = self.last_signal_id()?;
                 let result = self.progress_report(&json!({
                     "project_id": id,
                     "aspect": part,
@@ -2315,6 +2330,10 @@ impl App {
                 let text = match result {
                     Ok(result) => {
                         let target = result["aspect"].as_str().unwrap_or("The project");
+                        self.remember_change(&id, before, None, &format!(
+                            "{target} at {}%",
+                            action["percent"].as_f64().unwrap_or(0.0).round()
+                        ))?;
                         format!(
                             "{target} is now at {}%. {}",
                             action["percent"].as_f64().unwrap_or(0.0).round(),
@@ -2377,6 +2396,12 @@ impl App {
                     Some(task) => {
                         let title = task["title"].as_str().unwrap_or(spoken);
                         let evidence: String = clause.trim().chars().take(200).collect();
+                        let before = self.last_signal_id()?;
+                        let said = match state {
+                            "in_progress" => "in progress",
+                            "todo" => "to do",
+                            other => other,
+                        };
                         match self.progress_report(&json!({
                             "project_id": id,
                             "task_id": task["id"],
@@ -2386,15 +2411,11 @@ impl App {
                             "source": "user",
                             "create": false,
                         })) {
-                            Ok(result) => format!(
-                                "Marked “{title}” {}. {}",
-                                match state {
-                                    "in_progress" => "in progress",
-                                    "todo" => "to do",
-                                    other => other,
-                                },
-                                result["summary"].as_str().unwrap_or("")
-                            ),
+                            Ok(result) => {
+                                let restore = task["id"].as_str().zip(task["state"].as_str());
+                                self.remember_change(&id, before, restore, &format!("“{title}” marked {said}"))?;
+                                format!("Marked “{title}” {said}. {}", result["summary"].as_str().unwrap_or(""))
+                            }
                             Err(error) => error,
                         }
                     }
@@ -2414,6 +2435,7 @@ impl App {
                             .cloned()
                             .unwrap_or_default();
                         let evidence: String = clause.trim().chars().take(200).collect();
+                        let before = self.last_signal_id()?;
                         match self.progress_report(&json!({
                             "project_id": id,
                             "aspect_id": part["id"],
@@ -2423,11 +2445,11 @@ impl App {
                             "source": "user",
                             "create": false,
                         })) {
-                            Ok(result) => format!(
-                                "{} is now at 100%. {}",
-                                part["title"].as_str().unwrap_or(spoken),
-                                result["summary"].as_str().unwrap_or("")
-                            ),
+                            Ok(result) => {
+                                let title = part["title"].as_str().unwrap_or(spoken);
+                                self.remember_change(&id, before, None, &format!("{title} at 100%"))?;
+                                format!("{title} is now at 100%. {}", result["summary"].as_str().unwrap_or(""))
+                            }
                             Err(error) => error,
                         }
                     }
@@ -2694,6 +2716,22 @@ impl App {
             "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({}))})),
             "ack" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
                 json!({}))})),
+            "undo" => {
+                let change = self.last_change.lock().unwrap().take();
+                let fresh = change.filter(|change| now().saturating_sub(change["time"].as_u64().unwrap_or(0)) < 600_000);
+                let Some(change) = fresh else {
+                    return Ok(json!({"reply": reply(None, "There is no recent progress change to undo.".into(), json!({}))}));
+                };
+                let project_id = change["project_id"].as_str().unwrap_or_default().to_string();
+                self.undo_change(&change)?;
+                let graph = self.graph_get(Some(&project_id))?;
+                let text = format!(
+                    "Undid {}. {}",
+                    change["label"].as_str().unwrap_or("the last change"),
+                    store::progress_sentence(&graph)
+                );
+                Ok(json!({"reply": reply(Some(&project_id), text, json!({"action":"show_graph"}))}))
+            }
             "setting" => {
                 let key = action["key"].as_str().unwrap_or_default();
                 let on = action["on"] == true;
@@ -3767,7 +3805,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
