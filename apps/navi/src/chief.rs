@@ -1527,7 +1527,11 @@ impl App {
         }
         if short && asking && progress_subject(&lower) {
             let show = ["show", "open", "display"].iter().any(|word| mentioned(&lower, word));
-            return Ok(Some(json!({"kind":"progress","show":show})));
+            let left = ["what's left", "what is left", "whats left", "what remains", "what's remaining",
+                "what is remaining", "how much is left", "how much left", "how much remains"]
+                .iter()
+                .any(|phrase| lower.contains(phrase));
+            return Ok(Some(json!({"kind":"progress","show":show,"left":left})));
         }
         if short && let Some(status) = self.session_status_intent(&lower)? {
             return Ok(Some(status));
@@ -1737,6 +1741,7 @@ impl App {
                     .collect();
                 let mut text = match named.as_slice() {
                     [aspect] => store::part_sentence(&graph, aspect),
+                    _ if action["left"] == true => store::remaining_sentence(&graph),
                     _ => store::progress_sentence(&graph),
                 };
                 if graph["percent"].is_null() {

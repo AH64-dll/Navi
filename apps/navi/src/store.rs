@@ -1173,6 +1173,52 @@ pub fn part_sentence(graph: &Value, aspect: &Value) -> String {
     sentence
 }
 
+/// "What's left": the headline, every unfinished part from furthest behind,
+/// and up to five open tasks.
+pub fn remaining_sentence(graph: &Value) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("This project");
+    let Some(value) = graph["percent"].as_f64() else {
+        return format!("{name} has no completion estimate yet.");
+    };
+    let aspects = graph["aspects"].as_array().cloned().unwrap_or_default();
+    let mut parts: Vec<(&str, f64)> = aspects
+        .iter()
+        .filter_map(|aspect| Some((aspect["title"].as_str()?, aspect["percent"].as_f64()?)))
+        .filter(|(_, percent)| *percent < 100.0)
+        .collect();
+    parts.sort_by(|left, right| left.1.total_cmp(&right.1));
+    let open: Vec<&str> = aspects
+        .iter()
+        .flat_map(|aspect| aspect["items"].as_array().into_iter().flatten())
+        .chain(graph["unassigned"].as_array().into_iter().flatten())
+        .filter(|item| item["state"] != "done")
+        .filter_map(|item| item["title"].as_str())
+        .collect();
+    let mut sentence = format!("{name} is about {}% complete.", value.round());
+    if parts.is_empty() && open.is_empty() {
+        sentence.push_str(" Every part is at 100% and no task is open.");
+        return sentence;
+    }
+    if !parts.is_empty() {
+        let list = parts
+            .iter()
+            .map(|(title, percent)| format!("{title} {}%", percent.round()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        sentence.push_str(&format!(" Unfinished: {list}."));
+    }
+    if !open.is_empty() {
+        let shown = open.iter().take(5).copied().collect::<Vec<_>>().join(", ");
+        let more = open.len().saturating_sub(5);
+        sentence.push_str(&format!(" Open tasks: {shown}"));
+        if more > 0 {
+            sentence.push_str(&format!(" and {more} more"));
+        }
+        sentence.push('.');
+    }
+    sentence
+}
+
 /// Full plain-text view of a graph for a harness tool result.
 pub fn progress_text(graph: &Value) -> String {
     let mut lines = vec![progress_sentence(graph)];
