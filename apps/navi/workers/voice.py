@@ -292,6 +292,46 @@ def harness_target(transcript, status):
     return {"id": target["id"], "name": target.get("name"), "text": text}
 
 
+def waiting_transitions(previous, sessions):
+    """Sessions that just started waiting for input.
+
+    Returns the new state map and the names to announce. A session seen for
+    the first time is never announced, so a restart does not read out every
+    harness that was already waiting.
+    """
+    states = {}
+    names = []
+    for session in sessions:
+        if not session.get("running"):
+            continue
+        state = str(session.get("state") or "")
+        states[session.get("id")] = state
+        before = previous.get(session.get("id"))
+        if before is not None and before != "needs_input" and state == "needs_input":
+            names.append(session.get("name") or "A harness")
+    return states, names
+
+
+def watch_waiting(snapshot, playback, stop, interval=1.0):
+    """Say "Codex is waiting for your input" when Speak replies is on."""
+    states = None
+    while not stop.wait(interval):
+        status = snapshot.value
+        if not isinstance(status, dict):
+            continue
+        current, names = waiting_transitions(states or {}, status.get("sessions") or [])
+        if states is None:
+            names = []
+        states = current
+        settings = status.get("settings") or {}
+        if not names or not settings.get("speak"):
+            continue
+        verb = "is" if len(names) == 1 else "are"
+        playback.start(f"{' and '.join(names)} {verb} waiting for your input",
+                       settings.get("persona"),
+                       language=(settings.get("speech") or {}).get("language"))
+
+
 # ------------------------------------------------------------------ loading
 
 def load_spotter(speech, data=DATA):
@@ -624,9 +664,13 @@ def main():
                        language=settings.get("speech", {}).get("language"))
 
     commands = CommandRouter(rpc, enabled, on_result)
+    stop_watch = threading.Event()
+    threading.Thread(target=watch_waiting, args=(snapshot, playback, stop_watch),
+                     daemon=True).start()
     try:
         listen(commands, playback, snapshot)
     finally:
+        stop_watch.set()
         commands.close()
         snapshot.close()
 

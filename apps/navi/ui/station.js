@@ -3840,6 +3840,17 @@ async function quickLaunch(profile) {
     return null;
   }
 }
+/* Last seen state per session, so a harness that starts waiting for input is
+ * announced once, on the transition, and never on the first render. */
+const sessionStates=new Map();
+function noteWaiting(session,label) {
+  const before=sessionStates.get(session.id);
+  sessionStates.set(session.id,session.state);
+  if (before===undefined||before==='needs_input'||session.state!=='needs_input') return;
+  /* The pane on screen already shows its own prompt. */
+  if (session.id===termSession&&!element('terminal-pane')?.hidden) return;
+  toast(`${label} is waiting for your input`);
+}
 function renderSessions(list) {
   const bar=sessionsBar();
   if (!bar) return;
@@ -3877,6 +3888,7 @@ function renderSessions(list) {
     node.classList.toggle('elsewhere',!!other);
     sessionLabels.set(session.id,label);
     if (session.id===termSession) syncTerminalTitle(session);
+    if (session.running===true) noteWaiting(session,other?other+' · '+label:label);
     (session.running!==true?deadIds:other?elsewhereIds:liveIds).push(session.id);
   }
   for (const [id,node] of [...sessionNodes]) {
@@ -3884,6 +3896,7 @@ function renderSessions(list) {
     node.remove();
     sessionNodes.delete(id);
     sessionLabels.delete(id);
+    sessionStates.delete(id);
   }
   /* The switcher is the strip's first control: `orderNodes` removes every child
    * it is not given, so it must be part of the desired list (BUG-090). */

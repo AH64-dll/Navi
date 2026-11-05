@@ -478,6 +478,11 @@ the `speak` key; when it is false the voice worker never starts `speech_out` and
 TTS provider is contacted. When enabled, TTS tries edge-tts -> Cloudflare -> Gemini ->
 Piper, and barge-in cancels playback as described above.
 
+A harness that starts waiting for input is announced once, on the transition. The
+station shows a notice ("Codex is waiting for your input") unless that pane is the one
+on screen. With **Speak replies** on, the voice worker also says it, unless Navi is
+already speaking. Sessions already waiting when Navi starts are not announced.
+
 The single `navi` persona in `config/personas.json` (overridable from
 `~/.config/navi/personas.toml`) only supplies the edge voice, Piper fallback and
 rate. The system prompt lives in the OpenCode agent file described above.
