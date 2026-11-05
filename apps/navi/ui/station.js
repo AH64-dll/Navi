@@ -417,9 +417,7 @@ function buildActions(node,message) {
   bar.replaceChildren();
   if (message.role==='system') return;
   const text=messageText(message);
-  if (text) bar.append(action('copy','Copy',COPY_ICON,()=>{
-    copyText(text).then(ok=>toast(ok?'Message copied':'Could not copy the message'));
-  }));
+  if (text) bar.append(action('copy','Copy',COPY_ICON,()=>copyMessage(message)));
   if (message.role==='user') bar.append(action('edit','Edit and resend',EDIT_ICON,()=>editMessage(message)));
   if (message.role==='assistant'&&message.meta?.request&&!message.parts.some(part=>part.type==='error')) {
     bar.append(action('retry','Retry',RETRY_ICON,()=>retryMessage(message)));
