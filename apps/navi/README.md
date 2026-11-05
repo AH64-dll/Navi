@@ -6,6 +6,9 @@ Codex, Claude Code, Pi and custom profiles keep their native terminal behavior.
 The initial display host is Python/GTK3/WebKit2GTK 4.1, not Tauri. tmux preserves
 harness processes when the window or Rust service closes.
 
+![The station full screen: session chips, the Navi figure, the progress panel with
+per-part estimates, and the command box](docs/station.jpg)
+
 ```mermaid
 flowchart LR
     Voice[English wake word and transcription] --> Chief[Local d1 typed decisions]
