@@ -153,6 +153,9 @@
 .error-hint{margin-top:7px}
 .error-hint p{margin:0;font-size:11px;line-height:1.5;color:#b9d0ee}
 .error-hint code{font-size:10.5px;color:#d9eaff}
+.msg-choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.msg-choice{font-size:11px;letter-spacing:.6px;padding:4px 12px;border-color:#8cf0ffaa;color:#dff8ff}
+.msg-choice:hover,.msg-choice:focus-visible{background:#8cf0ff22}
 .error-retry{margin-top:6px;font-size:10px;letter-spacing:.8px;padding:4px 12px;
   border-color:#ff8a8aaa;color:#ffd7d7}
 .msg .part.tone-warning p{font-size:11.5px;color:#ffe6a8}

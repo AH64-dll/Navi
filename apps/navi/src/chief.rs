@@ -638,6 +638,19 @@ impl App {
         Ok(format!("Which one: {}?", names.join(", ")))
     }
 
+    /// The choices of a "Which one" this command just asked, for the chat to
+    /// offer as buttons (a pending question from before was taken already).
+    fn choice_extra(&self) -> Value {
+        match self.pending_choice.lock().unwrap().as_ref() {
+            Some(pending) => {
+                let labels: Vec<Value> =
+                    pending["choices"].as_array().into_iter().flatten().map(|choice| choice["label"].clone()).collect();
+                json!({"choices": labels})
+            }
+            None => json!({}),
+        }
+    }
+
     /// Voice sends no project: the one the station last reported, else the
     /// project of the session voice targets.
     fn station_project(&self, projects: &[Value]) -> Option<Value> {
@@ -2149,7 +2162,9 @@ impl App {
                         }
                     }
                 };
-                Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+                let mut extra = self.choice_extra();
+                extra["action"] = json!("show_graph");
+                Ok(json!({"reply": reply(Some(&id), text, extra)}))
             }
             "harness_prompt" => {
                 let sessions = self.sessions()?;
@@ -2195,7 +2210,7 @@ impl App {
                     [] => "That session is no longer open.".to_string(),
                     many => self.ask_which(action, many, &labels)?,
                 };
-                Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
+                Ok(json!({"reply": reply(here.as_deref(), text, self.choice_extra())}))
             }
             "session_control" => {
                 let sessions = self.sessions()?;
@@ -2237,7 +2252,7 @@ impl App {
                     [] => "That session is no longer open.".to_string(),
                     many => self.ask_which(action, many, &labels)?,
                 };
-                Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
+                Ok(json!({"reply": reply(here.as_deref(), text, self.choice_extra())}))
             }
             "session_reopen" => {
                 let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
@@ -2404,7 +2419,7 @@ impl App {
                                     .filter(|session| ids.contains(&session["id"]))
                                     .collect();
                                 let text = self.ask_which(action, &many, &labels)?;
-                                return Ok(json!({"reply": reply(None, text, json!({}))}));
+                                return Ok(json!({"reply": reply(None, text, self.choice_extra())}));
                             }
                         }
                     }

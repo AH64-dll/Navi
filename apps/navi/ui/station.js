@@ -394,11 +394,40 @@ function renderRow(node,message) {
   time.title=new Date(message.time).toLocaleString();
   const body=node.querySelector('.msg-body');
   body.replaceChildren(...message.parts.map(part=>renderPart(message,part)));
+  if (choiceOffer&&choiceOffer.message===message) body.append(choiceButtons(choiceOffer.choices));
   const meta=node.querySelector('.msg-meta');
   const line=metaLine(message);
   meta.hidden=!line;
   meta.textContent=line;
   buildActions(node,message);
+}
+
+/* "Which one: Codex #1, Codex #2?": the daemon holds the question for a minute and
+ * any next command settles it, so its choices are buttons on that row until then.
+ * They live outside the message, so a reload never shows a stale question. */
+let choiceOffer=null;
+function offerChoices(message,choices,request) {
+  clearChoices();
+  choiceOffer={message,request,choices:choices.slice(0,8).map(String),timer:setTimeout(clearChoices,60000)};
+  bump(message);
+}
+function clearChoices() {
+  if (!choiceOffer) return;
+  const {message,timer}=choiceOffer;
+  choiceOffer=null;
+  clearTimeout(timer);
+  bump(message);
+}
+function choiceButtons(choices) {
+  const row=document.createElement('div');
+  row.className='msg-choices';
+  for (const label of choices) {
+    const button=document.createElement('button');
+    button.type='button'; button.className='msg-choice'; button.textContent=label;
+    button.onclick=event=>{ event.preventDefault(); dispatch(label); };
+    row.append(button);
+  }
+  return row;
 }
 
 function action(name,label,path,handler) {
@@ -1031,6 +1060,8 @@ function closeTurn() {
 function beginTurn(event,reasoning) {
   const requestId=requestOf(event);
   if (settledRow(requestId)) return;
+  /* A spoken command settles the daemon's pending question too. */
+  if (!event.replayed&&choiceOffer&&requestId!==choiceOffer.request) clearChoices();
   setBusy(true);
   setPhase('working');
   startTurn();
@@ -1122,6 +1153,7 @@ function replyDone(event) {
     warnings:Array.isArray(details.warnings)&&details.warnings.length?details.warnings:undefined,
   };
   if (Array.isArray(details.warnings)) for (const warning of details.warnings) warningRow(String(warning));
+  if (!event.replayed&&Array.isArray(details.choices)&&details.choices.length) offerChoices(message,details.choices,requestId);
   if (Array.isArray(details.attachments)&&details.attachments.length) {
     warningRow('Attachments: '+details.attachments.length+' file'+(details.attachments.length===1?'':'s')+' used for this turn');
   }
@@ -1891,6 +1923,7 @@ function hasAttachments() { return attachments.length>0; }
 async function dispatch(text,options={}) {
   const value=String(text||'').trim();
   if (!value) return null;
+  clearChoices();
   const source=options.source||'typed';
   activeText=value;
   followLog=true;   // sending is a request to see the answer
