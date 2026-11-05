@@ -1401,7 +1401,9 @@ pub fn progress_text(graph: &Value) -> String {
         .take(5)
         .collect();
     if !subjects.is_empty() {
-        lines.push(format!("Recent commits: {}", subjects.join("; ")));
+        // One per line: a subject may itself contain "; ".
+        lines.push("Recent commits:".to_string());
+        lines.extend(subjects.iter().map(|subject| format!("- {subject}")));
     }
     for risk in graph["risks"].as_array().into_iter().flatten() {
         if let Some(risk) = risk.as_str() {
