@@ -399,14 +399,8 @@ function buildActions(node,message) {
     copyText(text).then(ok=>toast(ok?'Message copied':'Could not copy the message'));
   }));
   if (message.role==='user') bar.append(action('edit','Edit and resend',EDIT_ICON,()=>editMessage(message)));
-  if (message.role==='assistant'&&message.meta?.request) {
+  if (message.role==='assistant'&&message.meta?.request&&!message.parts.some(part=>part.type==='error')) {
     bar.append(action('retry','Retry',RETRY_ICON,()=>retryMessage(message)));
-  }
-  if (message.meta?.source) {
-    const badge=document.createElement('span');
-    badge.className='msg-badge';
-    badge.textContent=message.meta.source;
-    bar.append(badge);
   }
 }
 
@@ -923,30 +917,55 @@ function startTurn() {
   updateStatus();
   return turn;
 }
-/* A reply may carry a stable message id (`message_id`, or `id` on a `reply`): the
- * row is keyed by it, so one reply delivered twice is one row and two different
+/* Every command carries one request id from the RPC through each event it causes
+ * (`working`, deltas, tools, `reply`, `error`) and the daemon's own answer. Its row
+ * is keyed by that id: whichever copy arrives first draws it, later copies update
+ * it, and a replay after a restart finds the stored row instead of adding one. */
+function requestOf(event) {
+  const id=event?.details?.request_id;
+  return typeof id==='string'&&id?id:null;
+}
+const turnRowId=request=>'turn-'+request;
+/* A request whose row is already final: its late `working`, or the second copy of
+ * its reply, must not reopen the turn. */
+function settledRow(request) {
+  const row=request?messageById.get(turnRowId(request)):null;
+  return row&&row.status!=='streaming'?row:null;
+}
+/* Without a request id, a reply may still carry a stable message id (`message_id`,
+ * or `id` on a `reply`): one reply delivered twice is one row and two different
  * replies sharing text are two — the comparison is never made on text (BUG-046). */
 function messageIdentity(event) {
   const details=event?.details||{};
+  const request=requestOf(event);
+  if (request) return turnRowId(request);
   if (typeof details.message_id==='string'&&details.message_id) return details.message_id;
   if (typeof details.id==='string'&&details.id&&event?.kind==='reply') return details.id;
   return null;
 }
 function assistantMessage(event) {
   startTurn();
-  if (!turn.message) {
-    const identity=messageIdentity(event);
-    const existing=identity?messageById.get(identity):null;
-    turn.message=existing||addMessage({
-      id:identity||undefined,
-      role:'assistant', time:Number(event?.time)||Date.now(), status:'streaming',
-      parts:[],
-      meta:{request:activeText||undefined,project_id:activeProjectId()||undefined},
-    });
-  }
+  const identity=messageIdentity(event);
+  if (turn.message&&(!identity||turn.message.id===identity)) return turn.message;
+  const existing=identity?messageById.get(identity):null;
+  /* The turn's own request is what Retry repeats: a background assessment is
+   * not the user's last typed line. */
+  const opened=event?.kind==='working'&&typeof event.details?.text==='string'?event.details.text.trim():'';
+  turn.message=existing||addMessage({
+    id:identity||undefined,
+    role:'assistant', time:Number(event?.time)||Date.now(), status:'streaming',
+    parts:[],
+    meta:{request:opened||activeText||undefined,project_id:activeProjectId()||undefined},
+  });
   return turn.message;
 }
 function finalMessage(event) {
+  const request=requestOf(event);
+  const own=request?messageById.get(turnRowId(request)):null;
+  if (own) {
+    if (pendingFinalise===own) pendingFinalise=null;
+    return own;
+  }
   if (pendingFinalise&&pendingFinalise.status==='streaming') {
     const message=pendingFinalise;
     pendingFinalise=null;
@@ -973,9 +992,12 @@ function closeTurn() {
 }
 
 function beginTurn(event,reasoning) {
+  const requestId=requestOf(event);
+  if (settledRow(requestId)) return;
   setBusy(true);
   setPhase('working');
   startTurn();
+  if (requestId) turn.request=requestId;
   if (request&&request.queued) promoteQueued();
   setTurnLabel(reasoning?'Thinking':'Working');
   assistantMessage(event);
@@ -988,6 +1010,7 @@ function promoteQueued() {
   bump(user);
 }
 function reasoningDelta(event) {
+  if (settledRow(requestOf(event))) return;
   const details=event.details||{};
   const text=typeof details.text==='string'?details.text:(event.message||'');
   if (!text) return;
@@ -999,6 +1022,8 @@ function reasoningDelta(event) {
   bump(message);
 }
 function replyDelta(event) {
+  /* A delta polled after the RPC answer already finished its row is stale. */
+  if (settledRow(requestOf(event))) return;
   const details=event.details||{};
   const text=typeof details.text==='string'?details.text:(event.message||'');
   const message=assistantMessage(event);
@@ -1014,10 +1039,22 @@ function replyDelta(event) {
   setBusy(true);
   bump(message);
 }
+/* Close what belongs to `requestId`: the pending dispatch and the open turn, but
+ * never a newer command's that started after this one's answer. */
+function finishRequest(requestId) {
+  if (request&&(!requestId||!request.id||request.id===requestId)) request.done=true;
+  if (turn&&(!requestId||!turn.request||turn.request===requestId)) closeTurn();
+}
 function replyDone(event) {
   const details=event.details||{};
-  const message=finalMessage(event);
+  const requestId=requestOf(event);
   const text=typeof details.text==='string'?details.text:(event.message||'');
+  const settled=settledRow(requestId);
+  if (settled&&settled.status==='complete'&&messageText(settled)===text.trim()) {
+    finishRequest(requestId);
+    return;
+  }
+  const message=finalMessage(event);
   const part=lastTextPart(message,true);
   part.text=text;                     // the finished answer owns the row
   const source=typeof details.source==='string'?details.source:'';
@@ -1025,7 +1062,7 @@ function replyDone(event) {
   message.status=stopped?'stopped':'complete';
   message.meta={
     ...(message.meta||{}),
-    request:activeText||message.meta?.request,
+    request:message.meta?.request||activeText||undefined,
     model:normalizeModel(details.actual_model),
     requested:modelRef()||undefined,
     agent:typeof details.actual_agent==='string'?details.actual_agent:undefined,
@@ -1042,8 +1079,7 @@ function replyDone(event) {
   if (Array.isArray(details.attachments)&&details.attachments.length) {
     warningRow('Attachments: '+details.attachments.length+' file'+(details.attachments.length===1?'':'s')+' used for this turn');
   }
-  if (request) request.done=true;
-  closeTurn();
+  finishRequest(requestId);
   saveMessage(message);
   clearAttention();
   bump(message);
@@ -1068,6 +1104,7 @@ function normalizeModel(actual) {
   return (provider?provider+'/':'')+id;
 }
 function toolUse(event) {
+  if (settledRow(requestOf(event))) return;
   const details=event.details||{};
   const message=assistantMessage(event);
   const id=details.id===undefined||details.id===null?null:String(details.id);
@@ -1089,6 +1126,7 @@ function toolUse(event) {
   bump(message);
 }
 function approvalEvent(event) {
+  if (settledRow(requestOf(event))) return;
   const details=event.details||{};
   const message=assistantMessage(event);
   const permissionId=details.id===undefined||details.id===null?uid('approval'):String(details.id);
@@ -1108,29 +1146,67 @@ function approvalEvent(event) {
 function failedEvent(event) {
   const details=event.details||{};
   const text=String(event.message||details.error||details.text||'Assistant unavailable');
-  const open=turn?.message;
-  if (open) {
-    open.status='failed';
-    open.parts=open.parts.filter(part=>part.type!=='error');
-    open.parts.push({type:'error',text:'Assistant unavailable',detail:text,retry:true});
-    open.meta={...(open.meta||{}),request:activeText||open.meta?.request,source:'unavailable'};
-    saveMessage(open);
-    closeTurn();
-    setPhase('error');
-    noteFailure(text);
-    bump(open);
-    if (request) request.done=true;
-    return;
+  const requestId=requestOf(event);
+  const op=typeof details.op==='string'?details.op:'';
+  if (assessing&&String(event.project_id||'')===assessing.project&&/assessment/i.test(text)) {
+    endAssessment(assessing.project);
   }
-  /* A failure from before this window opened is history: replaying it must not
-   * mark a fresh window as failed. */
+  /* Another caller's failed call (a harness's progress report, a panel edit that
+   * already showed its own error) is not this conversation's failure. */
+  if (!requestId&&op&&op!=='command') { record('warn',op+' failed: '+text); return; }
+  if (requestId) { requestFailed(event,requestId,text); return; }
+  /* An error with neither (a worker that keeps crashing) is a notice, not the
+   * answer to whatever turn happens to be open. */
   if (event.replayed) return;
   surfaceFailure(text);
   setPhase('error');
 }
+/* The failure of one request lands on that request's row, drawn now when no
+ * event of it arrived yet; a replayed failure only updates a row on screen. */
+function requestFailed(event,requestId,text) {
+  const id=turnRowId(requestId);
+  let row=messageById.get(id)||null;
+  if (row&&row.status==='failed') { finishRequest(requestId); return; }
+  if (!row&&turn?.message&&turn.request===requestId) row=turn.message;
+  if (!row) {
+    if (event.replayed) return;
+    row=addMessage({
+      id, role:'assistant', time:Number(event.time)||Date.now(), status:'failed', parts:[],
+      meta:{request:activeText||undefined,project_id:event.project_id||activeProjectId()||undefined},
+    });
+  }
+  markFailed(row,text);
+  saveMessage(row);
+  finishRequest(requestId);
+  if (!event.replayed) alarm(text);
+  bump(row);
+}
+/* A usage or lookup error is the command's answer: retrying it changes nothing.
+ * Only a transport failure means the assistant itself is unavailable. */
+function failurePart(text) {
+  const usage=/^(Use \/|Use at most|No (task|part|Navi project|project)|Unknown |Missing |This project|Progress needs|Command must)/.test(text);
+  return usage
+    ?{part:{type:'error',text:'Could not do that',detail:text,retry:false},source:'navi'}
+    :{part:{type:'error',text:'Assistant unavailable',detail:text,retry:true},source:'unavailable'};
+}
+/* A failure the user must act on (the assistant is down) raises attention; a
+ * command that could not be done is only its answer. */
+function alarm(text) {
+  if (failurePart(text).source!=='unavailable') return;
+  setPhase('error');
+  noteFailure(text);
+}
+function markFailed(row,text) {
+  const failure=failurePart(text);
+  row.status='failed';
+  row.parts=row.parts.filter(part=>part.type!=='error'&&!(part.type==='text'&&!String(part.text||'').trim()));
+  row.parts.push(failure.part);
+  row.meta={...(row.meta||{}),request:row.meta?.request||activeText||undefined,source:failure.source};
+}
 function stoppedEvent(event) {
   const details=event.details||{};
-  const open=turn?.message;
+  const own=requestOf(event)?messageById.get(turnRowId(requestOf(event))):null;
+  const open=own||turn?.message;
   if (open) {
     if (open.status==='streaming') open.status='stopped';
     bump(open);
@@ -1161,12 +1237,13 @@ function transcriptEvent(event) {
   const text=String(details.text||event.message||'').trim();
   if (!text) return;
   const id=details.request_id||details.id||uid('u');
-  if (messageById.has(id)) return;
-  addMessage({
+  if (messageById.has(id)||event.replayed) return;
+  const row=addMessage({
     id, role:'user', time:Number(event.time)||Date.now(), status:'complete',
     parts:[{type:'text',text}],
     meta:{source:details.source||'transcript',project_id:event.project_id||activeProjectId()||undefined},
   });
+  saveMessage(row);
   activeText=text;
 }
 function warningEvent(event) {
@@ -1201,6 +1278,15 @@ function progressEvent(event) {
   if (project===active) scheduleGraph(event.replayed?1200:250);
   scheduleOverview(event.replayed?2500:1200);
 }
+/* Each step of a command reports `command`; the last one ends the turn of that
+ * request (its reply, when it has one, follows and fills the row). */
+function commandEvent(event) {
+  const details=event.details||{};
+  const steps=Number(details.steps), step=Number(details.step);
+  if (Number.isFinite(steps)&&Number.isFinite(step)&&step+1<steps) return;
+  const requestId=requestOf(event);
+  if (turn&&(!requestId||!turn.request||turn.request===requestId)) closeTurn();
+}
 function handleEvent(event) {
   if (!event||typeof event!=='object') return;
   switch (event.kind) {
@@ -1224,7 +1310,7 @@ function handleEvent(event) {
     /* A harness tail that produced evidence moves the graph; the panel and the
      * HUD follow without a reload (BUG-087/089). */
     case 'harness': scheduleGraph(800); break;
-    case 'command': closeTurn(); break;
+    case 'command': commandEvent(event); break;
     case 'ready': break;   // the boot line carries no user-visible state
     default: break;        // a newer kind renders nothing instead of throwing
   }
@@ -1650,13 +1736,17 @@ async function dispatch(text,options={}) {
   setPhase('working');
   startTurn();
   turn.user=user;
+  /* The request id keys this command's answer row; the daemon stamps it on every
+   * event the command causes. */
+  const requestId=uid('req')+'-'+Math.random().toString(36).slice(2,6);
+  if (!turn.message) turn.request=requestId;
   setTurnLabel('Working');
-  const pendingRequest={text:value,user,done:false,queued:false};
+  const pendingRequest={id:requestId,text:value,user,done:false,queued:false};
   request=pendingRequest;
   try {
     /* The turn resolves this project's directory and its own assistant
      * session, so a switch changes what "this project" means (BUG-088/090). */
-    const params={text:value,project_id:activeProjectId()||undefined};
+    const params={text:value,project_id:activeProjectId()||undefined,request_id:requestId};
     if (Array.isArray(options.attachments)&&options.attachments.length) {
       params.attachments=options.attachments;
     }
@@ -1672,11 +1762,12 @@ async function dispatch(text,options={}) {
     }
     if (pendingRequest.done) return user;         // the event already owned the row
     const reply=result&&result.reply;
-    if (reply&&typeof reply==='object') replyDone({time:Date.now(),details:reply,message:reply.text||''});
-    else if (result&&result.stopped===true) closeTurn();
+    if (reply&&typeof reply==='object') {
+      replyDone({time:Date.now(),details:{request_id:requestId,...reply},message:reply.text||''});
+    } else if (result&&result.stopped===true) closeTurn();
     return user;
   } catch (error) {
-    if (!pendingRequest.done) failTurn(error.message);
+    if (!pendingRequest.done) failTurn(error.message,requestId);
     else record('warn','command rejected after the turn failed: '+error.message);
     return user;
   } finally {
@@ -1684,28 +1775,24 @@ async function dispatch(text,options={}) {
     updateStatus();
   }
 }
-function failTurn(reason) {
+function failTurn(reason,requestId) {
   const text=String(reason||'The assistant failed');
   lastFailure=text;
-  const open=turn?.message;
+  const own=requestId?messageById.get(turnRowId(requestId)):null;
+  if (own?.status==='failed') { finishRequest(requestId); return; }
+  const open=own||turn?.message;
   let message=open;
   if (!open) {
     message=addMessage({
-      role:'assistant', time:Date.now(), status:'failed',
-      parts:[{type:'error',text:'Assistant unavailable',detail:text,retry:true}],
-      meta:{request:activeText||undefined,source:'unavailable',project_id:activeProjectId()||undefined},
+      id:requestId?turnRowId(requestId):undefined,
+      role:'assistant', time:Date.now(), status:'failed', parts:[],
+      meta:{project_id:activeProjectId()||undefined},
     });
     if (turn) turn.message=message;
-  } else {
-    open.status='failed';
-    open.parts=open.parts.filter(part=>part.type!=='error');
-    open.parts.push({type:'error',text:'Assistant unavailable',detail:text,retry:true});
-    open.meta={...(open.meta||{}),request:activeText||open.meta?.request,source:'unavailable'};
   }
-  if (request) request.done=true;
-  closeTurn();
-  setPhase('error');
-  noteFailure(text);
+  markFailed(message,text);
+  finishRequest(requestId);
+  alarm(text);
   if (message) { saveMessage(message); bump(message); }
 }
 
@@ -1958,6 +2045,20 @@ commandInput().addEventListener('blur',()=>setTimeout(hideSlash,150));
 
 /* ---------------- status feed ---------------- */
 
+const TURN_EVENTS=new Set(['working','thinking','reasoning','reply_delta','reply','tool_use',
+  'approval','stopped','command']);
+/* The request of the turn the daemon reports as running, from the newest turn
+ * opening in the feed; kept across pages because a turn can straddle them. */
+let replayOpen=null;
+function openReplayRequest(payload,events) {
+  if (payload.busy!==true) { replayOpen=null; return null; }
+  for (let index=events.length-1; index>=0; index--) {
+    const kind=events[index]?.kind;
+    if (kind==='working'||kind==='thinking') { replayOpen=requestOf(events[index]); break; }
+  }
+  return replayOpen;
+}
+
 /* `update` is the single entry point for the daemon payload: settings, sessions,
  * voice and every event. The host can also push a payload straight in (`navi.push`)
  * and a partial payload is merged over the last snapshot instead of replacing it. */
@@ -1977,7 +2078,9 @@ function update(value) {
   updateProjectLine();
   syncProgressScope();
   applyVoice(payload.voice||{});
-  for (const event of payload.events||[]) {
+  const events=Array.isArray(payload.events)?payload.events:[];
+  const openRequest=openReplayRequest(payload,events);
+  for (const event of events) {
     if (!event||typeof event!=='object') continue;
     /* De-duplicate by sequence number, never by text: two identical replies with
      * different seqs are two messages, and one seq delivered twice is one (BUG-046). */
@@ -1989,6 +2092,10 @@ function update(value) {
       seq=Math.max(seq,Number(event.seq)||0);
     }
     if (Number(event.time)<replayBefore) event.replayed=true;
+    /* Finished turns come back from the message store; replaying their events
+     * drew every past answer again on each boot. Only the turn the daemon is
+     * still running is rebuilt from the feed. */
+    if (event.replayed&&TURN_EVENTS.has(event.kind)&&!(openRequest&&requestOf(event)===openRequest)) continue;
     /* An event's project_id attributes the row; it never moves the active
      * project, which only the switcher and Ctrl+1..9 change (BUG-090). */
     try { handleEvent(event); }

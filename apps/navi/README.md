@@ -224,6 +224,17 @@ across boots: a restarted daemon changes `boot_id`, and a cursor below `events_f
 unrecoverable, so the client resets and re-snapshots. A truncated page sets `has_more`
 and the client drains the next page immediately.
 
+Every command carries a `request_id`, either the client's own or one the daemon assigns,
+from its RPC reply through each event it causes: `working`, deltas, tool calls, one
+`reply` with every step's answer joined, and on failure an `error` that also names the
+failing `op`. The station keys the command's chat row by that id. The RPC answer and
+the live feed race, and either can arrive first; with one key they land on one row
+instead of two. Errors from other callers (a harness's `navid progress`, a panel edit)
+never fail the open turn. The feed replays retained events from the start on every
+boot. Finished turns come back from the message store, so replayed turn events do not
+draw them again; only the turn the daemon still reports as running is rebuilt from the
+feed.
+
 `status` accepts `sections` and `versions`: only the requested sections are computed, and
 a section whose content hash matches the caller's version is omitted (`versions` is always
 returned). An event-only poll is `{"since": n, "sections": []}`. Without `sections` the

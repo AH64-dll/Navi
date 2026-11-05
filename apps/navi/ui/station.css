@@ -179,8 +179,6 @@
   letter-spacing:.4px;background:none;border:1px solid transparent;border-radius:4px;color:#9fe6ff;opacity:.85}
 .msg-action:hover{border-color:#8eaff366;opacity:1}
 .msg-action svg{display:block}
-.msg-badge{padding:1px 6px;border-radius:999px;border:1px solid #8eaff344;font-size:9px;
-  letter-spacing:.6px;color:#9fb6d4}
 
 /* Voice: the transcript that is about to run, its provenance, and the countdown. */
 .voice-banner{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:7px 10px;

@@ -106,6 +106,44 @@ pub fn id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+thread_local! {
+    /// The command this thread is running. Every event it emits carries the
+    /// id as `request_id`, so a client keys one chat row per command whether
+    /// the RPC reply, the live feed, or a replay after a restart arrives first.
+    static REQUEST: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Restores the previous request when a command scope ends, even by panic.
+struct RequestScope(Option<String>);
+
+impl Drop for RequestScope {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        REQUEST.with(|cell| *cell.borrow_mut() = previous);
+    }
+}
+
+/// Run `body` as request `request`: events emitted on this thread meanwhile
+/// carry its id. `None` runs it untagged.
+pub fn with_request<T>(request: Option<&str>, body: impl FnOnce() -> T) -> T {
+    let previous = REQUEST.with(|cell| cell.replace(request.map(str::to_string)));
+    let _scope = RequestScope(previous);
+    body()
+}
+
+/// A client may name its own request id (it keys the row it already drew);
+/// anything else gets a fresh one.
+fn command_request_id(value: &Value) -> String {
+    value
+        .as_str()
+        .filter(|text| {
+            (1..=64).contains(&text.len())
+                && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        })
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("req-{}", id()))
+}
+
 /// Events that end a turn or report a failure. They are retained apart from the
 /// diagnostic ring, so a flood of deltas can never evict the answer (BUG-098).
 fn terminal_kind(kind: &str) -> bool {
@@ -399,6 +437,13 @@ impl App {
         message: &str,
         details: Value,
     ) {
+        let mut details = details;
+        if details.is_object()
+            && details.get("request_id").is_none()
+            && let Some(request) = REQUEST.with(|cell| cell.borrow().clone())
+        {
+            details["request_id"] = json!(request);
+        }
         let mut state = self.state.lock().unwrap();
         state.next_event += 1;
         let seq = state.next_event;
@@ -1480,11 +1525,30 @@ impl App {
     }
 }
 
-fn response(app: &App, request: Value) -> Value {
+fn response(app: &App, mut request: Value) -> Value {
+    let op = request["op"].as_str().unwrap_or_default().to_string();
+    // A command keeps one id from its RPC reply through every event it causes.
+    let command = op == "command" && request["params"].is_object();
+    if command {
+        request["params"]["request_id"] = json!(command_request_id(&request["params"]["request_id"]));
+    }
+    let request_id = request["params"]["request_id"].as_str().map(str::to_string);
     match app.dispatch(request) {
-        Ok(value) => json!({"ok":true,"result":value}),
+        Ok(mut value) => {
+            if command && let Some(id) = &request_id {
+                if value.is_object() {
+                    value["request_id"] = json!(id);
+                }
+                if value["reply"].is_object() {
+                    value["reply"]["request_id"] = json!(id);
+                }
+            }
+            json!({"ok":true,"result":value})
+        }
         Err(error) => {
-            app.event("error", &error, json!({}));
+            // The op lets a client tell its conversation's failure from another
+            // caller's (a harness's progress call, a panel edit).
+            app.event("error", &error, json!({"op":op,"request_id":request_id}));
             json!({"ok":false,"error":error})
         }
     }

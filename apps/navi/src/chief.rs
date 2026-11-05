@@ -1088,11 +1088,14 @@ impl App {
     /// items call this from the drain thread; both paths resolve the project,
     /// emit `working` once, and reply through events (BUG-016/018).
     pub fn run_request(&self, params: &Value, generation: u64) -> Result<Value> {
-        let text = params["text"].as_str().unwrap_or_default();
-        if text.trim_start().starts_with('/') && navi_slash(text).is_none() {
-            return self.run_slash(text.trim(), params, generation);
-        }
-        self.run_command(text, params, false, generation)
+        let request = params["request_id"].as_str().filter(|id| !id.is_empty());
+        crate::with_request(request, || {
+            let text = params["text"].as_str().unwrap_or_default();
+            if text.trim_start().starts_with('/') && navi_slash(text).is_none() {
+                return self.run_slash(text.trim(), params, generation);
+            }
+            self.run_command(text, params, false, generation)
+        })
     }
 
     /// Take the command lock when free; otherwise enqueue (bounded at 4) and
@@ -1114,7 +1117,7 @@ impl App {
         self.event(
             "queued",
             "Command queued behind the running turn",
-            json!({"position":position,"text":params["text"]}),
+            json!({"position":position,"text":params["text"],"request_id":params["request_id"]}),
         );
         Ok(json!({"queued":true,"position":position}))
     }
@@ -1137,7 +1140,11 @@ impl App {
                 let Some(params) = params else { break };
                 let generation = self.generation.load(Ordering::SeqCst);
                 if let Err(error) = self.run_request(&params, generation) {
-                    self.event("error", &error, json!({}));
+                    self.event(
+                        "error",
+                        &error,
+                        json!({"op":"command","request_id":params["request_id"]}),
+                    );
                 }
             }
         }
@@ -1323,26 +1330,44 @@ impl App {
             .command_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let generation = self.generation.load(Ordering::SeqCst);
-        let turn = self.assistant_turn(params)?;
-        self.event_for(
-            Some(turn.id.as_str()),
-            None,
-            "working",
-            "Assessing project progress",
-            json!({"text":"Assess project progress"}),
-        );
-        let reply = self.converse(prompt, &turn, generation)?;
-        if reply["stopped"] != true && reply["progress_recorded"].as_u64() == Some(0) {
+        // Its own request: the assessment is one row in the chat, apart from
+        // whatever the user asks next.
+        let request = format!("assess-{}", crate::id());
+        crate::with_request(Some(&request), || {
+            let generation = self.generation.load(Ordering::SeqCst);
+            let turn = self.assistant_turn(params)?;
             self.event_for(
                 Some(turn.id.as_str()),
                 None,
-                "warning",
-                "The assistant answered without PROGRESS lines, so no estimate was recorded",
-                json!({}),
+                "working",
+                "Assessing project progress",
+                json!({"text":"Assess project progress"}),
             );
-        }
-        Ok(())
+            let reply = match self.converse(prompt, &turn, generation) {
+                Ok(reply) => reply,
+                Err(error) => {
+                    // Reported on the assessment's own row, which it closes.
+                    self.event_for(
+                        Some(turn.id.as_str()),
+                        None,
+                        "error",
+                        &format!("Progress assessment failed: {error}"),
+                        json!({"op":"assess"}),
+                    );
+                    return Ok(());
+                }
+            };
+            if reply["stopped"] != true && reply["progress_recorded"].as_u64() == Some(0) {
+                self.event_for(
+                    Some(turn.id.as_str()),
+                    None,
+                    "warning",
+                    "The assistant answered without PROGRESS lines, so no estimate was recorded",
+                    json!({}),
+                );
+            }
+            Ok(())
+        })
     }
 
     /// Which project a command is about: one it names, else the project
@@ -1518,10 +1543,12 @@ impl App {
         Ok(Some(json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]})))
     }
 
-    /// Run one fast intent and answer it the way a model reply would arrive:
-    /// a `reply` event for the chat and `result.reply` for voice.
+    /// Run one fast intent and build its reply. `run_command` posts the reply
+    /// of the whole command to the chat once every step has run.
     fn run_fast(&self, clause: &str, action: &Value, params: &Value) -> Result<Value> {
         let project = self.command_project(clause, params);
+        // The reply reaches the chat once, from `run_command`, after every
+        // step of the command has run.
         let reply = |project_id: Option<&str>, text: String, extra: Value| -> Value {
             let (persona, _, _) = self.assistant_target();
             let mut reply = json!({"text":text,"persona":persona,"source":"navi","project_id":project_id});
@@ -1530,7 +1557,6 @@ impl App {
                     target.insert(key.clone(), value.clone());
                 }
             }
-            self.event_for(project_id, None, "reply", &text, reply.clone());
             reply
         };
         match action["kind"].as_str().unwrap_or_default() {
@@ -1772,15 +1798,25 @@ impl App {
             .as_str()
             .and_then(|r| self.resolve_project(r).ok())
             .and_then(|p| p["id"].as_str().map(str::to_string));
-        self.event_for(
-            pid.as_deref(),
-            None,
-            "working",
-            "Chief is working",
-            json!({"text":text,"dry_run":dry}),
-        );
+        // A dry run only previews decisions; it opens no turn in the chat.
+        if !dry {
+            self.event_for(
+                pid.as_deref(),
+                None,
+                "working",
+                "Chief is working",
+                json!({"text":text}),
+            );
+        }
+        let (persona, _, _) = self.assistant_target();
+        let steps = clauses.len();
         let mut trace = Vec::new();
         let mut reply = Value::Null;
+        // How many steps answered, and whether any answer has not reached the
+        // feed yet (a model turn posts its own reply as it finishes).
+        let mut replies = 0;
+        let mut unposted = false;
+        let mut shown_action = Value::Null;
         // Each step posts its own reply to the chat; voice speaks them as one.
         let mut spoken: Vec<String> = Vec::new();
         let mut say = |reply: &Value| {
@@ -1791,7 +1827,7 @@ impl App {
                 spoken.push(text.to_string());
             }
         };
-        for clause in clauses {
+        for (step, clause) in clauses.into_iter().enumerate() {
             if let Some(action) = self.fast_intent(clause)? {
                 let decision = json!({"selected":"fast","action":action});
                 if dry {
@@ -1801,12 +1837,17 @@ impl App {
                 let result = self.run_fast(clause, &action, params)?;
                 if let Some(r) = result.get("reply").filter(|r| !r.is_null()) {
                     say(r);
+                    if r["action"].as_str().is_some_and(|action| !action.is_empty()) {
+                        shown_action = r["action"].clone();
+                    }
                     reply = r.clone();
+                    replies += 1;
+                    unposted = true;
                 }
                 self.event(
                     "command",
                     "Command completed",
-                    json!({"decision":decision,"result":result}),
+                    json!({"decision":decision,"result":result,"step":step,"steps":steps}),
                 );
                 trace.push(json!({"decision":decision,"result":result}));
                 continue;
@@ -1918,16 +1959,38 @@ impl App {
             if let Some(r) = result.get("reply").filter(|r| !r.is_null()) {
                 say(r);
                 reply = r.clone();
+                replies += 1;
+            } else if let Some(text) = action_summary(kind, action, &result) {
+                // An action the model chose answers in one line, so its turn
+                // ends with a reply like any other.
+                let r = json!({"text":text,"persona":persona,"source":"navi","project_id":pid});
+                say(&r);
+                reply = r;
+                replies += 1;
+                unposted = true;
             }
             self.event(
                 "command",
                 "Command completed",
-                json!({"decision":decision,"result":result}),
+                json!({"decision":decision,"result":result,"step":step,"steps":steps}),
             );
             trace.push(json!({"decision":decision,"result":result}));
         }
         if !spoken.is_empty() && reply.is_object() {
             reply["text"] = json!(spoken.join(" "));
+        }
+        if !shown_action.is_null()
+            && reply.is_object()
+            && reply["action"].as_str().is_none_or(str::is_empty)
+        {
+            reply["action"] = shown_action;
+        }
+        // One reply per command reaches the chat: every step's answer joined,
+        // unless the only answer was a model turn that already posted itself.
+        if !dry && reply.is_object() && (unposted || replies > 1) {
+            let project = reply["project_id"].as_str().map(str::to_string).or(pid);
+            let text = reply["text"].as_str().unwrap_or_default().to_string();
+            self.event_for(project.as_deref(), None, "reply", &text, reply.clone());
         }
         Ok(json!({"trace":trace,"dry_run":dry,"reply":reply}))
     }
@@ -2426,6 +2489,26 @@ fn parse_task_state(lower: &str) -> Option<(String, &'static str)> {
     let title = title.strip_suffix(" task").unwrap_or(title);
     let title = title.trim().trim_matches(['"', '“', '”', '\'']).trim();
     (!title.is_empty() && title.split_whitespace().count() <= 8).then(|| (title.to_string(), state))
+}
+
+/// The one-line answer to an action the decision model chose, when the action
+/// itself produced no reply.
+fn action_summary(kind: &str, action: &Value, result: &Value) -> Option<String> {
+    let name = result["name"]
+        .as_str()
+        .or_else(|| action["name"].as_str())
+        .filter(|name| !name.is_empty());
+    Some(match kind {
+        "launch" => format!("Opened {}.", name.unwrap_or("the harness")),
+        "switch" => format!("Switched to {}.", name.unwrap_or("that session")),
+        "resume" => format!("Resumed {}.", name.unwrap_or("the session")),
+        "browser" => "Opened Zen.".to_string(),
+        "url" => format!("Opened {}.", result["url"].as_str().unwrap_or("the page")),
+        _ => {
+            let message = result["message"].as_str().filter(|text| !text.is_empty())?;
+            format!("{}.", message.trim_end_matches('.'))
+        }
+    })
 }
 
 /// Navi's own slash commands (answered by the fast path, never sent to the
