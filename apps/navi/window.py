@@ -42,6 +42,10 @@ PUSH_TIMEOUT = 10.0            # a stuck status RPC must not stall the feed
 PUSH_LOG = os.environ.get("NAVI_PUSH_LOG") == "1"   # one stderr line per decision
 
 
+DAEMON_DOWN = ("Navi's daemon is not running. Start it with: "
+               "systemctl --user start navi-station (or: navid serve)")
+
+
 def describe(error):
     return str(error) or error.__class__.__name__
 
@@ -344,6 +348,10 @@ class Station(Gtk.Window):
             op = request["op"]
             result = {"ok": True, "result": rpc(op, request.get("params"))}
             ok = True
+        except (FileNotFoundError, ConnectionRefusedError):
+            # No socket, or nothing listening on it: the daemon is down, which a
+            # bare "[Errno 2]" never told anyone.
+            result = {"ok": False, "error": DAEMON_DOWN}
         except BaseException as caught:  # a malformed request or a dead daemon still answers
             result = {"ok": False, "error": describe(caught)}
             error = result["error"]
