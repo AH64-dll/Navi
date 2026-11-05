@@ -1501,6 +1501,7 @@ impl App {
         ]
         .iter()
         .chain(RECENT_PHRASES.iter())
+        .chain(STALE_PHRASES.iter())
         .any(|phrase| lower.contains(phrase))
             // "Is the voice part done?" asks about one part.
             || (lower.starts_with("is the ")
@@ -1516,8 +1517,10 @@ impl App {
             .iter()
             .any(|word| mentioned(&lower, word))
             && progress_subject(&lower);
+        // A bare "reassess" means the active project.
         let whole = matches!(last, "project" | "repo" | "repository" | "codebase" | "progress"
-            | "completion" | "detector" | "percentage")
+            | "completion" | "detector" | "percentage" | "estimate" | "estimates")
+            || core.split_whitespace().count() == 1
             || (!last.is_empty()
                 && self.projects()?.iter().any(|project| {
                     project["name"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(last))
@@ -1544,7 +1547,9 @@ impl App {
                 .iter()
                 .any(|phrase| lower.contains(phrase));
             let recent = RECENT_PHRASES.iter().any(|phrase| lower.contains(phrase));
-            return Ok(Some(json!({"kind":"progress","show":show,"left":left,"recent":recent})));
+            let stale = STALE_PHRASES.iter().any(|phrase| lower.contains(phrase));
+            return Ok(Some(json!({"kind":"progress","show":show,"left":left,"recent":recent,
+                "stale":stale})));
         }
         if short && let Some(status) = self.session_status_intent(&lower)? {
             return Ok(Some(status));
@@ -1848,6 +1853,12 @@ impl App {
                 };
                 if graph["percent"].is_null() {
                     text.push_str(" Say “assess the project” and I will ask a harness to judge it.");
+                } else if action["stale"] == true {
+                    // The headline sentence already names a nonzero count.
+                    match graph["commits_since"].as_i64().unwrap_or(0) {
+                        0 => text.push_str(" No commits landed since the last estimate."),
+                        _ => text.push_str(" Say “reassess” to update it."),
+                    }
                 }
                 let extra = json!({"action": if action["show"] == true { "show_graph" } else { "" },
                     "percent": graph["percent"]});
@@ -2970,7 +2981,7 @@ fn progress_subject(lower: &str) -> bool {
                 matches!(
                     *next,
                     "of" | "on" | "for" | "in" | "so" | "now" | "today" | "overall" | "report"
-                        | "status" | "check" | "please" | "is" | "looks" | "look"
+                        | "status" | "check" | "please" | "is" | "looks" | "look" | "again"
                 )
             })
     })
@@ -3044,6 +3055,13 @@ fn action_summary(kind: &str, action: &Value, result: &Value) -> Option<String> 
 /// Navi's own slash commands (answered by the fast path, never sent to the
 /// assistant), as the usage line shown when one cannot be read.
 /// "What changed today": progress questions about the last day.
+/// "Is the estimate up to date?": answered with the headline, which names the
+/// commits made since it.
+const STALE_PHRASES: [&str; 7] = [
+    "estimate up to date", "estimate current", "estimate out of date", "estimate stale",
+    "commits since", "commits landed since", "up to date estimate",
+];
+
 const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has changed", "what's new",
     "whats new", "progress today", "today's progress", "what happened today", "what did we do today",
     "what got done", "since yesterday", "any progress"];
