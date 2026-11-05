@@ -1387,6 +1387,11 @@ function activeProjectRow() {
   return id?projectList().find(project=>project.id===id)||null:null;
 }
 function pathState(project) { return String(project?.path_state||'ok'); }
+/* A folder that is where it should be needs no badge; only a problem shows. */
+function pathNote(project) {
+  const state=pathState(project);
+  return state==='ok'?'':state==='missing'?'folder missing':state;
+}
 
 /* The switcher lives in the strip: a button naming the project and its path
  * state, and a menu of every registered project. */
@@ -1455,7 +1460,7 @@ function renderProjectSwitcher(force) {
   shell.name.textContent=active?active.name:'Add a project';
   shell.percent.textContent=active?overviewLabel(active.id):'';
   shell.percent.hidden=!shell.percent.textContent;
-  shell.state.textContent=active?pathState(active):'';
+  shell.state.textContent=active?pathNote(active):'';
   shell.state.dataset.state=active?pathState(active):'none';
   shell.button.title=active
     ?`${active.path}\nCtrl+1..9 switches project`
@@ -1483,7 +1488,7 @@ function renderProjectSwitcher(force) {
     const name=document.createElement('span'); name.className='project-name'; name.textContent=project.name||'project';
     const path=document.createElement('span'); path.className='project-path'; path.textContent=project.path||'';
     const badge=document.createElement('span'); badge.className='project-path-state';
-    badge.dataset.state=pathState(project); badge.textContent=pathState(project);
+    badge.dataset.state=pathState(project); badge.textContent=pathNote(project);
     const key=document.createElement('span'); key.className='project-key';
     key.textContent=index<9?'Ctrl+'+(index+1):'';
     const percent=document.createElement('span'); percent.className='project-percent';
@@ -1573,7 +1578,7 @@ function updateProjectLine() {
   node.textContent=project?project.name:'No project';
   node.dataset.state=project?pathState(project):'none';
   node.title=project
-    ?`${project.path}\n${pathState(project)}${project.git_head?' · '+String(project.git_head).slice(0,12):''}`
+    ?[project.path,[pathNote(project),project.git_head?String(project.git_head).slice(0,12):''].filter(Boolean).join(' · ')].filter(Boolean).join('\n')
     :'Add a project to scope the work';
 }
 
@@ -3136,7 +3141,7 @@ function graphHeader(graph,project) {
   const head=graphNode('header','graph-head');
   const top=graphNode('div','graph-top');
   top.append(graphNode('span','graph-caption','Progress'));
-  const name=graphNode('span','graph-project',project?`${project.name} · ${pathState(project)}`:'No project');
+  const name=graphNode('span','graph-project',project?[project.name,pathNote(project)].filter(Boolean).join(' · '):'No project');
   name.title=project?String(project.path||''):'';
   top.append(name);
   const close=graphNode('button','icon graph-close','×');
@@ -3157,13 +3162,20 @@ function graphHeader(graph,project) {
   const scanning=isAssessing(project?.id);
   head.append(graphNode('p','graph-basis',scanning?'Assessing… estimates appear as they are reported.':basisText(graph)));
   if (graph?.why&&!scanning) head.append(graphNode('p','graph-why',String(graph.why)));
-  /* With no estimate and no evidence there is no weight at all: verified and
-   * confidence are vacuous, so they read as dashes rather than 0% (BUG-089). */
+  /* With no estimate and no evidence there is no weight at all: confidence is
+   * vacuous, so it reads as a dash rather than 0% (BUG-089). Verified measures
+   * task weight backed by a test, commit or user verdict, so it sits with the
+   * task count and is left out when there are no tasks: beside a model's
+   * estimate, "Verified 0%" or "100%" would read as a verdict on that number. */
   const stats=graphNode('div','graph-sub');
-  stats.append(graphStat('Verified',unknown?'—':formatPercent(graph.verified)));
   stats.append(graphStat('Confidence',unknown?'—':formatConfidence(graph.confidence)));
   const counts=graph?.tasks;
-  if (counts&&Number(counts.total)>0) stats.append(graphStat('Tasks',`${Number(counts.done)||0}/${Number(counts.total)}`));
+  if (counts&&Number(counts.total)>0) {
+    stats.append(graphStat('Tasks',`${Number(counts.done)||0}/${Number(counts.total)}`));
+    const verified=graphStat('Verified',formatPercent(graph.verified));
+    verified.title='Share of task weight backed by a passing test, a commit or your verdict';
+    stats.append(verified);
+  }
   head.append(stats);
   const actions=graphNode('div','graph-actions');
   const assess=graphNode('button','primary',scanning?'Assessing…':unknown?'Assess':'Reassess');

@@ -419,8 +419,8 @@ reply.
   ("Estimate by Claude Code · 2h ago", "Across 4 parts"), plus an Assess button.
   Clicking it opens the panel.
 - The **project switcher** shows each project's headline percent.
-- The **progress panel** (the "Progress" pill) shows the headline, verified share,
-  confidence and a trend line of whole-project estimates; each part's bar marks the
+- The **progress panel** (the "Progress" pill) shows the headline, confidence, the
+  task count with its verified share (left out when there are no tasks) and a trend line of whole-project estimates; each part's bar marks the
   task-derived value when an estimate leads. A part expands to its basis, evidence and
   task checklist: ticking a box records a user verdict, and parts, tasks and percents
   can be added or set in place. Risks, unassigned tasks, the last scan and an evidence
