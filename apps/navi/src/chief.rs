@@ -1459,6 +1459,19 @@ impl App {
         {
             return Ok(Some(json!({"kind":"help"})));
         }
+        // "Thanks, Navi", "never mind": answered here instead of waking the
+        // assistant (or the slower model route) for a one-word courtesy.
+        let bare = lower.strip_suffix(" navi").unwrap_or(&lower).trim_end_matches([',', ' ']);
+        if matches!(bare, "thanks" | "thank you" | "thanks a lot" | "thank you so much" | "cheers"
+            | "great thanks" | "perfect thanks" | "ok thanks" | "okay thanks" | "thx")
+        {
+            return Ok(Some(json!({"kind":"ack","reply":"You're welcome."})));
+        }
+        if matches!(bare, "never mind" | "nevermind" | "cancel" | "forget it" | "forget that"
+            | "that's all" | "that is all" | "nothing" | "no thanks" | "no thank you")
+        {
+            return Ok(Some(json!({"kind":"ack","reply":"Okay."})));
+        }
         if ["which project am i in", "what project am i in", "which project is this",
             "what project is this", "list projects", "list the projects", "list my projects",
             "what projects", "which projects", "my projects"]
@@ -1507,6 +1520,7 @@ impl App {
             "is the project done", "is the project finished", "is the project complete",
             "are we done", "are we finished", "are we there yet", "what's next", "what is next",
             "whats next", "what should i work on", "what should i do next", "what do i do next",
+            "needs doing", "need doing", "left to do", "still to do",
         ]
         .iter()
         .chain(RECENT_PHRASES.iter())
@@ -1535,7 +1549,8 @@ impl App {
                     project["name"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(last))
                 }));
         let assess = ["detect", "assess", "reassess", "re-assess", "evaluate", "analyze",
-            "analyse", "scan", "estimate", "re-estimate", "reestimate"]
+            "analyse", "scan", "rescan", "re-scan", "redetect", "re-detect", "estimate",
+            "re-estimate", "reestimate"]
             .iter()
             .any(|word| mentioned(&lower, word));
         let refresh = ["update", "refresh", "recheck", "re-check", "recompute", "measure", "run"]
@@ -1552,7 +1567,8 @@ impl App {
             let left = ["what's left", "what is left", "whats left", "what remains", "what's remaining",
                 "what is remaining", "how much is left", "how much left", "how much remains",
                 "what's next", "what is next", "whats next", "what should i work on",
-                "what should i do next", "what do i do next"]
+                "what should i do next", "what do i do next", "needs doing", "need doing",
+                "left to do", "still to do"]
                 .iter()
                 .any(|phrase| lower.contains(phrase));
             let recent = RECENT_PHRASES.iter().any(|phrase| lower.contains(phrase));
@@ -2209,6 +2225,8 @@ impl App {
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
             "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({}))})),
+            "ack" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
+                json!({}))})),
             "progress_hide" => Ok(json!({"reply": reply(None, "Closed the progress panel.".into(),
                 json!({"action":"hide_graph"}))})),
             "session_status" => {
@@ -3068,6 +3086,7 @@ fn progress_subject(lower: &str) -> bool {
                     "of" | "on" | "for" | "in" | "so" | "now" | "today" | "overall" | "report"
                         | "percentage" | "percent"
                         | "status" | "check" | "please" | "is" | "looks" | "look" | "again"
+                        | "graph" | "panel" | "view"
                 )
             })
     })
