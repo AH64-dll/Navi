@@ -1682,6 +1682,20 @@ addEventListener('keydown',event=>{
   switchProject(String(target.id||''));
 });
 
+/* "/" from outside any field starts a command, as in most chat tools. */
+addEventListener('keydown',event=>{
+  if (event.key!=='/'||event.ctrlKey||event.metaKey||event.altKey||event.defaultPrevented) return;
+  if (event.target?.closest?.('input,textarea,select,[contenteditable],#terminal-pane,dialog')) return;
+  const input=commandInput();
+  if (!input||input.disabled) return;
+  event.preventDefault();
+  input.focus();
+  if (!input.value) {
+    input.value='/';
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+  }
+});
+
 /* Escape closes the progress panel when nothing nearer used the key: an open
  * dialog, the slash menu, a confirm window and the terminal keep their own. */
 addEventListener('keydown',event=>{
