@@ -1459,6 +1459,10 @@ impl App {
         {
             return Ok(Some(json!({"kind":"help"})));
         }
+        // "Tell Codex to run the tests": typed into that session, as voice does.
+        if let Some(prompt) = self.harness_prompt_intent(&text)? {
+            return Ok(Some(prompt));
+        }
         // Before the negation guard, which reads any "stop" as one: this only
         // takes a verb followed by exactly one session's name.
         if let Some(control) = self.session_control_intent(&lower)? {
@@ -1621,6 +1625,63 @@ impl App {
             _ => return Ok(None),
         };
         Ok(Some(json!({"kind":"launch","profile":chosen["id"],"name":chosen["name"]})))
+    }
+
+    /// "Tell Codex to run the tests", "ask Claude what it changed", "continue
+    /// in Codex: add a test": the same routes the voice worker takes. The
+    /// target must name an open session ("this" is the active one), so "tell
+    /// me a joke" is left alone. The prompt keeps the user's casing.
+    fn harness_prompt_intent(&self, text: &str) -> Result<Option<Value>> {
+        let trimmed = text.trim();
+        // ASCII lowercasing keeps byte offsets equal to the original's.
+        let lower = trimmed.to_ascii_lowercase();
+        let rest_at = ["tell ", "ask ", "send ", "message ", "continue in "]
+            .iter()
+            .find_map(|verb| lower.starts_with(verb).then_some(verb.len()));
+        let Some(start) = rest_at else {
+            return Ok(None);
+        };
+        let rest = &trimmed[start..];
+        let rest_lower = &lower[start..];
+        let sessions = self.sessions()?;
+        let labels = session_labels(&sessions);
+        let active = self.settings()["active_session"].as_str().map(str::to_string);
+        let find = |name: &str| -> Vec<Value> {
+            let name = spoken_numbers(name.trim().trim_end_matches([':', ',']));
+            let name = name.strip_prefix("the ").unwrap_or(&name).to_string();
+            sessions
+                .iter()
+                .filter(|session| session["running"] == true)
+                .filter(|session| {
+                    let id = session["id"].as_str().unwrap_or_default();
+                    (matches!(name.as_str(), "this" | "it" | "active" | "this session" | "the active session")
+                        && active.as_deref() == Some(id))
+                        || labels.get(id).is_some_and(|label| spoken_numbers(label) == name)
+                        || ["name", "profile", "harness"].iter().any(|key| {
+                            session[*key].as_str().is_some_and(|value| spoken_numbers(value) == name)
+                        })
+                        || (session["profile"] == "claude" && name == "claude code")
+                })
+                .map(|session| session["id"].clone())
+                .collect()
+        };
+        // "<target> to <text>" first (multi-word names), then a one-word
+        // target followed by the text.
+        let mut candidates: Vec<(usize, usize)> = rest_lower
+            .match_indices(" to ")
+            .map(|(index, marker)| (index, index + marker.len()))
+            .collect();
+        if let Some(space) = rest_lower.find([' ', ':', ',']) {
+            candidates.push((space, space + 1));
+        }
+        for (end, text_start) in candidates {
+            let ids = find(&rest[..end]);
+            let prompt = rest[text_start..].trim().trim_start_matches([':', ',']).trim();
+            if !ids.is_empty() && !prompt.is_empty() {
+                return Ok(Some(json!({"kind":"harness_prompt","ids":ids,"text":prompt})));
+            }
+        }
+        Ok(None)
     }
 
     /// "Stop Codex", "close terminal 2": interrupt or close one open session.
@@ -1931,6 +1992,55 @@ impl App {
                     }
                 };
                 Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+            }
+            "harness_prompt" => {
+                let sessions = self.sessions()?;
+                let labels = session_labels(&sessions);
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                let active = self.settings()["active_session"].as_str().map(str::to_string);
+                let ids = action["ids"].as_array().cloned().unwrap_or_default();
+                let mut chosen: Vec<&Value> = sessions
+                    .iter()
+                    .filter(|session| session["running"] == true && ids.contains(&session["id"]))
+                    .collect();
+                // Several Codex sessions: the active one, else the one here.
+                if chosen.len() > 1 {
+                    if let Some(session) = chosen.iter().find(|session| session["id"].as_str() == active.as_deref()) {
+                        chosen = vec![*session];
+                    } else {
+                        let local: Vec<&Value> = chosen
+                            .iter()
+                            .copied()
+                            .filter(|session| session["project_id"].as_str() == here.as_deref())
+                            .collect();
+                        if local.len() == 1 {
+                            chosen = local;
+                        }
+                    }
+                }
+                let label = |session: &Value| {
+                    labels
+                        .get(session["id"].as_str().unwrap_or_default())
+                        .cloned()
+                        .unwrap_or_else(|| session["name"].as_str().unwrap_or("the session").to_string())
+                };
+                let prompt = action["text"].as_str().unwrap_or_default();
+                let text = match chosen.as_slice() {
+                    // A child process owns the terminal: typing would go to it.
+                    [session] if matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) => {
+                        format!("{} is busy, so I did not type over it. Try again when it is free.", label(session))
+                    }
+                    [session] => {
+                        self.inject(session["id"].as_str().unwrap_or_default(), prompt, true)?;
+                        format!("Sent to {}: “{prompt}”.", label(session))
+                    }
+                    [] => "That session is no longer open.".to_string(),
+                    many => format!(
+                        "Which one: {}?",
+                        many.iter().map(|session| label(session)).collect::<Vec<_>>().join(", ")
+                    ),
+                };
+                Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
             "session_control" => {
                 let sessions = self.sessions()?;
@@ -2878,7 +2988,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), stop or close one (“stop Codex”, “close terminal 2”), and show or close the progress panel. Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”), stop or close one (“stop Codex”, “close terminal 2”), and show or close the progress panel. Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
