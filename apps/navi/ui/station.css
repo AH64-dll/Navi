@@ -197,6 +197,7 @@
   max-width:34%;overflow:hidden;text-overflow:ellipsis}
 .pill:hover{border-color:var(--aqua)}
 .pill:disabled{opacity:.55;cursor:default}
+.pill[hidden]{display:none}
 #state{letter-spacing:1.1px;white-space:nowrap}
 #state[data-phase=ready]{color:#8dffc0}
 #state[data-phase=working]{color:#ffe08a}

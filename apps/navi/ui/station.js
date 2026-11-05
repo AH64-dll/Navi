@@ -2065,6 +2065,7 @@ function applyVoice(voice) {
   if (pill) {
     pill.textContent=voiceWord(status);
     pill.dataset.status=status;
+    pill.hidden=status==='off'||status==='discarded';
     pill.title='Voice: '+status+(voice.wake_word?' · say “'+voice.wake_word+'”':'');
   }
   if (status==='confirming'&&voice.transcript) beginConfirm(voice);
