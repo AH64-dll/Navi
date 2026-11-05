@@ -252,6 +252,15 @@ function hydrateMessages(rows, options={}) {
     });
   }
   if (!fresh.length) return 0;
+  /* A stored failure comes back as a failure: its row keeps the failed status,
+   * and its Retry re-sends the request it answered (the user row before it). */
+  let asked=null;
+  for (const message of fresh) {
+    if (message.role==='user') { asked=message.parts.find(part=>part.type==='text')?.text||null; continue; }
+    if (!message.parts.some(part=>part.type==='error')) continue;
+    message.status='failed';
+    if (asked) message.meta.request=String(asked);
+  }
   if (options.older===true) {
     messages.unshift(...fresh);
     for (const message of fresh) messageById.set(message.id,message);
@@ -356,7 +365,10 @@ function metaLine(message) {
   if (usage) bits.push(usage);
   if (meta.agent) bits.push(meta.agent);
   if (meta.session) bits.push('session '+String(meta.session).slice(0,8));
-  if (meta.source) bits.push(meta.source);
+  /* The source is internal routing ("navi", "unavailable", "codex", "detector")
+   * that the row's own text already states; only a spoken request says
+   * something the row does not. */
+  if (meta.source==='voice') bits.push('spoken');
   return bits.filter(Boolean).join(' · ');
 }
 
@@ -747,6 +759,12 @@ function errorPart(message,part) {
     detail.className='error-detail';
     detail.textContent=truncateText(part.detail,800);
     box.append(detail);
+  }
+  if (part.hint) {
+    const hint=document.createElement('div');
+    hint.className='error-hint';
+    renderMarkdown(hint,part.hint);
+    box.append(hint);
   }
   if (part.retry!==false&&message.meta?.request) {
     const retry=document.createElement('button');
@@ -1192,13 +1210,19 @@ function requestFailed(event,requestId,text) {
   if (!event.replayed) alarm(text);
   bump(row);
 }
+/* Navi's assistant runs on OpenCode; without it the deterministic commands
+ * still work, so the row says which ones instead of only reporting the error. */
+const ASSISTANT_DOWN=/OpenCode (is not installed|is not running|did not start|is not reachable)/;
+const ASSISTANT_HINT='Navi’s own commands still work: “open Claude Code”, “how far along is this project?”, '
+  +'“mark Voice done”, /assess. Chatting with Navi needs OpenCode: install the `opencode` CLI or start `opencode serve`.';
 /* A usage or lookup error is the command's answer: retrying it changes nothing.
  * Only a transport failure means the assistant itself is unavailable. */
 function failurePart(text) {
   const usage=/^(Use \/|Use at most|No (task|part|Navi project|project)|Unknown |Missing |This project|Progress needs|Command must)/.test(text);
   return usage
     ?{part:{type:'error',text:'Could not do that',detail:text,retry:false},source:'navi'}
-    :{part:{type:'error',text:'Assistant unavailable',detail:text,retry:true},source:'unavailable'};
+    :{part:{type:'error',text:'Assistant unavailable',detail:text,retry:true,
+      hint:ASSISTANT_DOWN.test(text)?ASSISTANT_HINT:undefined},source:'unavailable'};
 }
 /* A failure the user must act on (the assistant is down) raises attention; a
  * command that could not be done is only its answer. */
@@ -1591,7 +1615,7 @@ function serialiseParts(parts) {
     }
     if (part.type==='text') return {type:'text',text:String(part.text||''),tone:part.tone};
     if (part.type==='reasoning') return {type:'reasoning',text:String(part.text||'')};
-    if (part.type==='error') return {type:'error',text:String(part.text||''),detail:part.detail?truncateText(String(part.detail),2000):undefined,retry:!!part.retry};
+    if (part.type==='error') return {type:'error',text:String(part.text||''),detail:part.detail?truncateText(String(part.detail),2000):undefined,retry:!!part.retry,hint:part.hint||undefined};
     if (part.type==='diff') return {type:'diff',path:part.path,text:String(part.text||'')};
     return {type:'text',text:String(part.text||'')};
   });

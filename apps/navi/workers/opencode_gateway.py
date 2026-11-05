@@ -341,7 +341,7 @@ class Gateway:
 
     def spawn(self):
         if not shutil.which("opencode"):
-            raise GatewayError("opencode CLI not on PATH; cannot spawn serve")
+            raise GatewayError("OpenCode is not installed: there is no `opencode` on PATH to start its server")
         # Keep the password stable: a later Navi process reads the same
         # service.json/env and must authenticate to the server we started.
         env = dict(os.environ, OPENCODE_SERVER_PASSWORD=self.password)
@@ -358,13 +358,13 @@ class Gateway:
             if self.reachable():
                 return
             time.sleep(0.4)
-        raise GatewayError(f"opencode serve did not come up at {self.base_url}")
+        raise GatewayError(f"OpenCode did not start at {self.base_url} (its log: /tmp/navi-opencode-serve.log)")
 
     def ensure_up(self):
         if self.reachable():
             return
         if not self.autospawn:
-            raise GatewayError(f"opencode serve unreachable at {self.base_url}")
+            raise GatewayError(f"OpenCode is not running at {self.base_url}")
         self.spawn()
 
     def known_agents(self):

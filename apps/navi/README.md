@@ -116,7 +116,9 @@ scroll back, press the "jump to latest" pill, or send a message.
 
 The status chip is a projection of the poll payload (`Ready`, `Working`, `Attention`,
 `Host not responding`), beside a short model name with an inline switcher and a
-plain-word voice pill; one failure produces one row, never a permanent alarm. A first
+plain-word voice pill; one failure produces one row, never a permanent alarm. A failed
+row keeps its failed state and its Retry across restarts, and when OpenCode is missing it
+says so in plain words and lists the Navi commands that still work without it. A first
 run shows an empty-state block with one-click Open <harness> (the first installed
 harness), Assess progress, New session, Settings and Enable mic, and the mic button
 explains why it is unavailable. Typing `/` opens a filtered list that starts with
