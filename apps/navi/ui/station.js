@@ -2102,7 +2102,7 @@ function surfaceSettings(value) {
   if (emptyMic) emptyMic.disabled=value.isolated===true||!!settings.microphone;
   const launch=element('empty-launch');
   if (launch) {
-    const profile=(settings.profiles||[]).find(entry=>entry&&entry.id&&!isTerminalProfile(entry));
+    const profile=preferredProfile(settings.profiles||[]);
     launch.hidden=!profile||!projectList().length;
     if (profile) launch.textContent='Open '+(profile.name||profile.id);
   }
@@ -3401,7 +3401,10 @@ function ensureSessionShell(bar) {
       event.stopPropagation();
       launchOpen=!launchOpen;
       renderLaunchMenu();
-      if (launchOpen) launchMenu.querySelector('.launch-option:not(:disabled)')?.focus();
+      if (launchOpen) {
+        launchMenu.querySelector('.launch-option:not(:disabled)')?.focus();
+        refreshHarnesses();
+      }
     };
     launchMenu=document.createElement('div');
     launchMenu.className='launch-menu';
@@ -3437,12 +3440,36 @@ function ensureSessionShell(bar) {
 function isTerminalProfile(profile) {
   return profile.id==='terminal'||profile.executable==='/bin/bash';
 }
+/* Which harness binaries exist on the launch PATH, from `harness_list` (the
+ * daemon caches it for 60 s). Until the first answer every profile counts as
+ * available: unknown availability must never disable a launch. A profile with
+ * an absolute executable is outside the probe and always counts as available. */
+let harnessFound=null, harnessAsked=0;
+async function refreshHarnesses() {
+  if (Date.now()-harnessAsked<30000) return;
+  harnessAsked=Date.now();
+  try {
+    const list=(await rpc('harness_list'))?.harnesses;
+    if (!Array.isArray(list)) return;
+    harnessFound=new Map(list.map(item=>[String(item.name),item.found===true]));
+    if (launchOpen) renderLaunchMenu();
+    if (snapshot) surfaceSettings(snapshot);
+  } catch { /* availability stays unknown */ }
+}
+function profileInstalled(profile) {
+  if (!harnessFound||isTerminalProfile(profile)) return true;
+  const executable=String(profile.executable||'');
+  if (!executable||executable.includes('/')) return true;
+  const name=executable.toLowerCase();
+  return harnessFound.has(name)?harnessFound.get(name):true;
+}
 function harnessProfiles() {
   const profiles=(snapshot?.settings?.profiles||[]).filter(profile=>profile&&profile.id);
   return [...profiles.filter(profile=>!isTerminalProfile(profile)),...profiles.filter(isTerminalProfile)];
 }
-function preferredProfile() {
-  return harnessProfiles().find(profile=>!isTerminalProfile(profile))||null;
+function preferredProfile(profiles) {
+  const list=(profiles||harnessProfiles()).filter(profile=>profile&&profile.id&&!isTerminalProfile(profile));
+  return list.find(profileInstalled)||null;
 }
 function renderLaunchMenu() {
   if (!launchMenu) return;
@@ -3457,12 +3484,16 @@ function renderLaunchMenu() {
     button.setAttribute('role','menuitem');
     button.dataset.profile=String(profile.id);
     const binary=isTerminalProfile(profile)?'shell':String(profile.executable||'').split('/').pop();
+    const installed=profileInstalled(profile);
     button.append(graphNode('span','launch-name',profile.name||profile.id));
     /* The binary is shown only when the name does not already say it. */
-    if (binary&&binary.toLowerCase()!==String(profile.name||profile.id).toLowerCase()) {
+    if (!installed) {
+      button.append(graphNode('span','launch-hint','not installed'));
+      button.title=`${binary} is not on the launch PATH; install it or set its path in Settings`;
+    } else if (binary&&binary.toLowerCase()!==String(profile.name||profile.id).toLowerCase()) {
       button.append(graphNode('span','launch-hint',binary));
     }
-    button.disabled=!project?.path;
+    button.disabled=!project?.path||!installed;
     button.onclick=event=>{
       event.stopPropagation();
       launchOpen=false;
@@ -4293,3 +4324,4 @@ bootTimer=setTimeout(()=>{
 window.naviScene?.boot(()=>markBooted('scene'),instantBoot);
 syncPixelRatio();
 send({type:'ready'});poll();
+refreshHarnesses();

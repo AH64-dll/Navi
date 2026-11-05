@@ -310,6 +310,8 @@ body.still .session-dot{animation:none}
   border:1px solid transparent;border-radius:5px;background:none;text-align:left;cursor:pointer;color:var(--ice);font-size:11.5px}
 .launch-option:hover,.launch-option:focus-visible{border-color:#8eaff355;background:#3a55b544;outline:none}
 .launch-hint{font-size:9.5px;color:#9fc0e4}
+.launch-option:disabled{cursor:default;opacity:.5}
+.launch-option:disabled:hover{border-color:transparent;background:none}
 .launch-more{margin-top:3px;border-top:1px solid #8eaff333;border-radius:0 0 5px 5px;color:#9fe6ff;font-size:10.5px}
 
 /* Progress HUD: the active project's headline, always on the main screen. The
