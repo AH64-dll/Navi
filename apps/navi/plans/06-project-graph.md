@@ -6,6 +6,8 @@ Scope: `src/main.rs` (settings, SQLite schema, events ring), `src/sessions.rs`, 
 
 **Completion formula.** Task score from the newest decisive signal: user verdict `1.0/0.0`; verified pass/commit `1.0`; verified fail `0.0`; uncorroborated assistant claim `0.5 × confidence` (halved after 7 days); touched-only `0.5 × confidence`; nothing `0.0` and flagged *unknown*. Aspect percentage = weighted mean over its tasks (dropped excluded); empty aspects leave the denominator. Project percentage = weighted mean over aspects. `verified` = share of weight backed by non-assistant signals. `confidence` = coverage × freshness (10-day half-life). With no aspects, `percent_null=true` and the UI renders `—`, never 0 or 100. The assistant may write only `assistant_claim` (value capped, decays); the user writes authoritative state; git and harness adapters write verified signals. Every number returns the signal ids behind it.
 
+> **Superseded: estimates.** Harnesses, the detector and the user now state completion directly as `estimate` signals for the whole project or one part, through the harness link (`navid mcp`, `navid progress`). A part takes its newest estimate unless newer verified task evidence exists, and is otherwise the weighted mean of its tasks; the headline is the newer of the whole-project estimate and the weighted part mean. `assistant_claim` remains only as a legacy kind. The current rules are in `README.md`, section "Project progress".
+
 ---
 
 ## BUG-083 · Projects have no identity and are never validated
@@ -121,7 +123,7 @@ Scope: `src/main.rs` (settings, SQLite schema, events ring), `src/sessions.rs`, 
 ### Honesty rules (must hold in every implementation)
 - No stored percentage; recompute from signals.
 - Evidence is mandatory and non-empty.
-- Assistant claims are capped and decay.
+- Estimates stay unverified and fade with a 10-day half-life; newer verified task evidence overrules a part's estimate.
 - Unknown is `—`, never 0 or 100.
 - Verified and confidence are always displayed beside the percentage.
 - User verdict is terminal until the user changes it.

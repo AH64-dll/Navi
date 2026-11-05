@@ -25,7 +25,12 @@ requests cannot automatically select an execution target.
 Examples: `Open Codex`, `Launch Claude Code in Navi`, `Open a terminal called Review`,
 `Switch to Review`, `Open GitHub` (a configured favorite), `Switch to <tab title>`,
 `Click <attached button name>`, `Focus <unique app name> window` (KDE and a connected
-desktop). Up to four steps can be separated by ` then `.
+desktop). Up to four steps can be separated by ` then `; ` and ` also separates steps
+when every half is a command Navi answers itself (`open codex and show the progress`).
+
+Progress requests never need a model: `How far along is the project?`,
+`Show the progress`, `Assess the project`, `Set the UI to 80%`,
+`Mark barge-in done`, `Reopen barge-in`. See [Project progress](#project-progress).
 
 ## Install without starting the desktop
 
@@ -110,17 +115,22 @@ the reader is already at the bottom and otherwise offers a "jump to latest" pill
 The status chip is a projection of the poll payload (`Ready`, `Working`, `Attention`,
 `Host not responding`), beside a short model name with an inline switcher and a
 plain-word voice pill; one failure produces one row, never a permanent alarm. A first
-run shows an empty-state block with New session, Settings and Enable mic, and the mic
-button explains why it is unavailable. Typing `/` opens a filtered list of OpenCode
-slash commands (arrows/Tab to complete); a Stop button appears while a request runs and
+run shows an empty-state block with one-click Open <harness> (the first installed
+harness), Assess progress, New session, Settings and Enable mic, and the mic button
+explains why it is unavailable. Typing `/` opens a filtered list that starts with
+Navi's own commands (`/progress`, `/assess`, `/open`, `/mark`, `/set`), which never
+reach the assistant, followed by the OpenCode slash commands (arrows/Tab to complete); a
+Stop button appears while a request runs and
 cancels it, reporting when the server did not confirm the interrupt. A session strip at
 the top-left separates live sessions from a collapsed Recent list, shows the harness
-profile name, its state and last activity, disambiguates duplicate names and reconciles
+profile name, its state (a colored dot: running, idle, busy, needs input) and last
+activity, disambiguates duplicate names and reconciles
 its chips in place; clicking one attaches an xterm terminal pane to its live tmux
 session, where an inline prompt field sends input straight into the harness. The "+"
-chip opens a launcher dialog — pick any registered harness profile (Codex, Claude Code,
-Pi, or a custom one added in Settings), a project directory, and an optional first
-prompt that is injected once the harness is up. The settings gear also edits harness
+chip opens a quick-launch menu: one click starts Codex, Claude Code, Pi, OpenCode, a
+terminal or a custom profile in the active project and attaches it. "More options…"
+opens the full launcher dialog — any registered profile, a project directory, and an
+optional first prompt that is injected once the harness is up. The settings gear also edits harness
 profiles (name, executable, args as a JSON array, so a value containing spaces stays
 one argument) and offers a searchable model picker grouped by provider that can never
 save an empty reference. The terminal's Stop sends `session_interrupt` to the attached
@@ -230,26 +240,155 @@ the QA JSON under `host.push` and printed once when the window closes. The page 
 `connect-src 'none'`; push reuses the existing `window.webkit.messageHandlers.navi`
 bridge.
 
-### Project graph
+### Project progress
 
-Completion is derived, never stored. `graph_get {project_id}` recomputes from the
-append-only `signals` ledger and returns `{project, percent, percent_null, verified,
-confidence, aspects[], tasks, risks[], as_of, signals[], signal_count, why}`. Each aspect
-carries its own `percent`/`percent_null`, `verified`, task count and how many tasks have
-no evidence. The newest 40 signals travel with the payload, so every number can be
-explained by the rows behind it. A signal requires non-empty `evidence`; assistant claims
-are capped and decay, and only a user verdict is terminal.
+Navi keeps one completion record per project: a headline percent, a percent per
+*part* (an area of the project such as "Voice" or "Station UI"; `aspects` in the
+schema), and an optional task checklist under each part. Nothing stores a percentage:
+`graph_get {project_id}` recomputes every number from the append-only `signals`
+ledger, and every signal must carry non-empty evidence.
 
-Unknown is an em dash, never 0 or 100. The panel renders `—` when the project has no
-aspects *and* when no aspect has an evidence-backed task, and the same rule applies per
-aspect bar. The empty state names the gap ("No aspects defined") and offers one action:
-add an aspect. Below the headline sit `verified`, `confidence`, the aspect bars, risks, an
-evidence drawer (kind, source, signal id, time, the evidence text), and the `as of` stamp.
+#### How the percent is computed
+
+A model's judgment ("the UI is about 60% done") and hard evidence (a passing test, a
+ticked box) both describe progress, and neither is enough alone: a new project has no
+tasks, so task arithmetic shows nothing, and a model that can never be overruled is
+not a measurement. So both count, and the newer one wins:
+
+- **Part.** The newest `estimate` stated for the part (by a harness, the detector,
+  Navi's assistant or the user). If *verified* task evidence is newer — a user
+  verdict, a test result, a commit, a checkpoint — the part is the weighted mean of its
+  tasks instead. A part with tasks and no estimate is always the task mean. A model
+  ticking one task does not overrule its own estimate of the part.
+- **Headline.** Whichever is newer: the latest whole-project estimate, or the weighted
+  mean of the parts. A part with no value of its own borrows the whole-project
+  estimate.
+- **Task.** A user verdict is final (done 100%, in progress 50%, otherwise 0).
+  Otherwise the newest signal decides: an estimate's value, a test or commit result,
+  or a legacy `assistant_claim` at half its confidence, halved again after 7 days.
+- **Unknown** is `null` and renders as `—`, never 0 or 100.
+- **verified** is the share of task weight whose deciding signal is a verdict, test,
+  commit or checkpoint from a non-assistant source. **confidence** is the deciding
+  estimate's confidence faded by a 10-day half-life (task-only projects keep
+  coverage × freshness).
+- **risks** name what is weak: no parts, a headline estimate older than 7 days, parts
+  with no evidence for 14 days, tasks with no evidence, unassigned or blocked tasks.
+
+A short trace:
+
+```text
+Claude Code: Voice 60% ("wake word and STT wired, barge-in untested")  → Voice 60%, basis estimate
+User ticks "Barge-in" done (verdict, newer)                             → Voice 25% (1 of 4 tasks), basis tasks
+Claude Code: Voice 70% again                                             → Voice 70%, basis estimate
+Claude Code: whole project 66%                                           → headline 66%, basis estimate
+User: "set the station UI to 70%" (a part, newer than the headline)     → headline = weighted mean of parts
+```
+
+The payload is `{project, percent, percent_null, verified, confidence, as_of, why,
+basis{kind: estimate|parts|none, source, time}, estimate, trend[{time, percent,
+source}], aspects[], unassigned[], tasks{total, todo, in_progress, done, blocked,
+dropped}, risks[], signals[], signal_count}`. Each part carries `percent`,
+`percent_null`, `basis` (`estimate`, `tasks` or `none`), its `estimate`, the `derived`
+task mean, `verified`, `confidence` and its task `items[]`. The newest 40 signals
+travel with the payload, so every number can be explained by the rows behind it.
+`progress_overview` returns the headline of every project for the switcher.
+
+#### Harness link
+
+Every pane Navi launches carries `NAVI_PROJECT_ID`, `NAVI_SESSION_ID`, `NAVI_HARNESS`,
+`NAVI_BIN`, `NAVI_DATA_DIR` and `NAVI_RUNTIME_DIR`, and `navid`'s directory is
+appended to its `PATH`. Each harness is registered at launch on its command line, so
+no user config file is touched:
+
+| Harness | Registration |
+| --- | --- |
+| Claude Code | `--mcp-config` with a `navi` stdio server (`navid mcp`), `--allowedTools` for its three tools, `--append-system-prompt` with the instructions |
+| Codex | `-c mcp_servers.navi.command/args/env` overrides |
+| OpenCode | a `mcp.navi` local server merged into `OPENCODE_CONFIG_CONTENT` |
+| Pi | `--append-system-prompt` telling it to run `navid progress` from its shell tool |
+
+A profile opts out with `"link": false`. `navid mcp` speaks newline-delimited JSON-RPC
+2.0 over stdio (MCP 2024-11-05 through 2025-11-25) and offers three tools:
+
+- `navi_progress` reads the record: headline and basis, each part, the task checklist.
+- `navi_report_progress {percent, part?, evidence, confidence?}` states how complete
+  the whole project (no `part`) or one part is. A new part name creates the part.
+- `navi_track_task {task, state, part?, evidence, percent?}` adds a task or moves it
+  between `todo`, `in_progress`, `done` and `blocked`; tasks match by title.
+
+Harnesses without MCP use the CLI, which reaches the same daemon call:
+
+```bash
+navid progress
+navid progress report 60 "settings dialog renders; save path untested" --part "Station UI"
+navid progress task done "Barge-in" "test_voice_policy passes" --part Voice
+```
+
+The project is the pane's session project, else the registered project containing the
+working directory, else the only project; `--project` overrides it. A report moves the
+number at once and adds one feed row ("Claude Code put Voice at 60% — evidence").
+
+#### Project detector
+
+`project_detect {project_id, via?}` runs from the Assess button, `/assess`, or "assess
+the project":
+
+1. **Scan.** A bounded walk (at most 8000 entries, depth 8, 700 text files of up to
+   256 KiB) counts languages, test files, TODO/FIXME and stub markers, markdown
+   checklists, CI and git history, and proposes parts (workspace members or top-level
+   code directories). `project_scan` returns the scan alone.
+2. **Seed.** If no model has estimated the project yet and its checklists hold at
+   least 5 items, the checked share is recorded as a detector estimate with
+   confidence 0.35. A model's estimate always replaces it.
+3. **Assess.** If a linked harness (Claude Code, Codex, OpenCode or Pi) is running in
+   the project and is not busy, Navi types an assessment request into it — the known
+   parts (or "choose 3 to 7"), the scan facts, and how to report — and each estimate
+   lands as the harness reports it. With none, or with `via:"assistant"`, Navi's own
+   assistant reads the project in the background and answers with lines of the form
+   `PROGRESS part "<part>" <percent> | <evidence>` and `PROGRESS overall <percent> |
+   <evidence>`, recorded as estimates with confidence 0.6.
+
+The HUD reads "Assessing…" and a comet circles the ring until reports arrive.
+
+#### Voice and typed commands
+
+These run on the deterministic fast path, so they work without the local decision
+model and without the assistant:
+
+| Say or type | Effect |
+| --- | --- |
+| "How far along is the project?", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; "show …" also opens the panel |
+| "Assess the project", "re-estimate the project", `/assess` | Runs the detector |
+| "Set the UI to 80%", "put voice at 60 percent", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |
+| "Mark barge-in done", "check off barge-in", "reopen barge-in", `/mark barge-in in progress` | Sets a task's state as a user verdict; with no matching task, "mark <part> done" puts the part at 100% |
+| "Open Codex", `/open claude code` | Launches the harness in the active project |
+
+Task names match loosely ("barge in" finds "Barge-in"); an ambiguous name lists the
+candidates instead of guessing. With **Speak replies** on, the voice worker speaks the
+reply.
+
+#### On screen
+
+- The **ring** around the emblem fills to the headline percent. An unknown percent
+  leaves only the faint track (unknown is not zero), and a comet circles the track
+  while an assessment runs.
+- The **progress HUD** beside the session strip shows the percent, a bar and its basis
+  ("Estimate by Claude Code · 2h ago", "Across 4 parts"), plus an Assess button.
+  Clicking it opens the panel.
+- The **project switcher** shows each project's headline percent.
+- The **progress panel** (the "Progress" pill) shows the headline, verified share,
+  confidence and a trend line of whole-project estimates; each part's bar marks the
+  task-derived value when an estimate leads. A part expands to its basis, evidence and
+  task checklist: ticking a box records a user verdict, and parts, tasks and percents
+  can be added or set in place. Risks, unassigned tasks, the last scan and an evidence
+  drawer (kind, source, signal id, time, evidence text) follow.
+- **Feed rows**: each harness report is one compact row with its evidence; the user's
+  own changes add no row, and rows replayed from history at startup are not narrated
+  again.
 
 The panel has its own cell in the L0 grid: a 320–380 px right rail above 1280 px, a drawer
 over the stage cell at 900–1279 px, and a tab in the composer area below 900 px, where the
-panel owns the stage cell. Every measurement of the real GUI at 1440×920, 1280×720 and
-960×640 reports zero panel intersections.
+panel owns the stage cell.
 
 ### Harness evidence
 
