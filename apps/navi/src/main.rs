@@ -255,7 +255,13 @@ impl App {
                 {"id":"pi","name":"Pi","executable":"pi","args":[]},
                 {"id":"opencode","name":"OpenCode","executable":"opencode","args":[]},
                 {"id":"terminal","name":"Terminal","executable":"/bin/bash","args":[]}],
-            "projects":[{"name":"Navi","path":PathBuf::from(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("Missing project root")?}],
+            // The source tree is a handy first project on the machine that
+            // built Navi; elsewhere that path does not exist, and a first run
+            // should not start with a "folder missing" project.
+            "projects":PathBuf::from(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2)
+                .filter(|root| root.is_dir())
+                .map(|root| vec![json!({"name":"Navi","path":root})])
+                .unwrap_or_default(),
             "favorites":[], "shortcuts":{"focus":"F10","fullscreen":"F11"}
         });
         let mut settings = db
