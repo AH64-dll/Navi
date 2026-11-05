@@ -1758,6 +1758,43 @@ impl App {
         {
             return Ok(Some(json!({"kind":"project_list"})));
         }
+        // "What should Codex work on?": the next task, and how to hand it over.
+        let worker = ["what should ", "what can "]
+            .iter()
+            .find_map(|lead| lower.strip_prefix(lead))
+            .and_then(|rest| {
+                [" work on next", " work on", " do next", " pick up next", " pick up"]
+                    .iter()
+                    .find_map(|tail| rest.strip_suffix(tail))
+            })
+            .map(|name| name.strip_prefix("the ").unwrap_or(name).trim().to_string())
+            .filter(|name| !matches!(name.as_str(), "i" | "we" | "you"));
+        if let Some(name) = worker {
+            // A harness, by its strip label or profile name; a shell takes
+            // commands, not tasks.
+            let sessions = self.sessions()?;
+            let labels = session_labels(&sessions);
+            let session = named_sessions(&sessions, &labels, self.pronoun_session().as_deref(), &name)
+                .first()
+                .and_then(|id| sessions.iter().find(|session| &session["id"] == id))
+                .filter(|session| session["profile"] != "terminal")
+                .map(|session| {
+                    labels.get(session["id"].as_str().unwrap_or_default()).cloned().unwrap_or_default()
+                });
+            let settings = self.settings();
+            let profile = settings["profiles"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|profile| profile["id"] != "terminal")
+                .find(|profile| {
+                    ["name", "id"].iter().any(|key| profile[*key].as_str().is_some_and(|value| value.eq_ignore_ascii_case(&name)))
+                })
+                .and_then(|profile| profile["name"].as_str().map(str::to_string));
+            if let Some(label) = session.filter(|label| !label.is_empty()).or(profile) {
+                return Ok(Some(json!({"kind":"progress","show":false,"topic":"next","for":label})));
+            }
+        }
         // "What did Codex report?": that harness's recorded estimates.
         let reported = ["what did ", "what has ", "what's ", "whats "]
             .iter()
@@ -2450,7 +2487,12 @@ impl App {
                     _ if action["topic"] == "estimate" => estimate_sentence(&graph),
                     _ if action["topic"] == "parts" => parts_sentence(&graph),
                     _ if action["topic"] == "active" => active_sentence(&graph),
-                    _ if action["topic"] == "next" => next_task(&graph).0,
+                    _ if action["topic"] == "next" => match action["for"].as_str() {
+                        Some(name) if next_task(&graph).1.is_some() => {
+                            format!("{} Say “give {name} the next task” to send it.", next_task(&graph).0)
+                        }
+                        _ => next_task(&graph).0,
+                    },
                     _ if action["topic"] == "count" => count_sentence(&graph),
                     _ if action["topic"] == "tasks" => store::remaining_sentence(&graph),
                     _ if action["blocked"] == true => store::blocked_sentence(&graph),
@@ -2716,6 +2758,11 @@ impl App {
                     None => (prompt, format!("“{prompt}”")),
                 };
                 let text = match chosen.as_slice() {
+                    // "Give the terminal the next task" would type English into a shell.
+                    [session] if shell && work_request(prompt).is_some() => format!(
+                        "{} is a shell and takes commands, not tasks. Give the task to a harness such as Codex.",
+                        label(session)
+                    ),
                     // A child process owns the terminal: typing would go to it.
                     [session] if matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) => {
                         let name = label(session);
