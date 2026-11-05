@@ -2131,6 +2131,8 @@ function pickSlash(index) {
 /* Navi's own commands, answered by the daemon's fast path without a model;
  * the assistant's commands follow them when its catalog is available. */
 const NAVI_COMMANDS=[
+  {name:'help',description:'What Navi does without a model'},
+  {name:'sessions',description:'What each open harness is doing'},
   {name:'progress',description:'How far along the active project is, and its parts'},
   {name:'assess',description:'Scan the project and ask a harness to estimate each part'},
   {name:'open',description:'Open a harness in the active project: /open claude code'},

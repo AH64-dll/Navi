@@ -403,7 +403,8 @@ model and without the assistant:
 | "Open Codex", `/open claude code` | Brings forward the Codex already open in the active project, else launches one; "open a new Codex" (or "… called X") always launches |
 | "Switch to acme-api", "go to acme-api", "open the acme-api project" | Makes that project active in the station (a session with that name wins) and speaks its headline |
 | "Stop Codex", "interrupt terminal number two", "close terminal #2", "quit Claude Code" | Interrupts (stop, interrupt, pause) or closes (close, quit, exit, kill, end) that one session. The words after the verb must name a single open session, so "stop opening Codex" is not read this way. With two candidates, a session in the active project wins, otherwise Navi asks which. A closed session stays under Recent |
-| "Is Codex done?", "what is Claude doing", "what's running", "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them |
+| "Help", "what can you do", `/help` | Lists what Navi answers without a model |
+| "Is Codex done?", "what is Claude doing", "what's running", `/sessions`, "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them |
 
 Steps chain with "then" (or "and" when every half is one of these commands), at most
 four: "switch to acme-api then assess the project" assesses acme-api, because a step

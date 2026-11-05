@@ -1446,12 +1446,19 @@ impl App {
         // other slash command belongs to the assistant.
         let lower = match lower.split_once(' ').map_or((lower.as_str(), ""), |(head, rest)| (head, rest)) {
             ("/progress", _) => "show the progress".to_string(),
+            ("/help", _) => "help".to_string(),
+            ("/sessions", _) => "what's running".to_string(),
             ("/assess", _) => "assess the project".to_string(),
             ("/open" | "/mark" | "/set" | "/reopen", rest) if !rest.trim().is_empty() => {
                 lower.trim_start_matches('/').to_string()
             }
             _ => lower,
         };
+        if matches!(lower.as_str(), "help" | "what can you do" | "what can i say" | "what can i ask"
+            | "what can you do for me" | "what commands are there")
+        {
+            return Ok(Some(json!({"kind":"help"})));
+        }
         // Before the negation guard, which reads any "stop" as one: this only
         // takes a verb followed by exactly one session's name.
         if let Some(control) = self.session_control_intent(&lower)? {
@@ -1940,6 +1947,7 @@ impl App {
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
+            "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({}))})),
             "progress_hide" => Ok(json!({"reply": reply(None, "Closed the progress panel.".into(),
                 json!({"action":"hide_graph"}))})),
             "session_status" => {
@@ -2824,9 +2832,14 @@ fn action_summary(kind: &str, action: &Value, result: &Value) -> Option<String> 
 
 /// Navi's own slash commands (answered by the fast path, never sent to the
 /// assistant), as the usage line shown when one cannot be read.
+/// What Navi answers itself, without a model; spoken too, so it stays short.
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”), report progress (“how far along is the project”, “what's left”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), stop or close one (“stop Codex”, “close terminal 2”), and show or close the progress panel. Anything else goes to the assistant.";
+
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
     Some(match head.as_str() {
+        "/help" => "Use /help to see what Navi does without a model",
+        "/sessions" => "Use /sessions to hear what each open harness is doing",
         "/progress" => "Use /progress to see how far along the active project is",
         "/assess" => "Use /assess to scan the project and ask a harness to estimate it",
         "/open" => "Use /open <harness>, for example /open claude code",

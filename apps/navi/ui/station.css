@@ -272,7 +272,7 @@ button:disabled{opacity:.45;cursor:default}
 #chat-form{position:relative}
 #slash-list{position:absolute;left:44px;right:96px;bottom:calc(100% + 6px);margin:0;padding:5px;list-style:none;
   max-height:240px;overflow:auto;border-radius:8px;border:1px solid #8eaff355;
-  background:linear-gradient(150deg,#0d1a52f2,#040b36f4);box-shadow:0 -8px 30px #01032180;scrollbar-width:thin}
+  background:linear-gradient(150deg,#0d1a52,#040b36);box-shadow:0 -8px 30px #01032180;scrollbar-width:thin}
 #slash-list li{display:flex;align-items:baseline;gap:10px;padding:6px 9px;border-radius:5px;cursor:pointer}
 #slash-list li.active,#slash-list li:hover{background:#3a55b544}
 .slash-name{font:600 12px var(--type);color:#b8ffe9;min-width:110px}
