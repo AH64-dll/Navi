@@ -272,6 +272,10 @@ def work_request(text):
     return loose in _WORK_REQUESTS
 
 
+_SHELLS = frozenset({"bash", "zsh", "sh", "fish", "dash", "ksh"})
+_NUMBER_WORDS = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+
 def harness_target(transcript, status):
     """BUG-065: 'tell Claude to run the tests' -> {id, text} for the prompt op.
 
@@ -296,7 +300,13 @@ def harness_target(transcript, status):
         wanted_id = settings.get("active_session")
         target = next((s for s in sessions if s.get("id") == wanted_id), None)
     else:
-        matches = [s for s in sessions
+        # "Codex #2" names one of several by the label the strip shows.
+        numbered = re.sub(r"\s*(?:#|number\s+)\s*", " #", wanted)
+        numbered = re.sub(r"\s+(one|two|three|four|five|six|seven|eight|nine)$",
+                          lambda m: " #" + str(_NUMBER_WORDS.index(m.group(1)) + 1), numbered)
+        numbered = re.sub(r"\s+(\d)$", r" #\1", numbered)
+        matches = [s for s in sessions if (s.get("label") or "").casefold() == numbered]
+        matches = matches or [s for s in sessions
                    if (name := (s.get("name") or "").casefold())
                    and (name == wanted or name.startswith(wanted) or wanted.startswith(name))]
         # Several by that name (Codex in two projects): the daemon's typed
@@ -308,7 +318,10 @@ def harness_target(transcript, status):
     if session_state in ("busy", "starting", "created"):
         # The daemon's typed route holds the prompt until the pane is free.
         return None
-    return {"id": target["id"], "name": target.get("name"), "text": text}
+    if target.get("profile") == "terminal" or target.get("harness") in _SHELLS:
+        # The daemon types a shell's command itself ("run ls" becomes `ls`).
+        return None
+    return {"id": target["id"], "name": target.get("label") or target.get("name"), "text": text}
 
 
 # A harness that worked at least this long is announced when it finishes; a
