@@ -2008,7 +2008,7 @@ function failTurn(reason,requestId) {
 const VOICE_WORDS={
   off:'Mic off',listening:'Listening','waiting for window':'Waiting',transcribing:'Transcribing',
   confirming:'Confirming',queued:'Queued','loading speech':'Loading voice',stopped:'Stopped',
-  discarded:'Mic off','deciding':'Working',
+  discarded:'Mic off','deciding':'Working','listening for your answer':'Your answer',
 };
 function voiceWord(status) {
   const value=String(status||'off');
