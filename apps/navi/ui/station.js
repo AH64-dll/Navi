@@ -1944,6 +1944,7 @@ async function dispatch(text,options={}) {
   const value=String(text||'').trim();
   if (!value) return null;
   clearChoices();
+  recall=null;
   const source=options.source||'typed';
   activeText=value;
   followLog=true;   // sending is a request to see the answer
@@ -2266,6 +2267,37 @@ commandInput().addEventListener('keydown',event=>{
   else if (event.key==='Escape') { event.preventDefault(); hideSlash(); }
 });
 commandInput().addEventListener('blur',()=>setTimeout(hideSlash,150));
+
+/* ArrowUp/ArrowDown from an empty box walk this project's earlier commands, newest
+ * first, like a shell; typing or sending ends the walk. */
+let recall=null;   // {index, draft} while walking
+function sentCommands() {
+  const seen=new Set(), list=[];
+  for (let index=messages.length-1; index>=0&&list.length<50; index--) {
+    const message=messages[index];
+    if (message.role!=='user') continue;
+    const text=messageText(message).trim();
+    if (!text||seen.has(text)) continue;
+    seen.add(text);
+    list.push(text);
+  }
+  return list;
+}
+commandInput().addEventListener('keydown',event=>{
+  if (event.key!=='ArrowUp'&&event.key!=='ArrowDown') return;
+  if (!slashList().hidden||confirmState.active||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey) return;
+  const input=commandInput();
+  if (!recall&&(event.key==='ArrowDown'||input.value.trim())) return;
+  const list=sentCommands();
+  if (!list.length) return;
+  event.preventDefault();
+  if (!recall) recall={index:-1,draft:input.value};
+  recall.index=Math.max(-1,Math.min(list.length-1,recall.index+(event.key==='ArrowUp'?1:-1)));
+  input.value=recall.index<0?recall.draft:list[recall.index];
+  if (recall.index<0) recall=null;
+  input.setSelectionRange(input.value.length,input.value.length);
+});
+commandInput().addEventListener('input',()=>{ recall=null; });
 
 /* ---------------- status feed ---------------- */
 

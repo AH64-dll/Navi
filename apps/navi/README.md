@@ -228,7 +228,8 @@ talks to the running `opencode serve` HTTP API and exposes:
   authoritative in the message store;
 - slash commands (`/help`, `/init`, `/review`, plugin commands) through OpenCode's
   command endpoint, with `/help` listing the live catalog without a model turn
-  (pressing `/` outside a text field focuses the command box and opens the menu);
+  (pressing `/` outside a text field focuses the command box and opens the menu, and
+  ArrowUp in an empty box recalls this project's earlier commands);
 - the model and agent catalog, used by the settings selectors;
 - session reuse (`~/.local/share/navi/opencode-session`), rotation, and interrupt;
 - automatic `opencode serve` startup when the service is unreachable, unless
