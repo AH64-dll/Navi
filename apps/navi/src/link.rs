@@ -45,7 +45,7 @@ fn context() -> Value {
 
 fn station(op: &str, params: Value) -> Result<Value> {
     let reply = rpc(json!({"op": op, "params": params})).map_err(|error| {
-        if error.contains("No such file") || error.contains("Connection refused") {
+        if error == crate::DAEMON_DOWN {
             "Navi is not running, so progress cannot be read or recorded".to_string()
         } else {
             error

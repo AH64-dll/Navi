@@ -21,6 +21,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub type Result<T, E = String> = std::result::Result<T, E>;
 const MAX_MESSAGE: usize = 4 * 1024 * 1024;
+/// What a client says when the station socket is missing or refused.
+pub const DAEMON_DOWN: &str =
+    "Navi's daemon is not running. Start it with: systemctl --user start navi-station (or: navid serve)";
 /// Diagnostic window for the RAM tier of the event feed (BUG-098): one poll's
 /// worth of history, replaced by a coalesced producer so it cannot overflow.
 const EVENT_LIMIT: usize = 100;
@@ -1668,8 +1671,14 @@ fn serve() -> Result<()> {
 
 fn rpc(request: Value) -> Result<Value> {
     let (_, runtime) = paths();
-    let mut socket =
-        UnixStream::connect(runtime.join("station.sock")).map_err(|e| e.to_string())?;
+    let mut socket = UnixStream::connect(runtime.join("station.sock")).map_err(|error| {
+        match error.kind() {
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => {
+                DAEMON_DOWN.to_string()
+            }
+            _ => error.to_string(),
+        }
+    })?;
     socket
         .set_read_timeout(Some(Duration::from_secs(90)))
         .map_err(|e| e.to_string())?;
