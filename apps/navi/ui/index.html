@@ -88,7 +88,7 @@
         <input id="attach-input" type="file" multiple hidden accept="image/*,text/*,.md,.json,.diff,.patch,.log,.csv,.txt">
         <button type="button" id="microphone" class="mic" aria-pressed="false" title="Microphone"><span>Mic</span></button>
         <label class="sr-only" for="command">Message Navi</label>
-        <input id="command" placeholder="Ask Navi… or /help" autocomplete="off">
+        <input id="command" placeholder="Ask Navi… or /help" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="slash-list" aria-expanded="false">
         <button type="button" id="stop" class="stop" hidden>Stop</button>
         <button type="submit" class="send">Send</button>
         <ul id="slash-list" role="listbox" aria-label="Slash commands" hidden></ul>

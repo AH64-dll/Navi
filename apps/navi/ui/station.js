@@ -2250,7 +2250,12 @@ async function commandCatalog() {
 }
 const slashList=()=>element('slash-list'), commandInput=()=>element('command');
 let slashIndex=0, slashMatches=[], slashPrefix='';
-function hideSlash(){ slashList().hidden=true; slashMatches=[]; }
+function hideSlash(){
+  slashList().hidden=true; slashMatches=[];
+  const input=commandInput();
+  input.setAttribute('aria-expanded','false');
+  input.removeAttribute('aria-activedescendant');
+}
 function applySlash(command) {
   const input=commandInput(), raw=input.value;
   const rest=raw.slice(1).split(/\s/).slice(1).join(' ');
@@ -2289,6 +2294,7 @@ function renderSlash(prefix) {
     const item=document.createElement('li');
     item.id='slash-'+index; item.setAttribute('role','option');
     if (index===slashIndex) item.classList.add('active');
+    item.setAttribute('aria-selected',String(index===slashIndex));
     const name=document.createElement('span'); name.className='slash-name'; name.textContent='/'+command.name;
     const hint=document.createElement('span'); hint.className='slash-hint'; hint.textContent=command.description;
     item.append(name,hint);
@@ -2296,6 +2302,8 @@ function renderSlash(prefix) {
     list.append(item);
   });
   list.hidden=false;
+  commandInput().setAttribute('aria-expanded','true');
+  commandInput().setAttribute('aria-activedescendant','slash-'+slashIndex);
   /* Thirteen own commands overflow the 240 px list: keep the arrow-key pick in view. */
   list.children[slashIndex]?.scrollIntoView({block:'nearest'});
 }
