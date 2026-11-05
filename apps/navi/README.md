@@ -14,6 +14,8 @@ flowchart LR
     Rust --> Sessions[Persistent tmux terminals]
     Rust --> Browser[Native messaging and attached DOM]
     Rust --> Desktop[Portal PipeWire and KDE window handles]
+    Sessions -->|navid mcp or navid progress| Progress[Project progress graph]
+    Rust --> Progress
 ```
 
 Decisions select registered identifiers. Model output never supplies executable
@@ -31,6 +33,13 @@ when every half is a command Navi answers itself (`open codex and show the progr
 Progress requests never need a model: `How far along is the project?`,
 `Show the progress`, `Assess the project`, `Set the UI to 80%`,
 `Mark barge-in done`, `Reopen barge-in`. See [Project progress](#project-progress).
+Neither do session requests: `Is Codex done?`, `What's running?`, `Stop Codex`,
+`Close terminal 2`, `/help`.
+
+Every harness Navi opens is linked to the progress graph. The model reads the
+recorded completion and reports its own estimate per part through Navi's MCP server, or
+through the `navid progress` CLI for Pi. Running `navid link` prints the one-time setup
+for a harness started outside Navi.
 
 ## Install without starting the desktop
 
