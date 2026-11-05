@@ -1666,6 +1666,9 @@ impl App {
         {
             return Ok(Some(json!({"kind":"project_list"})));
         }
+        if let Some(screen) = self.screen_intent(&lower)? {
+            return Ok(Some(screen));
+        }
         // "Tell Codex to run the tests": typed into that session, as voice does.
         if let Some(prompt) = self.harness_prompt_intent(&text)? {
             return Ok(Some(prompt));
@@ -1714,9 +1717,13 @@ impl App {
             "whats next", "what should i work on", "what should i do next", "what do i do next",
             "needs doing", "need doing", "left to do", "still to do", "where are we",
             "status update", "coming along", "how's it going", "how is it going", "bring up the progress",
-            "pull up the progress", "bring up the graph", "pull up the graph",
+            "pull up the progress", "bring up the graph", "pull up the graph", "can i see the progress",
+            "like to see the progress", "what's the percentage", "what is the percentage",
+            "whats the percentage",
         ]
         .iter()
+        .chain(BLOCKED_PHRASES.iter())
+        .chain(DONE_PHRASES.iter())
         .chain(RECENT_PHRASES.iter())
         .chain(STALE_PHRASES.iter())
         .any(|phrase| lower.contains(phrase))
@@ -1790,8 +1797,10 @@ impl App {
                 .any(|phrase| lower.contains(phrase));
             let recent = RECENT_PHRASES.iter().any(|phrase| lower.contains(phrase));
             let stale = STALE_PHRASES.iter().any(|phrase| lower.contains(phrase));
+            let blocked = BLOCKED_PHRASES.iter().any(|phrase| lower.contains(phrase));
+            let done = DONE_PHRASES.iter().any(|phrase| lower.contains(phrase));
             return Ok(Some(json!({"kind":"progress","show":show,"left":left,"recent":recent,
-                "stale":stale})));
+                "stale":stale,"blocked":blocked,"done":done})));
         }
         if short && let Some(status) = self.session_status_intent(&lower)? {
             return Ok(Some(status));
@@ -1925,25 +1934,7 @@ impl App {
         let sessions = self.sessions()?;
         let labels = session_labels(&sessions);
         let active = self.settings()["active_session"].as_str().map(str::to_string);
-        let find = |name: &str| -> Vec<Value> {
-            let name = spoken_numbers(name.trim().trim_end_matches([':', ',']));
-            let name = name.strip_prefix("the ").unwrap_or(&name).to_string();
-            sessions
-                .iter()
-                .filter(|session| session["running"] == true)
-                .filter(|session| {
-                    let id = session["id"].as_str().unwrap_or_default();
-                    (matches!(name.as_str(), "this" | "it" | "active" | "this session" | "the active session")
-                        && active.as_deref() == Some(id))
-                        || labels.get(id).is_some_and(|label| spoken_numbers(label) == name)
-                        || ["name", "profile", "harness"].iter().any(|key| {
-                            session[*key].as_str().is_some_and(|value| spoken_numbers(value) == name)
-                        })
-                        || (session["profile"] == "claude" && name == "claude code")
-                })
-                .map(|session| session["id"].clone())
-                .collect()
-        };
+        let find = |name: &str| named_sessions(&sessions, &labels, active.as_deref(), name);
         // "<target> to <text>" first (multi-word names), then a one-word
         // target followed by the text.
         let mut candidates: Vec<(usize, usize)> = if direct {
@@ -1989,6 +1980,62 @@ impl App {
             }
         }
         Ok(None)
+    }
+
+    /// "What did Codex say?", "what's on the terminal's screen", "read me the
+    /// last output": the last lines on that session's screen ("it" and a
+    /// bare question mean the active session).
+    fn screen_intent(&self, lower: &str) -> Result<Option<Value>> {
+        let mut name = None;
+        for lead in ["what did ", "what does ", "what is ", "what's ", "whats "] {
+            let Some(rest) = lower.strip_prefix(lead) else {
+                continue;
+            };
+            name = [" say last", " say", " saying", " print", " printing", " output", " show", " showing",
+                " reply", " answer", " write"]
+                .iter()
+                .find_map(|tail| rest.strip_suffix(tail));
+            if name.is_some() {
+                break;
+            }
+        }
+        for lead in ["what's on ", "what is on ", "whats on ", "read me ", "read ", "show me ", "show "] {
+            let Some(rest) = lower.strip_prefix(lead).filter(|_| name.is_none()) else {
+                continue;
+            };
+            let on = lead.contains(" on ");
+            name = [" screen", " output", " last output", " latest output"]
+                .iter()
+                .find_map(|tail| rest.strip_suffix(tail))
+                .or_else(|| on.then_some(rest).filter(|rest| !rest.contains(' ') || rest.starts_with("the ")));
+        }
+        let Some(name) = name else {
+            return Ok(None);
+        };
+        let mut name = name.trim();
+        name = name.strip_suffix("'s").unwrap_or(name);
+        name = name.strip_prefix("the ").unwrap_or(name);
+        for suffix in [" last", " latest", " session", " pane"] {
+            name = name.strip_suffix(suffix).unwrap_or(name);
+        }
+        let name = match name {
+            "" | "the" | "last" | "latest" | "that" | "screen" => "it",
+            name => name,
+        };
+        let sessions = self.sessions()?;
+        let labels = session_labels(&sessions);
+        let active = self.settings()["active_session"].as_str().map(str::to_string);
+        let ids = named_sessions(&sessions, &labels, active.as_deref(), name);
+        if !ids.is_empty() {
+            return Ok(Some(json!({"kind":"session_screen","ids":ids})));
+        }
+        // "What did Pi say" with Pi closed.
+        let settings = self.settings();
+        let absent = settings["profiles"].as_array().into_iter().flatten().find(|profile| {
+            ["name", "id"].iter().any(|key| profile[*key].as_str().is_some_and(|value| value.eq_ignore_ascii_case(name)))
+                || (profile["id"] == "claude" && name == "claude code")
+        });
+        Ok(absent.map(|profile| json!({"kind":"session_status","ids":[],"waiting":false,"absent":profile["name"]})))
     }
 
     /// "Stop Codex", "close terminal 2": interrupt or close one open session.
@@ -2097,7 +2144,9 @@ impl App {
             "what's running", "what is running", "whats running", "what's open",
             "what is open", "which sessions", "which harnesses", "sessions doing",
             "harnesses doing", "status of the sessions", "status of the harnesses",
-            "session status", "harness status"]
+            "session status", "harness status", "list sessions", "list the sessions", "list my sessions",
+            "list harnesses", "list the harnesses", "how many sessions", "how many harnesses",
+            "how many terminals", "open sessions", "running sessions"]
             .iter()
             .any(|phrase| lower.contains(phrase));
         let yes_no = ["is ", "are ", "has ", "did "].iter().any(|prefix| lower.starts_with(prefix))
@@ -2198,6 +2247,8 @@ impl App {
                     _ if action["recent"] == true => {
                         store::recent_sentence(&graph, crate::now().saturating_sub(86_400_000))
                     }
+                    _ if action["blocked"] == true => store::blocked_sentence(&graph),
+                    _ if action["done"] == true => store::done_sentence(&graph),
                     _ if action["left"] == true => store::remaining_sentence(&graph),
                     _ => store::progress_sentence(&graph),
                     },
@@ -2441,6 +2492,73 @@ impl App {
                     [session] => {
                         self.inject(session["id"].as_str().unwrap_or_default(), prompt, true)?;
                         format!("Sent to {}: “{prompt}”.", label(session))
+                    }
+                    [] => "That session is no longer open.".to_string(),
+                    many => self.ask_which(action, many, &labels)?,
+                };
+                Ok(json!({"reply": reply(here.as_deref(), text, self.choice_extra())}))
+            }
+            "session_screen" => {
+                let sessions = self.sessions()?;
+                let labels = session_labels(&sessions);
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                let active = self.settings()["active_session"].as_str().map(str::to_string);
+                let ids = action["ids"].as_array().cloned().unwrap_or_default();
+                let mut chosen: Vec<&Value> = sessions
+                    .iter()
+                    .filter(|session| session["running"] == true && ids.contains(&session["id"]))
+                    .collect();
+                // Several Codex sessions: the active one, else the only one here.
+                if chosen.len() > 1 {
+                    if let Some(session) = chosen.iter().find(|session| session["id"].as_str() == active.as_deref()) {
+                        chosen = vec![*session];
+                    } else {
+                        let local: Vec<&Value> = chosen
+                            .iter()
+                            .copied()
+                            .filter(|session| session["project_id"].as_str() == here.as_deref())
+                            .collect();
+                        if local.len() == 1 {
+                            chosen = local;
+                        }
+                    }
+                }
+                let text = match chosen.as_slice() {
+                    [session] => {
+                        let id = session["id"].as_str().unwrap_or_default();
+                        let name = labels
+                            .get(id)
+                            .cloned()
+                            .unwrap_or_else(|| session["name"].as_str().unwrap_or("The session").to_string());
+                        let glyphs = crate::adapters::prompt_glyphs(session["harness"].as_str().unwrap_or(""));
+                        // The input box and key hints are not output.
+                        let lines: Vec<String> = self
+                            .screen_lines(id, 13)
+                            .into_iter()
+                            .filter(|line| {
+                                let lower = line.to_lowercase();
+                                !["for shortcuts", "context left", "esc to interrupt", "to send", "ctrl+"]
+                                    .iter()
+                                    .any(|hint| lower.contains(hint))
+                                    && !glyphs.iter().any(|glyph| line.trim() == *glyph)
+                            })
+                            .collect();
+                        let mut lines = lines;
+                        // The prompt waiting at the bottom ("root@host:~#").
+                        if lines.last().is_some_and(|line| glyphs.iter().any(|glyph| line.trim_end().ends_with(glyph))) {
+                            lines.pop();
+                        }
+                        let shown = lines[lines.len().saturating_sub(4)..].join(" / ");
+                        if shown.is_empty() {
+                            format!("{name}'s screen has no text.")
+                        } else {
+                            let mut shown = shown;
+                            if shown.chars().count() > 300 {
+                                let skip = shown.chars().count() - 300;
+                                shown = format!("…{}", shown.chars().skip(skip).collect::<String>());
+                            }
+                            format!("{name} shows: “{shown}”.")
+                        }
                     }
                     [] => "That session is no longer open.".to_string(),
                     many => self.ask_which(action, many, &labels)?,
@@ -3583,12 +3701,22 @@ const STALE_PHRASES: [&str; 7] = [
     "commits since", "commits landed since", "up to date estimate",
 ];
 
+/// "What's blocked": the blocked tasks.
+const BLOCKED_PHRASES: [&str; 11] = ["what's blocking", "what is blocking", "whats blocking",
+    "what's blocked", "what is blocked", "whats blocked", "anything blocked", "any blockers",
+    "the blockers", "which tasks are blocked", "what tasks are blocked"];
+
+/// "What's done": the finished parts and tasks.
+const DONE_PHRASES: [&str; 12] = ["what's done", "what is done", "whats done", "what's finished",
+    "what is finished", "what have we finished", "what have we done", "what's been done",
+    "what has been done", "parts are done", "parts are finished", "tasks are done"];
+
 const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has changed", "what's new",
     "whats new", "progress today", "today's progress", "what happened today", "what did we do today",
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
@@ -3674,6 +3802,27 @@ fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
 
 /// Live sessions' labels as the session strip shows them: the name, numbered
 /// "#n" by creation when one project has several of that name.
+/// The open sessions a spoken name picks: "Codex #2", "the terminal", "it".
+fn named_sessions(sessions: &[Value], labels: &HashMap<String, String>, active: Option<&str>, name: &str) -> Vec<Value> {
+    let name = spoken_numbers(name.trim().trim_end_matches([':', ',']));
+    let name = name.strip_prefix("the ").unwrap_or(&name).to_string();
+    sessions
+        .iter()
+        .filter(|session| session["running"] == true)
+        .filter(|session| {
+            let id = session["id"].as_str().unwrap_or_default();
+            (matches!(name.as_str(), "this" | "it" | "active" | "this session" | "active session")
+                && active == Some(id))
+                || labels.get(id).is_some_and(|label| spoken_numbers(label) == name)
+                || ["name", "profile", "harness"].iter().any(|key| {
+                    session[*key].as_str().is_some_and(|value| spoken_numbers(value) == name)
+                })
+                || (session["profile"] == "claude" && name == "claude code")
+        })
+        .map(|session| session["id"].clone())
+        .collect()
+}
+
 fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
     let mut live: Vec<&Value> = sessions.iter().filter(|session| session["running"] == true).collect();
     live.sort_by_key(|session| session["created"].as_i64().unwrap_or(0));

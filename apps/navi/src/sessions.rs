@@ -801,9 +801,27 @@ impl App {
         }
         let mut tail = lines.join("\n");
         if tail.len() > TAIL_BYTES as usize {
-            tail = tail[tail.len() - TAIL_BYTES as usize..].to_string();
+            // Cut on a character boundary: a byte offset inside "…" panics.
+            let mut cut = tail.len() - TAIL_BYTES as usize;
+            while !tail.is_char_boundary(cut) {
+                cut += 1;
+            }
+            tail = tail[cut..].to_string();
         }
         json!({"id":target,"tail":tail})
+    }
+
+    /// The last `count` lines with text on a session's visible screen, without
+    /// the borders and rules harness interfaces draw around them.
+    pub fn screen_lines(&self, target: &str, count: usize) -> Vec<String> {
+        let screen = adapters::strip_ansi(&self.cached_screen(target, 0));
+        let frame = |c: char| ('\u{2500}'..='\u{259f}').contains(&c) || c.is_whitespace();
+        let lines: Vec<String> = screen
+            .lines()
+            .map(|line| line.trim_matches(frame).to_string())
+            .filter(|line| line.chars().any(char::is_alphanumeric))
+            .collect();
+        lines[lines.len().saturating_sub(count)..].to_vec()
     }
 
     // ------------------------------------------------------------------

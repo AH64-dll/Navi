@@ -1293,6 +1293,75 @@ fn capitalise(text: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Every task in the graph with the title of its part ("" when unassigned).
+fn graph_tasks(graph: &Value) -> Vec<(&str, &Value)> {
+    graph["aspects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|aspect| {
+            let title = aspect["title"].as_str().unwrap_or_default();
+            aspect["items"].as_array().into_iter().flatten().map(move |item| (title, item))
+        })
+        .chain(graph["unassigned"].as_array().into_iter().flatten().map(|item| ("", item)))
+        .collect()
+}
+
+fn task_list(tasks: &[(&str, &Value)], limit: usize) -> String {
+    let mut list = tasks
+        .iter()
+        .take(limit)
+        .map(|(part, item)| {
+            let title = item["title"].as_str().unwrap_or("Untitled");
+            if part.is_empty() { format!("“{title}”") } else { format!("“{title}” in {part}") }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    if tasks.len() > limit {
+        list.push_str(&format!(" and {} more", tasks.len() - limit));
+    }
+    list
+}
+
+/// "What's blocked": the blocked tasks, named with their parts.
+pub fn blocked_sentence(graph: &Value) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("this project");
+    let blocked: Vec<(&str, &Value)> =
+        graph_tasks(graph).into_iter().filter(|(_, item)| item["state"] == "blocked").collect();
+    match blocked.len() {
+        0 => format!("Nothing is marked blocked in {name}."),
+        1 => format!("1 task is blocked: {}.", task_list(&blocked, 5)),
+        count => format!("{count} tasks are blocked: {}.", task_list(&blocked, 5)),
+    }
+}
+
+/// "What's done": finished parts and the count of finished tasks.
+pub fn done_sentence(graph: &Value) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("This project");
+    let finished: Vec<&str> = graph["aspects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|aspect| aspect["percent"].as_f64().is_some_and(|value| value >= 100.0))
+        .filter_map(|aspect| aspect["title"].as_str())
+        .collect();
+    let tasks = graph_tasks(graph);
+    let done: Vec<(&str, &Value)> = tasks.iter().copied().filter(|(_, item)| item["state"] == "done").collect();
+    let mut sentence = match finished.as_slice() {
+        [] => format!("No part of {name} is at 100% yet."),
+        [one] => format!("{one} is finished."),
+        many => format!("Finished parts: {}.", many.join(", ")),
+    };
+    if !tasks.is_empty() {
+        sentence.push_str(&format!(" {} of {} tasks are done", done.len(), tasks.len()));
+        if !done.is_empty() && done.len() <= 5 {
+            sentence.push_str(&format!(": {}", task_list(&done, 5)));
+        }
+        sentence.push('.');
+    }
+    sentence
+}
+
 /// "What's left": the headline, every unfinished part from furthest behind,
 /// and up to five open tasks.
 pub fn remaining_sentence(graph: &Value) -> String {
