@@ -147,7 +147,9 @@ word rather than wrapping when the strip is crowded, and is reconciled in place;
 session, titled like its chip (`Terminal #2 · Navi`: session, harness when the name
 does not already say it, project), where an inline prompt field sends input straight
 into the harness. Clicking a finished chip reopens it (`session_restart`): same name,
-the harness's own conversation when one was recorded, and the old chip leaves Recent. The "+" chip opens a quick-launch menu: one click starts Codex,
+the harness's own conversation when one was recorded, and the old chip leaves Recent.
+When the attached session ends, the pane title adds "exited", the prompt field and
+Stop are disabled, and Send becomes Reopen. The "+" chip opens a quick-launch menu: one click starts Codex,
 Claude Code, Pi, OpenCode, a terminal or a custom profile in the active project and
 attaches it; a harness whose binary is not on the launch PATH, or whose profile names
 a full path that is not an executable file (`harness_list` reports these as

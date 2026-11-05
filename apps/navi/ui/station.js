@@ -2632,7 +2632,20 @@ function syncTerminalTitle(session) {
   const profile=profileLabel(session.profile);
   const project=projectList().find(row=>row.id===session.project_id)?.name;
   const parts=[name,profile.toLowerCase()!==String(session.name||'').toLowerCase()?profile:null,project];
+  /* A session that ended under the pane says so, and stops taking input. */
+  const ended=session.running!==true;
+  if (ended) parts.push('exited');
   element('terminal-title').textContent=parts.filter(Boolean).join(' · ')||'Terminal';
+  for (const id of ['terminal-prompt','terminal-stop']) {
+    const control=element(id);
+    if (control) control.disabled=ended;
+  }
+  element('terminal-prompt').placeholder=ended?'This session has ended':'Prompt this harness…';
+  /* Send turns into Reopen: the same restart a finished chip offers. */
+  const send=element('terminal-send');
+  send.textContent=ended?'Reopen':'Send';
+  send.dataset.reopen=String(ended&&!session.replaced_by);
+  send.disabled=ended&&!!session.replaced_by;
 }
 function closeTerminal() {
   setDock('closed');
@@ -2652,6 +2665,11 @@ element('terminal-stop').onclick=async()=>{
   } catch (error) { surfaceFailure(error.message); }
 };
 element('terminal-send').onclick=()=>{
+  if (element('terminal-send').dataset.reopen==='true') {
+    const session=(snapshot?.sessions||[]).find(row=>row.id===termSession);
+    if (session) reopenSession(session,sessionLabels.get(session.id)||session.name);
+    return;
+  }
   const input=element('terminal-prompt'), text=input.value.trim();
   if (!text||!termSession) return;
   input.value='';
@@ -3695,7 +3713,7 @@ function updateSessionChip(node,session,label) {
   node.dataset.live=String(live);
   node.dataset.state=String(session.state||(live?'running':'exited'));
   node.classList.toggle('dead',!live);
-  node.classList.toggle('attached',session.id===termSession);
+  node.classList.toggle('attached',live&&session.id===termSession);
   node.classList.toggle('active',session.active===true);
   if (session.active===true) node.setAttribute('aria-current','true'); else node.removeAttribute('aria-current');
   node.querySelector('.session-name').textContent=label;
