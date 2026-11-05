@@ -1727,7 +1727,18 @@ impl App {
                 let project = project?;
                 let id = project["id"].as_str().unwrap_or_default().to_string();
                 let graph = self.graph_get(Some(&id))?;
-                let mut text = store::progress_sentence(&graph);
+                // "How far is the voice part" asks about one part.
+                let spoken = loose_title(clause);
+                let named: Vec<&Value> = graph["aspects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|aspect| mentioned(&spoken, &loose_title(aspect["title"].as_str().unwrap_or(""))))
+                    .collect();
+                let mut text = match named.as_slice() {
+                    [aspect] => store::part_sentence(&graph, aspect),
+                    _ => store::progress_sentence(&graph),
+                };
                 if graph["percent"].is_null() {
                     text.push_str(" Say “assess the project” and I will ask a harness to judge it.");
                 }

@@ -407,7 +407,7 @@ model and without the assistant:
 
 | Say or type | Effect |
 | --- | --- |
-| "How far along is the project?", "what's left", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; "show …" (or "show me the graph") also opens the panel |
+| "How far along is the project?", "what's left", "what's the progress", `/progress` | Speaks the headline, its basis and the part furthest behind; naming one part ("how far is the voice part") answers for that part. "Show …" (or "show me the graph") also opens the panel |
 | "Close the progress", "hide the graph" | Closes the progress panel |
 | "Assess the project", "reassess acme-api", `/assess` | Runs the detector |
 | "Set the UI to 80%", "put voice at 60 percent", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |

@@ -1139,6 +1139,40 @@ pub fn progress_sentence(graph: &Value) -> String {
     sentence
 }
 
+/// One part, spoken: "Voice is at 100%, with 2 of 2 tasks done. The project
+/// overall is at 87%."
+pub fn part_sentence(graph: &Value, aspect: &Value) -> String {
+    let title = aspect["title"].as_str().unwrap_or("That part");
+    let items = aspect["items"].as_array().cloned().unwrap_or_default();
+    let done = items.iter().filter(|item| item["state"] == "done").count();
+    let tasks = if items.is_empty() {
+        String::new()
+    } else {
+        format!("{done} of {} tasks done", items.len())
+    };
+    let mut sentence = match aspect["percent"].as_f64() {
+        None => format!("{title} has no estimate yet"),
+        Some(value) => {
+            let mut text = format!("{title} is at {}%", value.round());
+            if aspect["basis"] == "estimate" {
+                match aspect["estimate"]["source"].as_str().unwrap_or("assistant") {
+                    "user" => text.push_str(" by your estimate"),
+                    source => text.push_str(&format!(" by {}'s estimate", source_name(source))),
+                }
+            }
+            text
+        }
+    };
+    if !tasks.is_empty() {
+        sentence.push_str(&format!(", with {tasks}"));
+    }
+    sentence.push('.');
+    if let Some(value) = graph["percent"].as_f64() {
+        sentence.push_str(&format!(" The project overall is at {}%.", value.round()));
+    }
+    sentence
+}
+
 /// Full plain-text view of a graph for a harness tool result.
 pub fn progress_text(graph: &Value) -> String {
     let mut lines = vec![progress_sentence(graph)];
