@@ -1474,7 +1474,7 @@ function renderProjectSwitcher(force) {
   if (!shell) return;
   const list=projectList();
   const active=activeProjectRow();
-  const signature=list.map(project=>`${project.id}:${project.path_state||'ok'}:${overviewLabel(project.id)}`).join('|')
+  const signature=list.map(project=>`${project.id}:${project.path_state||'ok'}:${overviewLabel(project.id)}:${overview.get(String(project.id))?.commits_since||0}`).join('|')
     +`#${active?.id||''}#${switcherOpen?'1':'0'}#${list.length}`;
   if (!force&&signature===switcherSignature) return;
   switcherSignature=signature;
@@ -1483,6 +1483,9 @@ function renderProjectSwitcher(force) {
   shell.name.textContent=active?active.name:'Add a project';
   shell.percent.textContent=active?overviewLabel(active.id):'';
   shell.percent.hidden=!shell.percent.textContent;
+  const activeSince=active?commitsSince(overview.get(String(active.id))):'';
+  shell.percent.classList.toggle('stale',!!activeSince&&!!shell.percent.textContent);
+  shell.percent.title=activeSince?`${activeSince} the estimate`:'';
   shell.state.textContent=active?pathNote(active):'';
   shell.state.dataset.state=active?pathState(active):'none';
   shell.button.title=active
@@ -1516,7 +1519,9 @@ function renderProjectSwitcher(force) {
     key.textContent=index<9?'Ctrl+'+(index+1):'';
     const percent=document.createElement('span'); percent.className='project-percent';
     percent.textContent=overviewLabel(project.id)||'—';
-    percent.title='Completion';
+    const since=commitsSince(overview.get(String(project.id||'')));
+    percent.classList.toggle('stale',!!since&&percent.textContent!=='—');
+    percent.title=since?`Completion · ${since} the estimate`:'Completion';
     option.append(name,path,percent,badge,key);
     option.addEventListener('click',event=>{
       event.stopPropagation();
@@ -2809,7 +2814,7 @@ let graphData=null, graphLoading=false, graphSeq=0, graphDirty=false, graphFocus
 let graphRequested;              // the project the last load asked for
 let graphEditing=false;          // the headline's set-% form is open
 const expandedParts=new Set();   // part ids whose tasks are shown
-const overview=new Map();        // project_id -> {percent, basis, confidence, verified}
+const overview=new Map();        // project_id -> {percent, basis, confidence, verified, commits_since}
 const scans=new Map();           // project_id -> the last scan digest this window saw
 let assessing=null;              // {project, until, via} while an assessment runs
 let graphTimer=null, overviewTimer=null, assessTimer=null;
@@ -2935,7 +2940,7 @@ async function loadGraph() {
     graphData=result&&result.project?result:null;
     if (graphData) {
       overview.set(project,{project_id:project,percent:graphData.percent,basis:graphData.basis?.kind,
-        confidence:graphData.confidence,verified:graphData.verified});
+        confidence:graphData.confidence,verified:graphData.verified,commits_since:graphData.commits_since});
     }
     return graphData;
   } catch (error) {

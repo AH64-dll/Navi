@@ -2298,6 +2298,7 @@ impl App {
                 "basis": graph["basis"]["kind"],
                 "confidence": graph["confidence"],
                 "verified": graph["verified"],
+                "commits_since": graph["commits_since"],
             }));
         }
         Ok(json!({"projects": rows}))

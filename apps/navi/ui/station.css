@@ -391,6 +391,7 @@ body.still .progress-hud[data-state="assessing"] .hud-bar{animation:none}
 .project-button:hover,.project-button:focus-visible{border-color:var(--cyan);outline:none}
 .project-switcher .project-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .project-percent{font-size:10.5px;color:#b8ffe9;font-variant-numeric:tabular-nums;white-space:nowrap}
+.project-percent.stale{color:#ffe08a}
 .project-path-state{font-size:8.5px;letter-spacing:1px;text-transform:uppercase;padding:1px 5px;
   border-radius:999px;border:1px solid #8eaff344;color:#9fb6d4;white-space:nowrap}
 .project-path-state:empty{display:none}

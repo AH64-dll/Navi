@@ -308,7 +308,8 @@ not a measurement. So both count, and the newer one wins:
 - **risks** name what is weak: no parts, a headline estimate older than 7 days, parts
   with no evidence for 14 days, tasks with no evidence, unassigned or blocked tasks,
   and commits made after the headline was set. **commits_since** carries that count;
-  the HUD shows it beside "Progress" and spoken answers end with it, so a number
+  the HUD shows it beside "Progress", the project switcher shows that project's
+  percent in amber, and spoken answers end with it, so a number
   the latest work has not reached reads as such until a reassessment.
 
 A short trace:
