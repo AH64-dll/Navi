@@ -362,11 +362,15 @@ impl App {
     }
 
     fn panes_uncached(&self) -> Vec<Pane> {
+        // tmux 3.4 prints control characters as octal text (`\x1f` comes back
+        // as `\037`), so the separator must be printable. tmux forbids `:` in
+        // session names and the numeric fields cannot hold one; the free-form
+        // command goes last so a `:` inside it stays in that field.
         let Ok(output) = self.tmux_out(&[
             "list-panes",
             "-a",
             "-F",
-            "#{session_name}\u{1f}#{pane_dead}\u{1f}#{pane_dead_status}\u{1f}#{pane_current_command}\u{1f}#{pane_pid}",
+            "#{session_name}:#{pane_dead}:#{pane_dead_status}:#{pane_pid}:#{pane_current_command}",
         ]) else {
             return Vec::new();
         };
@@ -376,13 +380,13 @@ impl App {
         String::from_utf8_lossy(&output.stdout)
             .lines()
             .filter_map(|line| {
-                let mut parts = line.split('\u{1f}');
+                let mut parts = line.splitn(5, ':');
                 Some(Pane {
                     session: parts.next()?.to_string(),
                     dead: parts.next()? == "1",
                     dead_status: parts.next().and_then(|s| s.parse().ok()),
-                    command: parts.next().unwrap_or_default().to_string(),
                     pid: parts.next().and_then(|s| s.parse().ok()),
+                    command: parts.next().unwrap_or_default().to_string(),
                 })
             })
             .collect()
@@ -590,7 +594,9 @@ impl App {
             return "running".into();
         }
         let launcher = self.launcher_command(row);
-        if pane.command != launcher {
+        // A plain terminal sitting at its own prompt is idle, not asking for
+        // anything; only a harness prompt means "needs input".
+        if pane.command != launcher || SHELL_COMMANDS.contains(&launcher.as_str()) {
             if SHELL_COMMANDS.contains(&pane.command.as_str()) {
                 return "idle".into();
             }
