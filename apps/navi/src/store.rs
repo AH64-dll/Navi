@@ -1523,6 +1523,22 @@ impl App {
         Ok(value)
     }
 
+    /// The HEAD the probes last saw at or before `time`, from the
+    /// `git_commit` signals ("HEAD <sha>").
+    pub fn head_at(&self, project_id: &str, time: u64) -> Option<String> {
+        let state = self.state.lock().unwrap();
+        state
+            .db
+            .query_row(
+                "SELECT evidence FROM signals WHERE project_id=?1 AND kind='git_commit'
+                   AND time<=?2 ORDER BY time DESC, id DESC LIMIT 1",
+                params![project_id, time as i64],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|evidence| evidence.strip_prefix("HEAD ").map(str::to_string))
+    }
+
     pub fn probe_project(&self, project_id: &str) -> Result<Value> {
         let project = self.project_by_id(project_id)?;
         let path = project["path"].as_str().unwrap_or_default().to_string();

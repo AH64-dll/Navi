@@ -581,6 +581,61 @@ impl App {
         Ok(scan)
     }
 
+    /// "The last estimate was 87% (Daemon 64%, Voice 100%). Commits since
+    /// then: ..." for a reassessment; empty for a first one.
+    fn previous_assessment(&self, project_id: &str, path: &str, graph: &Value) -> String {
+        let Some(value) = graph["percent"].as_f64() else {
+            return String::new();
+        };
+        let parts: Vec<String> = graph["aspects"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|aspect| {
+                Some(format!(
+                    "{} {}%",
+                    aspect["title"].as_str()?,
+                    aspect["percent"].as_f64()?.round()
+                ))
+            })
+            .collect();
+        let mut text = format!("The last estimate was {}%", value.round());
+        if !parts.is_empty() {
+            text.push_str(&format!(" ({})", parts.join(", ")));
+        }
+        text.push_str("; update it where the work changed.");
+        let commits = graph["commits_since"].as_i64().unwrap_or(0);
+        let since = graph["basis"]["time"].as_u64();
+        if commits > 0
+            && let Some(head) = since.and_then(|time| self.head_at(project_id, time))
+            && let Some(log) = store::git(
+                path,
+                &["log", "--no-merges", "--format=%s", "-n", "8", &format!("{head}..HEAD")],
+            )
+        {
+            let subjects: Vec<String> = log
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(|line| line.chars().take(80).collect())
+                .collect();
+            if !subjects.is_empty() {
+                text.push_str(&format!(" Commits since then: {}", subjects.join("; ")));
+                let total = store::git(
+                    path,
+                    &["rev-list", "--count", "--no-merges", &format!("{head}..HEAD")],
+                )
+                .and_then(|count| count.trim().parse::<usize>().ok())
+                .unwrap_or(subjects.len());
+                if total > subjects.len() {
+                    text.push_str(&format!(" (and {} more)", total - subjects.len()));
+                }
+                text.push('.');
+            }
+        }
+        text
+    }
+
     /// `project_detect`: scan, record what the files alone can support, then
     /// ask a model for the real judgment.
     pub fn project_detect(&self, p: &Value) -> Result<Value> {
@@ -647,6 +702,7 @@ impl App {
             known_parts
         };
         let digest = scan["digest"].as_str().unwrap_or_default().to_string();
+        let previous = self.previous_assessment(&project_id, &path, &graph);
         // A linked harness already running in this project does the judging:
         // it reads the code, and each report lands as it is made.
         let sessions = self.sessions()?;
@@ -682,7 +738,7 @@ impl App {
                     "message": format!("{} is busy in {name}. Ask again when it finishes, or ask Navi's assistant instead.", store::source_name(adapter)),
                 }));
             }
-            let prompt = link::assessment_prompt(adapter, &parts, &digest);
+            let prompt = link::assessment_prompt(adapter, &parts, &previous, &digest);
             self.inject(&target, &prompt, true)?;
             let message = format!(
                 "Asked {} to assess {name}. Its estimates will appear as it reports.",
@@ -719,7 +775,7 @@ impl App {
                 .as_str()
                 .map(str::to_string)
                 .unwrap_or_else(|| store::source_name(adapter));
-            let prompt = link::assessment_prompt(adapter, &parts, &digest);
+            let prompt = link::assessment_prompt(adapter, &parts, &previous, &digest);
             let session = self.create_session(&json!({
                 "profile": profile["id"], "cwd": path, "prompt": prompt,
             }))?;
@@ -750,7 +806,7 @@ impl App {
             format!("Use these parts: {}.", parts.join(", "))
         };
         let prompt = format!(
-            "Progress check for {name}. Inspect the repository (read the README, docs, and the code; run nothing that changes files) and judge how complete it is against its own goals. {parts_line} Scan facts: {digest}. Reply with one short spoken sentence, then exactly one line per part and one overall line in this form:\nPROGRESS part \"<part>\" <percent> | <what you checked>\nPROGRESS overall <percent> | <what you checked>\nThen, for each part below 100%, up to three concrete remaining tasks:\nTASK \"<part>\" todo \"<task>\" | <why it is needed>"
+            "Progress check for {name}. Inspect the repository (read the README, docs, and the code; run nothing that changes files) and judge how complete it is against its own goals. {parts_line} {previous} Scan facts: {digest}. Reply with one short spoken sentence, then exactly one line per part and one overall line in this form:\nPROGRESS part \"<part>\" <percent> | <what you checked>\nPROGRESS overall <percent> | <what you checked>\nThen, for each part below 100%, up to three concrete remaining tasks:\nTASK \"<part>\" todo \"<task>\" | <why it is needed>"
         );
         std::thread::spawn(move || {
             let outcome = app.assistant_assessment(&params, &prompt);

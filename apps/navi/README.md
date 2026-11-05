@@ -391,7 +391,9 @@ the project":
 3. **Assess.** If a linked harness (Claude Code, Codex, OpenCode or Pi) is running in
    the project and is not busy, Navi types an assessment request into it — the known
    parts (or "choose 3 to 7"), the scan facts, and how to report — and each estimate
-   lands as the harness reports it. With none, or with `via:"assistant"`, Navi's own
+   lands as the harness reports it. A reassessment also names the last estimate per
+   part and up to 8 commit subjects since it (from the HEAD the probes saw then), so
+   the model updates the numbers where the work changed instead of starting over. With none, or with `via:"assistant"`, Navi's own
    assistant reads the project in the background and answers with lines of the form
    `PROGRESS part "<part>" <percent> | <evidence>` and `PROGRESS overall <percent> |
    <evidence>`, recorded as estimates with confidence 0.6. Both routes also ask for up

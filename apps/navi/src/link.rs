@@ -397,7 +397,9 @@ pub fn registration(
 }
 
 /// The prompt Navi types into a running harness to ask for an assessment.
-pub fn assessment_prompt(adapter: &str, parts: &[String], facts: &str) -> String {
+/// `previous` names the last estimate and the commits since it, so a
+/// reassessment updates the numbers instead of starting over.
+pub fn assessment_prompt(adapter: &str, parts: &[String], previous: &str, facts: &str) -> String {
     let parts_line = if parts.is_empty() {
         "Choose 3 to 7 parts that describe this project's areas.".to_string()
     } else {
@@ -415,6 +417,9 @@ pub fn assessment_prompt(adapter: &str, parts: &[String], facts: &str) -> String
     let mut prompt = format!(
         "Navi progress check. Inspect this repository and judge how complete it is against its own goals (README, docs, issues, TODOs, tests). {parts_line} {how} Base every number on what you actually read or ran, keep it short, and do not change any files."
     );
+    if !previous.is_empty() {
+        prompt.push_str(&format!(" {previous}"));
+    }
     if !facts.is_empty() {
         prompt.push_str(&format!(" Scan facts: {facts}"));
     }
