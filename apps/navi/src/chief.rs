@@ -1655,6 +1655,26 @@ impl App {
             }
             _ => None,
         };
+        // "Stop listening", "mute": the microphone and spoken-reply settings.
+        let toggle = match bare {
+            "stop listening" | "turn off the microphone" | "turn off the mic" | "turn the microphone off"
+            | "turn the mic off" | "mic off" | "microphone off" | "disable the microphone" | "mute the microphone"
+            | "mute the mic" => Some(("microphone", false)),
+            "start listening" | "turn on the microphone" | "turn on the mic" | "turn the microphone on"
+            | "turn the mic on" | "mic on" | "microphone on" | "enable the microphone" | "unmute the microphone"
+            | "unmute the mic" => Some(("microphone", true)),
+            "mute" | "be quiet" | "quiet" | "shush" | "stop talking" | "stop speaking" | "don't speak"
+            | "speech off" | "turn off speech" | "turn speech off" | "stop reading replies" | "mute replies" => {
+                Some(("speak", false))
+            }
+            "unmute" | "speak" | "talk to me" | "speak replies" | "read replies aloud" | "read replies out loud"
+            | "speech on" | "turn on speech" | "turn speech on" | "start talking" | "start speaking"
+            | "unmute replies" => Some(("speak", true)),
+            _ => None,
+        };
+        if let Some((key, on)) = toggle {
+            return Ok(Some(json!({"kind":"setting","key":key,"on":on})));
+        }
         if let Some((action, reply)) = dialog {
             return Ok(Some(json!({"kind":"ui","action":action,"reply":reply})));
         }
@@ -2674,6 +2694,37 @@ impl App {
             "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({}))})),
             "ack" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
                 json!({}))})),
+            "setting" => {
+                let key = action["key"].as_str().unwrap_or_default();
+                let on = action["on"] == true;
+                let text = if key == "microphone" && on && self.isolated {
+                    "The microphone is disabled in isolated mode.".to_string()
+                } else {
+                    let mut settings = self.settings();
+                    let was = settings[key] == true;
+                    settings[key] = json!(on);
+                    self.save_settings(settings, false)?;
+                    if key == "microphone" && on {
+                        self.spawn_worker("voice")?;
+                    }
+                    if key == "speak" && !on {
+                        // Cut a reply that is being read out now.
+                        let _ = std::fs::write(self.runtime.join("voice.cancel"), now().to_string());
+                    }
+                    match (key, on, was == on) {
+                        ("microphone", true, true) => "The microphone is already on.",
+                        ("microphone", true, false) => "Microphone on. Say “Navi” to call me.",
+                        ("microphone", false, true) => "The microphone is already off.",
+                        ("microphone", false, false) => "Microphone off. Turn it back on from the window.",
+                        (_, true, true) => "Replies are already spoken.",
+                        (_, true, false) => "I will speak my replies.",
+                        (_, false, true) => "Replies are already silent.",
+                        _ => "Okay, replies stay on screen only.",
+                    }
+                    .to_string()
+                };
+                Ok(json!({"reply": reply(None, text, json!({}))}))
+            }
             "ui" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
                 json!({"action": action["action"]}))})),
             "progress_hide" => Ok(json!({"reply": reply(None, "Closed the progress panel.".into(),
@@ -3716,7 +3767,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
