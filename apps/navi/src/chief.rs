@@ -1889,12 +1889,16 @@ impl App {
         let trimmed = text.trim();
         // ASCII lowercasing keeps byte offsets equal to the original's.
         let lower = trimmed.to_ascii_lowercase();
-        let rest_at = ["tell ", "ask ", "send ", "message ", "continue in "]
+        let rest_at = ["tell ", "ask ", "send ", "message ", "continue in ", "have ", "get "]
             .iter()
             .find_map(|verb| lower.starts_with(verb).then_some(verb.len()));
-        let Some(start) = rest_at else {
+        // No verb: "Codex #1, run the tests" and "terminal: ls" address an
+        // open session directly; the name must end at the comma or colon.
+        let direct = rest_at.is_none();
+        if direct && !lower.contains([':', ',']) {
             return Ok(None);
-        };
+        }
+        let start = rest_at.unwrap_or(0);
         let rest = &trimmed[start..];
         let rest_lower = &lower[start..];
         let sessions = self.sessions()?;
@@ -1921,11 +1925,17 @@ impl App {
         };
         // "<target> to <text>" first (multi-word names), then a one-word
         // target followed by the text.
-        let mut candidates: Vec<(usize, usize)> = rest_lower
-            .match_indices(" to ")
-            .map(|(index, marker)| (index, index + marker.len()))
-            .collect();
-        if let Some(space) = rest_lower.find([' ', ':', ',']) {
+        let mut candidates: Vec<(usize, usize)> = if direct {
+            Vec::new()
+        } else {
+            rest_lower
+                .match_indices(" to ")
+                .map(|(index, marker)| (index, index + marker.len()))
+                .collect()
+        };
+        if direct {
+            candidates.extend(rest_lower.find([':', ',']).map(|mark| (mark, mark + 1)));
+        } else if let Some(space) = rest_lower.find([' ', ':', ',']) {
             candidates.push((space, space + 1));
         }
         for &(end, text_start) in &candidates {
@@ -1937,6 +1947,9 @@ impl App {
         }
         // No open session by that name, but it names a harness ("ask Claude
         // to fix the build" with Claude closed): open it with the prompt.
+        if direct {
+            return Ok(None);
+        }
         let settings = self.settings();
         let profiles = settings["profiles"].as_array().cloned().unwrap_or_default();
         for &(end, text_start) in &candidates {
@@ -2388,7 +2401,15 @@ impl App {
                         .cloned()
                         .unwrap_or_else(|| session["name"].as_str().unwrap_or("the session").to_string())
                 };
-                let prompt = action["text"].as_str().unwrap_or_default();
+                let spoken = action["text"].as_str().unwrap_or_default();
+                // A shell takes the command itself: "tell terminal to run ls" types `ls`.
+                let shell = chosen.len() == 1
+                    && (chosen[0]["profile"] == "terminal"
+                        || matches!(chosen[0]["harness"].as_str(), Some("bash" | "zsh" | "sh" | "fish" | "dash" | "ksh")));
+                let prompt = match spoken.get(..4) {
+                    Some(head) if shell && head.eq_ignore_ascii_case("run ") => spoken[4..].trim(),
+                    _ => spoken,
+                };
                 let text = match chosen.as_slice() {
                     // A child process owns the terminal: typing would go to it.
                     [session] if matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) => {
