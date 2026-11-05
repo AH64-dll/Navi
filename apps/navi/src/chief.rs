@@ -2486,7 +2486,7 @@ impl App {
                     _ if action["recent"] == true => {
                         store::recent_sentence(&graph, crate::now().saturating_sub(86_400_000))
                     }
-                    _ if action["topic"] == "estimate" => estimate_sentence(&graph),
+                    _ if action["topic"] == "estimate" => estimate_sentence(&graph, true),
                     _ if action["topic"] == "parts" => parts_sentence(&graph),
                     _ if action["topic"] == "active" => active_sentence(&graph),
                     _ if action["topic"] == "next" => match action["for"].as_str() {
@@ -2503,7 +2503,8 @@ impl App {
                     _ => store::progress_sentence(&graph),
                     },
                 };
-                if graph["percent"].is_null() {
+                let estimate = action["topic"] == "estimate";
+                if graph["percent"].is_null() && !estimate {
                     text.push_str(" Say “assess the project” and I will ask a harness to judge it.");
                 } else if action["stale"] == true {
                     // The headline sentence already names a nonzero count.
@@ -2512,8 +2513,12 @@ impl App {
                         _ => text.push_str(" Say “reassess” to update it."),
                     }
                 }
-                let extra = json!({"action": if action["show"] == true { "show_graph" } else { "" },
+                let mut extra = json!({"action": if action["show"] == true { "show_graph" } else { "" },
                     "percent": graph["percent"]});
+                // Voice skips the quoted evidence.
+                if estimate {
+                    extra["speech"] = json!(estimate_sentence(&graph, false));
+                }
                 Ok(json!({"reply": reply(Some(&id), text, extra)}))
             }
             "detect" => {
@@ -2805,6 +2810,7 @@ impl App {
                         }
                     }
                 }
+                let mut speech = Value::Null;
                 let text = match chosen.as_slice() {
                     [session] => {
                         let id = session["id"].as_str().unwrap_or_default();
@@ -2839,13 +2845,26 @@ impl App {
                                 let skip = shown.chars().count() - 300;
                                 shown = format!("…{}", shown.chars().skip(skip).collect::<String>());
                             }
+                            // Aloud, the last two lines, each kept short.
+                            let tail: Vec<String> = lines[lines.len().saturating_sub(2)..]
+                                .iter()
+                                .map(|line| {
+                                    let count = line.chars().count();
+                                    if count > 120 { format!("…{}", line.chars().skip(count - 120).collect::<String>()) } else { line.clone() }
+                                })
+                                .collect();
+                            speech = json!(format!("{name} shows: “{}”.", tail.join(" / ")));
                             format!("{name} shows: “{shown}”.")
                         }
                     }
                     [] => "That session is no longer open.".to_string(),
                     many => self.ask_which(action, many, &labels)?,
                 };
-                Ok(json!({"reply": reply(here.as_deref(), text, self.choice_extra())}))
+                let mut extra = self.choice_extra();
+                if !speech.is_null() {
+                    extra["speech"] = speech;
+                }
+                Ok(json!({"reply": reply(here.as_deref(), text, extra)}))
             }
             "session_control" => {
                 let sessions = self.sessions()?;
@@ -3962,7 +3981,7 @@ fn parts_sentence(graph: &Value) -> String {
 
 /// "When was the last estimate", "how confident is it": where the headline
 /// comes from, the newest estimate, and the confidence.
-fn estimate_sentence(graph: &Value) -> String {
+fn estimate_sentence(graph: &Value, quote: bool) -> String {
     let name = graph["project"]["name"].as_str().unwrap_or("This project");
     let Some(percent) = graph["percent"].as_f64() else {
         return format!("{name} has no estimate yet. Say “assess the project” and I will ask a harness to judge it.");
@@ -3981,7 +4000,7 @@ fn estimate_sentence(graph: &Value) -> String {
             source => store::source_name(source),
         };
         sentence.push_str(&format!(" {who} last put the whole project at {}%, {}", value.round(), relative_time(time)));
-        if let Some(evidence) = estimate["evidence"].as_str().map(str::trim).filter(|text| !text.is_empty()) {
+        if let Some(evidence) = estimate["evidence"].as_str().map(str::trim).filter(|text| quote && !text.is_empty()) {
             let short: String = evidence.chars().take(120).collect();
             sentence.push_str(&format!(" (“{short}”)"));
         }
