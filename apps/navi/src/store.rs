@@ -1148,7 +1148,9 @@ pub fn progress_sentence(graph: &Value) -> String {
     let Some(value) = graph["percent"].as_f64() else {
         return format!("{name} has no completion estimate yet.");
     };
-    let mut sentence = format!("{name} is about {}% complete", value.round());
+    // "About" hedges an estimate; 0% and 100% are exact.
+    let hedge = if (0.5..99.5).contains(&value) { "about " } else { "" };
+    let mut sentence = format!("{name} is {hedge}{}% complete", value.round());
     match graph["basis"]["kind"].as_str() {
         Some("estimate") => {
             match graph["basis"]["source"].as_str().unwrap_or("assistant") {
@@ -1156,7 +1158,13 @@ pub fn progress_sentence(graph: &Value) -> String {
                 source => sentence.push_str(&format!(" by {}'s estimate", source_name(source))),
             }
         }
-        Some("parts") => sentence.push_str(" across its parts"),
+        Some("parts") => match graph["aspects"].as_array().map(Vec::as_slice) {
+            Some([only]) => sentence.push_str(&format!(
+                ". Its only part is {}",
+                only["title"].as_str().unwrap_or("unnamed")
+            )),
+            _ => sentence.push_str(" across its parts"),
+        },
         _ => {}
     }
     sentence.push('.');
@@ -1387,7 +1395,8 @@ pub fn remaining_sentence(graph: &Value) -> String {
         .filter(|item| item["state"] != "done")
         .filter_map(|item| item["title"].as_str())
         .collect();
-    let mut sentence = format!("{name} is about {}% complete.", value.round());
+    let hedge = if (0.5..99.5).contains(&value) { "about " } else { "" };
+    let mut sentence = format!("{name} is {hedge}{}% complete.", value.round());
     if parts.is_empty() && open.is_empty() {
         sentence.push_str(" Every part is at 100% and no task is open.");
         return sentence;
