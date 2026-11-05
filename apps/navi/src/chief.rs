@@ -639,6 +639,21 @@ impl App {
         Ok(format!("Which one: {}?", names.join(", ")))
     }
 
+    /// Whether the command's project has a part titled `spoken` (loosely).
+    fn names_part(&self, clause: &str, spoken: &str) -> bool {
+        let Ok(project) = self.command_project(clause, &Value::Null) else {
+            return false;
+        };
+        let wanted = loose_title(spoken.strip_suffix(" part").unwrap_or(spoken));
+        self.graph_get(project["id"].as_str()).is_ok_and(|graph| {
+            graph["aspects"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|aspect| loose_title(aspect["title"].as_str().unwrap_or("")) == wanted)
+        })
+    }
+
     /// Whether the command's project has a task or part named like `spoken`.
     fn names_task_or_part(&self, clause: &str, spoken: &str) -> bool {
         let Ok(project) = self.command_project(clause, &Value::Null) else {
@@ -1694,7 +1709,8 @@ impl App {
         }
         if ["which project am i in", "what project am i in", "which project is this",
             "what project is this", "list projects", "list the projects", "list my projects",
-            "what projects", "which projects", "my projects"]
+            "what projects", "which projects", "my projects", "compare the projects", "compare projects",
+            "all projects", "every project", "each project"]
             .iter()
             .any(|phrase| lower.contains(phrase))
         {
@@ -1711,6 +1727,13 @@ impl App {
         // takes a verb followed by exactly one session's name.
         if let Some(control) = self.session_control_intent(&lower)? {
             return Ok(Some(control));
+        }
+        // "Add a task called fix login to the daemon", "add a part called docs".
+        if let Some((title, split)) = parse_task_add(&text) {
+            return Ok(Some(json!({"kind":"task_add","title":title,"split":split})));
+        }
+        if let Some(title) = parse_part_add(&text) {
+            return Ok(Some(json!({"kind":"part_add","title":title})));
         }
         if lower.is_empty() || negated(&lower) {
             return Ok(None);
@@ -1753,7 +1776,8 @@ impl App {
             "status update", "coming along", "how's it going", "how is it going", "bring up the progress",
             "pull up the progress", "bring up the graph", "pull up the graph", "can i see the progress",
             "like to see the progress", "what's the percentage", "what is the percentage",
-            "whats the percentage",
+            "whats the percentage", "furthest behind", "farthest behind", "weakest part", "least done",
+            "most behind", "lagging behind",
         ]
         .iter()
         .chain(BLOCKED_PHRASES.iter())
@@ -1778,6 +1802,22 @@ impl App {
                             })
                         })
                 }))
+            // "How is the daemon doing?", "what's voice at?", "show me the
+            // voice part": one part or task by name.
+            || ["how is ", "how's ", "hows ", "what's ", "what is ", "whats ", "where's ", "where is ",
+                "show me ", "show ", "open "]
+                .iter()
+                .find_map(|lead| lower.strip_prefix(lead))
+                .and_then(|rest| {
+                    [" doing", " going", " coming along", " looking", " at", " part"]
+                        .iter()
+                        .find_map(|tail| rest.strip_suffix(tail))
+                        .or(lower.starts_with("how").then_some(rest))
+                })
+                .map(|name| name.strip_prefix("the ").unwrap_or(name).trim().to_string())
+                .is_some_and(|name| {
+                    !name.is_empty() && name.split_whitespace().count() <= 5 && self.names_part(clause, &name)
+                })
             // "Is barge-in done?" asks about one task or part by name.
             || (lower.strip_prefix("is ").and_then(|rest| {
                 let rest = rest.strip_suffix(" yet").unwrap_or(rest);
@@ -2419,6 +2459,15 @@ impl App {
                             "todo" => "to do",
                             other => other,
                         };
+                        let restore = task["id"].as_str().zip(task["state"].as_str());
+                        if state == "dropped" {
+                            // Dropped tasks leave the graph and its percent.
+                            self.set_task(&json!({"id": task["id"], "state": "dropped"}))?;
+                            self.remember_change(&id, before, restore, &format!("dropping “{title}”"))?;
+                            self.event_for(Some(&id), None, "progress", &format!("Dropped “{title}”"), json!({"task": task["id"]}));
+                            let graph = self.graph_get(Some(&id))?;
+                            format!("Dropped “{title}”; it no longer counts. {}", store::progress_sentence(&graph))
+                        } else {
                         match self.progress_report(&json!({
                             "project_id": id,
                             "task_id": task["id"],
@@ -2429,11 +2478,11 @@ impl App {
                             "create": false,
                         })) {
                             Ok(result) => {
-                                let restore = task["id"].as_str().zip(task["state"].as_str());
                                 self.remember_change(&id, before, restore, &format!("“{title}” marked {said}"))?;
                                 format!("Marked “{title}” {said}. {}", result["summary"].as_str().unwrap_or(""))
                             }
                             Err(error) => error,
+                        }
                         }
                     }
                     // "Mark the detector done" names a part, not a task: the
@@ -2796,6 +2845,64 @@ impl App {
             "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({}))})),
             "ack" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
                 json!({}))})),
+            "task_add" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let graph = self.graph_get(Some(&id))?;
+                let aspects: Vec<Value> = graph["aspects"].as_array().cloned().unwrap_or_default();
+                let part_named = |name: &str| {
+                    let wanted = loose_title(name);
+                    aspects.iter().find(|aspect| loose_title(aspect["title"].as_str().unwrap_or("")) == wanted).cloned()
+                };
+                // "… to the daemon" names a part only when that part exists;
+                // otherwise the words belong to the title.
+                let (title, part) = match action["split"].as_array().map(|pair| (pair[0].as_str(), pair[1].as_str())) {
+                    Some((Some(title), Some(name))) if part_named(name).is_some() => (title.to_string(), part_named(name)),
+                    _ => (action["title"].as_str().unwrap_or_default().to_string(), None),
+                };
+                let wanted = loose_title(&title);
+                let existing = aspects
+                    .iter()
+                    .flat_map(|aspect| aspect["items"].as_array().into_iter().flatten())
+                    .chain(graph["unassigned"].as_array().into_iter().flatten())
+                    .any(|task| loose_title(task["title"].as_str().unwrap_or("")) == wanted);
+                let part_title = part.as_ref().and_then(|part| part["title"].as_str()).map(str::to_string);
+                let text = if existing {
+                    format!("“{title}” is already a task.")
+                } else {
+                    let before = self.last_signal_id()?;
+                    let added = self.add_task(&json!({"project_id": id, "title": title,
+                        "aspect_id": part.as_ref().map(|part| part["id"].clone())}))?;
+                    self.remember_change(&id, before, added["id"].as_str().map(|task| (task, "dropped")),
+                        &format!("adding “{title}”"))?;
+                    self.event_for(Some(&id), None, "progress", &format!("Added task “{title}”"), json!({"task": added["id"]}));
+                    let graph = self.graph_get(Some(&id))?;
+                    match part_title {
+                        Some(part) => format!("Added “{title}” to {part}. {}", store::progress_sentence(&graph)),
+                        None => format!("Added the task “{title}”. {}", store::progress_sentence(&graph)),
+                    }
+                };
+                Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+            }
+            "part_add" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let title = action["title"].as_str().unwrap_or_default().to_string();
+                let before = self.last_signal_id()?;
+                let text = match self.add_aspect(&json!({"project_id": id, "title": title})) {
+                    Ok(added) => {
+                        self.remember_change(&id, before, None, &format!("adding the part {title}"))?;
+                        if let Some(change) = self.last_change.lock().unwrap().as_mut() {
+                            change["aspect_added"] = added["id"].clone();
+                        }
+                        self.event_for(Some(&id), None, "progress", &format!("Added part “{title}”"), json!({"aspect": added["id"]}));
+                        format!("Added the part {title}. Say “add a task called … to {title}” to fill it.")
+                    }
+                    Err(error) if error.contains("already exists") => format!("There is already a part called {title}."),
+                    Err(error) => format!("{error}."),
+                };
+                Ok(json!({"reply": reply(Some(&id), text, json!({"action":"show_graph"}))}))
+            }
             "undo" => {
                 let change = self.last_change.lock().unwrap().take();
                 let fresh = change.filter(|change| now().saturating_sub(change["time"].as_u64().unwrap_or(0)) < 600_000);
@@ -3765,6 +3872,12 @@ fn parse_task_state(lower: &str) -> Option<(String, &'static str)> {
         (rest, "done")
     } else if let Some(rest) = text.strip_prefix("reopen ") {
         (rest, "todo")
+    } else if let Some(rest) = ["drop the task ", "drop task ", "drop ", "remove the task ", "remove task ",
+        "delete the task ", "delete task "]
+        .iter()
+        .find_map(|prefix| text.strip_prefix(prefix))
+    {
+        (rest, "dropped")
     } else {
         let rest = text.strip_prefix("mark ")?;
         // Longer suffixes first: "not done" also ends in "done".
@@ -3801,6 +3914,48 @@ fn parse_task_state(lower: &str) -> Option<(String, &'static str)> {
     (!title.is_empty() && title.split_whitespace().count() <= 8).then(|| (title.to_string(), state))
 }
 
+/// The text after the first of `prefixes` (matched without case), in its
+/// original casing, without quotes or trailing punctuation.
+fn after_prefix<'a>(text: &'a str, prefixes: &[&str]) -> Option<&'a str> {
+    let text = text.trim().trim_end_matches(['.', '!', '?']).trim();
+    let lower = text.to_ascii_lowercase();
+    let start = prefixes.iter().find_map(|prefix| lower.starts_with(prefix).then_some(prefix.len()))?;
+    let rest = text[start..].trim().trim_start_matches([':', ',']).trim();
+    Some(rest.trim_matches(['"', '“', '”', '\'']).trim())
+}
+
+/// "Add a task called fix login to the daemon", "new task: write docs": the
+/// whole title, and the title and part when the words after the last "to",
+/// "in", "under" or "for" may name a part (the caller checks it exists).
+fn parse_task_add(text: &str) -> Option<(String, Option<(String, String)>)> {
+    let rest = after_prefix(text, &["add a new task called ", "add a new task named ", "add a task called ",
+        "add a task named ", "add a new task ", "add a task ", "add task ", "add task:", "add a todo ",
+        "new task called ", "new task:", "new task ", "create a task called ", "create a task named ", "create a task ", "create task "])?;
+    if rest.is_empty() || rest.split_whitespace().count() > 12 {
+        return None;
+    }
+    let lower = rest.to_ascii_lowercase();
+    let split = [" to the ", " in the ", " under the ", " for the ", " to ", " in ", " under ", " for "]
+        .iter()
+        .filter_map(|marker| lower.rfind(marker).map(|at| (at, marker.len())))
+        .max_by_key(|(at, len)| (*at, *len))
+        .map(|(at, len)| {
+            let part = rest[at + len..].trim();
+            let part = part.strip_suffix(" part").unwrap_or(part);
+            (rest[..at].trim().to_string(), part.to_string())
+        })
+        .filter(|(head, part)| !head.is_empty() && !part.is_empty());
+    Some((rest.to_string(), split))
+}
+
+/// "Add a part called docs", "create a part named storage": a part title.
+fn parse_part_add(text: &str) -> Option<String> {
+    let title = after_prefix(text, &["add a new part called ", "add a new part named ", "add a part called ",
+        "add a part named ", "add a new part ", "add a part ", "add part ", "new part called ", "new part ",
+        "create a part called ", "create a part named ", "create a part ", "create part "])?;
+    (!title.is_empty() && title.split_whitespace().count() <= 6).then(|| title.to_string())
+}
+
 /// "Barge-in is done", "we finished barge-in", "voice is blocked": a statement
 /// about one task or part. The caller keeps it only when a task or part by
 /// that name exists, so "the build is done" stays conversation.
@@ -3816,9 +3971,14 @@ fn parse_task_statement(lower: &str) -> Option<(String, &'static str)> {
         "i'm done with ", "done with ", "we completed ", "i completed "]
         .iter()
         .find_map(|prefix| text.strip_prefix(prefix));
-    let (title, state) = match finished {
-        Some(rest) => (rest, "done"),
-        None => {
+    let started = ["start working on ", "started working on ", "i'm working on ", "i am working on ",
+        "we're working on ", "we are working on ", "working on ", "i started ", "we started ", "starting on "]
+        .iter()
+        .find_map(|prefix| text.strip_prefix(prefix));
+    let (title, state) = match (finished, started) {
+        (Some(rest), _) => (rest, "done"),
+        (_, Some(rest)) => (rest, "in_progress"),
+        _ => {
             const STATES: [(&str, &str); 8] = [
                 (" is not done", "todo"),
                 (" is done", "done"),
@@ -3885,7 +4045,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”, “stop everything”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “add a task called fix login to the daemon”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”, “stop everything”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();

@@ -2448,6 +2448,17 @@ impl App {
                 )
                 .map_err(|error| error.to_string())?;
         }
+        // A part added by mistake goes again, unless tasks were put in it.
+        if let Some(aspect) = change["aspect_added"].as_str() {
+            state
+                .db
+                .execute(
+                    "DELETE FROM aspects WHERE id=?1 AND project_id=?2
+                     AND NOT EXISTS (SELECT 1 FROM tasks WHERE aspect_id=?1 AND state!='dropped')",
+                    params![aspect, project_id],
+                )
+                .map_err(|error| error.to_string())?;
+        }
         drop(state);
         self.event_for(Some(project_id), None, "progress", "Undid the last progress change", change.clone());
         Ok(removed)
