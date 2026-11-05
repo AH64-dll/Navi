@@ -2230,6 +2230,11 @@ impl App {
                         "needs_input" => "is waiting for your input",
                         "busy" => "is running a command",
                         "running" => "is working",
+                        // A harness at rest waits for a prompt; a terminal sits at its shell.
+                        "idle" if matches!(
+                            crate::adapters::adapter_for(session["harness"].as_str().unwrap_or("")),
+                            "claude" | "codex" | "opencode" | "pi" | "agy"
+                        ) => "is ready for a prompt",
                         "idle" => "is idle at its shell prompt",
                         "exited" => "has exited",
                         "starting" | "created" => "is starting",
