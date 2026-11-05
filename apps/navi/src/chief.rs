@@ -1459,6 +1459,14 @@ impl App {
         {
             return Ok(Some(json!({"kind":"help"})));
         }
+        if ["which project am i in", "what project am i in", "which project is this",
+            "what project is this", "list projects", "list the projects", "list my projects",
+            "what projects", "which projects", "my projects"]
+            .iter()
+            .any(|phrase| lower.contains(phrase))
+        {
+            return Ok(Some(json!({"kind":"project_list"})));
+        }
         // "Tell Codex to run the tests": typed into that session, as voice does.
         if let Some(prompt) = self.harness_prompt_intent(&text)? {
             return Ok(Some(prompt));
@@ -1566,7 +1574,8 @@ impl App {
         let resuming = ["resume", "continue", "existing"]
             .iter()
             .any(|word| mentioned(&lower, word));
-        let launching = ["open", "launch", "start", "create", "new", "fresh", "bring up"]
+        let launching = ["open", "launch", "start", "create", "new", "fresh", "bring up",
+            "fire up", "spin up", "boot up"]
             .iter()
             .any(|word| mentioned(&lower, word));
         if switching && !resuming {
@@ -1783,7 +1792,8 @@ impl App {
             "waiting for me", "waiting on me", "need me", "needs me"]
             .iter()
             .any(|phrase| lower.contains(phrase));
-        let overview = ["what's running", "what is running", "whats running", "what's open",
+        let overview = ["anything busy", "anything running", "anyone busy", "what's busy",
+            "what's running", "what is running", "whats running", "what's open",
             "what is open", "which sessions", "which harnesses", "sessions doing",
             "harnesses doing", "status of the sessions", "status of the harnesses",
             "session status", "harness status"]
@@ -2163,6 +2173,38 @@ impl App {
                         Some(label) => format!("{label} is already open."),
                         None => "That session was already reopened or removed.".to_string(),
                     },
+                };
+                Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
+            }
+            "project_list" => {
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                let projects = self.projects()?;
+                let overview = self.progress_overview()?;
+                let percent = |id: &str| {
+                    overview["projects"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find(|row| row["project_id"] == id)
+                        .and_then(|row| row["percent"].as_f64())
+                        .map(|value| format!(" {}%", value.round()))
+                        .unwrap_or_default()
+                };
+                let names: Vec<String> = projects
+                    .iter()
+                    .filter_map(|project| {
+                        let id = project["id"].as_str()?;
+                        Some(format!("{}{}", project["name"].as_str()?, percent(id)))
+                    })
+                    .collect();
+                let current = projects
+                    .iter()
+                    .find(|project| project["id"].as_str() == here.as_deref())
+                    .and_then(|project| project["name"].as_str());
+                let text = match (current, names.is_empty()) {
+                    (_, true) => "No projects yet. Add one from the project menu.".to_string(),
+                    (Some(name), _) => format!("You're in {name}. Projects: {}.", names.join(", ")),
+                    (None, _) => format!("Projects: {}.", names.join(", ")),
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
@@ -2917,6 +2959,8 @@ fn immediate_request(text: &str) -> bool {
         "would you ",
         "i want you to ",
         "i want to ",
+        "let's ",
+        "lets ",
     ] {
         if let Some(command) = lower.strip_prefix(prefix) {
             lower = command.to_owned();
@@ -2957,6 +3001,9 @@ fn immediate_request(text: &str) -> bool {
         "scroll",
         "next window",
         "bring up",
+        "fire up",
+        "spin up",
+        "boot up",
     ]
     .iter()
     .any(|verb| {
@@ -3101,7 +3148,7 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "what got done", "since yesterday", "any progress"];
 
 /// What Navi answers itself, without a model; spoken too, so it stays short.
-const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
+const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”), check sessions (“is Codex done”, “what's running”), give one a task (“tell Codex to run the tests”), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”), and show or close the progress panel. Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {
     let head = text.split_whitespace().next()?.to_lowercase();
