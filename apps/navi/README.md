@@ -391,6 +391,10 @@ navid progress task done "Barge-in" "test_voice_policy passes" --part Voice
 The project is the pane's session project, else the registered project containing the
 working directory, else the only project; `--project` overrides it. A report moves the
 number at once and adds one feed row ("Claude Code put Voice at 60% — evidence").
+A percent outside 0–100 is refused rather than clamped (a slip such as `180` would
+otherwise read as finished), evidence must name something, and task states also
+accept `finished`/`complete` (done), `started`/`wip` (in progress), `open` (todo) and
+`stuck` (blocked).
 
 A harness started outside Navi has none of this until its own config names the server.
 `navid link [claude|codex|opencode|pi]` prints that one-time setup with this binary's

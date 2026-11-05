@@ -2333,10 +2333,18 @@ impl App {
     pub fn progress_report(&self, p: &Value) -> Result<Value> {
         let project_id = self.progress_project(p)?;
         let evidence = clean_label(p["evidence"].as_str().unwrap_or_default(), 1200);
-        if evidence.is_empty() {
+        if evidence.chars().filter(|c| c.is_alphanumeric()).count() < 3 {
             return Err("Progress needs evidence: say what you checked".into());
         }
+        // An out-of-range number is a mistake to report, not a value to
+        // clamp: "180" from a slip would otherwise put the project at 100%.
         let value = match (p["percent"].as_f64(), p["value"].as_f64()) {
+            (Some(percent), _) if !(-0.001..=100.001).contains(&percent) => {
+                return Err(format!("Percent must be between 0 and 100, not {percent}"));
+            }
+            (None, Some(value)) if !(-0.00001..=1.00001).contains(&value) => {
+                return Err(format!("Value must be between 0 and 1, not {value}"));
+            }
             (Some(percent), _) => Some(percent / 100.0),
             (None, Some(value)) => Some(value),
             _ => None,
@@ -2353,7 +2361,15 @@ impl App {
         let next_state = p["state"]
             .as_str()
             .map(|state| state.trim().replace([' ', '-'], "_").to_lowercase())
-            .filter(|state| !state.is_empty());
+            .filter(|state| !state.is_empty())
+            // A harness says "finished" or "started" as often as "done".
+            .map(|state| match state.as_str() {
+                "finished" | "complete" | "completed" | "closed" | "fixed" => "done".to_string(),
+                "started" | "doing" | "wip" | "working" | "in_process" | "ongoing" => "in_progress".to_string(),
+                "open" | "not_started" | "pending" | "to_do" | "reopened" => "todo".to_string(),
+                "stuck" | "waiting" => "blocked".to_string(),
+                _ => state,
+            });
         if let Some(state) = next_state.as_deref()
             && !matches!(state, "todo" | "in_progress" | "done" | "blocked")
         {
