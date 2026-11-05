@@ -1259,7 +1259,21 @@ pub fn recent_sentence(graph: &Value, since: u64) -> String {
         changes.push(format!("{tasks} task{} updated", if tasks == 1 { "" } else { "s" }));
     }
     if commits > 0 {
-        changes.push(format!("{commits} commit{}", if commits == 1 { "" } else { "s" }));
+        let mut text = format!("{commits} commit{}", if commits == 1 { "" } else { "s" });
+        // Signals are newest first; rows from before subjects were recorded have none.
+        let latest = signals
+            .iter()
+            .find(|signal| signal["kind"] == "git_commit")
+            .and_then(|signal| signal["evidence"].as_str()?.strip_prefix("HEAD ")?.split_once(' '))
+            .map(|(_, subject)| subject.trim())
+            .filter(|subject| !subject.is_empty());
+        if let Some(subject) = latest {
+            text.push_str(&format!(
+                ", {} “{subject}”",
+                if commits == 1 { "titled" } else { "the latest" }
+            ));
+        }
+        changes.push(text);
     }
     if changes.is_empty() {
         return format!("Nothing was recorded on {name} in the last day.");
