@@ -126,15 +126,19 @@ the top-left separates live sessions from a collapsed Recent list, shows the har
 profile name, its state (a colored dot: running, idle, busy, needs input) and last
 activity, disambiguates duplicate names and reconciles
 its chips in place; clicking one attaches an xterm terminal pane to its live tmux
-session, where an inline prompt field sends input straight into the harness. The "+"
-chip opens a quick-launch menu: one click starts Codex, Claude Code, Pi, OpenCode, a
-terminal or a custom profile in the active project and attaches it. "More options…"
-opens the full launcher dialog — any registered profile, a project directory, and an
-optional first prompt that is injected once the harness is up. The settings gear also edits harness
-profiles (name, executable, args as a JSON array, so a value containing spaces stays
-one argument) and offers a searchable model picker grouped by provider that can never
-save an empty reference. The terminal's Stop sends `session_interrupt` to the attached
-harness.
+session, titled like its chip (`Terminal #2 · Navi`: session, harness when the name
+does not already say it, project), where an inline prompt field sends input straight
+into the harness. The "+" chip opens a quick-launch menu: one click starts Codex,
+Claude Code, Pi, OpenCode, a terminal or a custom profile in the active project and
+attaches it; a harness whose binary is not on the launch PATH is listed as "not
+installed" and cannot be picked. "More options…" opens the full launcher dialog — any
+registered profile (the first installed harness preselected), a project directory, and
+an optional first prompt that is injected once the harness is up. The settings gear
+also edits harness profiles (name, command, arguments written as shell words, so
+`--flag 'two words'` stays one argument and round-trips exactly; a JSON list is also
+accepted), outlines commands that are not on the launch PATH, and offers a searchable
+model picker grouped by provider that can never save an empty reference. The
+terminal's Stop sends `session_interrupt` to the attached harness.
 
 Microphone capture is off by default. The station's Mic button saves the
 `microphone` setting and calls `voice_start`; turning it off releases the input

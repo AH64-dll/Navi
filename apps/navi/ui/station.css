@@ -222,11 +222,26 @@
 .settings .toggles input{accent-color:#4fd8c0}
 .settings .field{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4;margin-top:6px}
 .settings textarea{resize:vertical;min-height:96px;line-height:1.5}
-.settings select{font:12px var(--type);color:var(--ice);background:#02092cbb;border:1px solid #8cacd766;border-radius:3px;padding:9px}
+/* Native selects render as grey system widgets inside the webview; the theme
+ * draws its own box and chevron instead. */
+.settings select{font:12px var(--type);color:var(--ice);border:1px solid #8cacd766;border-radius:3px;padding:9px 30px 9px 9px;
+  appearance:none;-webkit-appearance:none;cursor:pointer;
+  background:#02092cbb url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238dffe0' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 11px center/10px 6px}
+.settings select:focus{outline:1px solid #8dffe0}
+.settings select option{background:#071039;color:var(--ice)}
+.settings select option:disabled{color:#7f93b8}
+.settings .hint:empty{display:none}
 .settings .hint{margin:2px 0 0;font-size:10px;line-height:1.5;color:#8fb4d9;opacity:.8}
 .settings .actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:8px}
+/* Save stays reachable while the long settings form scrolls under it. */
+#settings-form .actions{position:sticky;bottom:-16px;z-index:2;margin:8px -22px -16px;padding:12px 22px 16px;
+  background:linear-gradient(#040b3600,#040b36f2 35%);}
 .settings .actions .spacer{flex:1}
 .settings .primary{border-color:#8dffe0aa;color:#d9fff6;box-shadow:0 0 14px #4fd8c02e}
+/* Dialog buttons follow the 12 px field type, not the 16 px body default. */
+.settings button{font-size:12px;letter-spacing:.5px}
+.settings .actions button{padding:8px 16px}
+#diagnostics>b{display:block;font-size:10px;font-weight:400;letter-spacing:1.6px;text-transform:uppercase;color:#7ec8d4}
 
 input,textarea{font:12px var(--type);color:var(--ice);background:#02092cbb;border:1px solid #8cacd766;border-radius:3px;padding:10px;min-width:0}
 input:focus,textarea:focus{outline:1px solid #8dffe0}
@@ -564,6 +579,10 @@ body[data-dock="max"] .terminal-pane{grid-area:stage;margin-left:0;width:auto;he
 /* Harness profile editor rows in settings. */
 .profile-row{display:grid;grid-template-columns:1.1fr 1.2fr 1.2fr auto;gap:7px;align-items:center}
 .profile-row input{padding:8px 9px;font-size:11px}
+.profile-head{font-size:9px;letter-spacing:1.3px;text-transform:uppercase;color:#93c6d6;margin-bottom:-4px}
+.profile-head span{padding:0 2px}
+/* A command that is not on the launch PATH; the note under the list names it. */
+.profile-row input.missing{border-color:#ffc27a99;color:#ffe2bd}
 .profile-remove{font-size:15px;color:#ff9a9a}
 #profile-add{align-self:flex-start;font-size:11px;padding:6px 12px;margin-top:2px}
 .settings input{padding:9px;font-size:12px}
@@ -573,6 +592,7 @@ body[data-dock="max"] .terminal-pane{grid-area:stage;margin-left:0;width:auto;he
    are grouped by provider, the saved reference is always present, and the popup
    never opens empty. */
 .combobox{position:relative}
+.combobox>input{width:100%;box-sizing:border-box}
 .combobox-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;margin:0;padding:6px;
   list-style:none;max-height:240px;overflow:auto;border-radius:8px;border:1px solid #8eaff366;
   background:#071039fa;box-shadow:0 14px 32px #01032199}

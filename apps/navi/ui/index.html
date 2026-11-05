@@ -137,13 +137,16 @@
       </div>
       <p class="hint" id="model-note">The answering model is reported with every reply.</p>
       <label class="field" for="setting-agent">OpenCode agent</label>
-      <select id="setting-agent"></select>
-      <label class="field" for="setting-profiles">Harness profiles</label>
-      <div id="profiles-editor"></div>
+      <select id="setting-agent" aria-describedby="agent-note"></select>
+      <p class="hint" id="agent-note"></p>
+      <p class="field" id="profiles-label">Harness profiles</p>
+      <div class="profile-row profile-head" aria-hidden="true"><span>Name</span><span>Command</span><span>Arguments</span><span></span></div>
+      <div id="profiles-editor" role="group" aria-labelledby="profiles-label"></div>
+      <p class="hint" id="profiles-note"></p>
       <button type="button" id="profile-add">Add harness</button>
       <p class="hint">The system prompt lives in OpenCode's <b>navi</b> agent and applies on the next turn. Another agent will use its own prompt instead.</p>
       <div class="actions">
-        <button type="button" id="settings-new">New session</button>
+        <button type="button" id="settings-new" title="Start a fresh OpenCode conversation for the assistant">New assistant session</button>
         <span class="spacer"></span>
         <button type="button" id="settings-cancel">Cancel</button>
         <button type="submit" class="primary">Save</button>
@@ -154,7 +157,8 @@
     <form id="new-form" method="dialog">
       <h2>New session</h2>
       <label class="field" for="new-profile">Harness</label>
-      <select id="new-profile"></select>
+      <select id="new-profile" aria-describedby="new-profile-note"></select>
+      <p class="hint" id="new-profile-note"></p>
       <label class="field" for="new-cwd">Project directory</label>
       <input id="new-cwd" list="new-projects" placeholder="/path/to/project">
       <datalist id="new-projects"></datalist>

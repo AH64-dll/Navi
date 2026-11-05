@@ -3572,6 +3572,8 @@ async function refreshHarnesses() {
     harnessFound=new Map(list.map(item=>[String(item.name),item.found===true]));
     if (launchOpen) renderLaunchMenu();
     if (snapshot) surfaceSettings(snapshot);
+    if (dialog.open) noteProfiles();
+    if (newDialog.open) fillNewProfiles(element('new-profile').value);
   } catch { /* availability stays unknown */ }
 }
 function profileInstalled(profile) {
@@ -3702,14 +3704,30 @@ function renderSessions(list) {
 
 /* New-session dialog: pick a harness profile, project, optional prompt. */
 const newDialog=element('new-dialog');
-function openNewDialog() {
-  const settings=snapshot?.settings||{};
-  const profile=element('new-profile'); profile.replaceChildren();
-  for (const p of settings.profiles||[]) {
-    const entry=document.createElement('option'); entry.value=p.id; entry.textContent=p.name||p.id;
-    if (p.executable==='/bin/bash') entry.textContent+=' (terminal)';
-    profile.append(entry);
+/* The dialog offers what the launch menu offers: harnesses before the plain
+ * terminal, a harness that is not installed shown but not selectable, and the
+ * first installed harness preselected instead of whatever profile is listed first. */
+function fillNewProfiles(current) {
+  const select=element('new-profile');
+  select.replaceChildren();
+  for (const profile of harnessProfiles()) {
+    const entry=document.createElement('option');
+    entry.value=profile.id;
+    const installed=profileInstalled(profile);
+    entry.textContent=(profile.name||profile.id)+(isTerminalProfile(profile)?' (terminal)':installed?'':' — not installed');
+    entry.disabled=!installed;
+    select.append(entry);
   }
+  const options=[...select.options];
+  const keep=options.find(entry=>entry.value===current&&!entry.disabled);
+  const preferred=preferredProfile();
+  select.value=keep?.value||preferred?.id||options.find(entry=>!entry.disabled)?.value||'';
+  const missing=harnessProfiles().filter(profile=>!profileInstalled(profile)).map(profile=>profile.name||profile.id);
+  element('new-profile-note').textContent=missing.length?'Not installed: '+missing.join(', ')+'. Settings can point a harness at its full path.':'';
+}
+function openNewDialog() {
+  fillNewProfiles(null);
+  refreshHarnesses();
   /* The default directory is the active project, not the first one: the
    * switcher decides where a new session lands (BUG-090). */
   const cwd=element('new-cwd');
@@ -3949,6 +3967,7 @@ async function fillSettingsSelects(settings) {
   agent.replaceChildren();
   option(agent,agentId,agentId);
   agent.value=agentId;
+  element('agent-note').textContent='';
   try {
     const agents=await catalog('agents','oc_agents');
     const known=agents.filter(item=>item&&item.id);
@@ -3962,27 +3981,86 @@ async function fillSettingsSelects(settings) {
     agent.replaceChildren();
     option(agent,agentId,agentId);
     agent.value=agentId;
-    toast('OpenCode agents unavailable: '+error.message);
+    element('agent-note').textContent='Agent list unavailable: '+error.message+' — the saved agent is kept.';
   }
+}
+/* BUG-077: arguments must round-trip spaces and quoting exactly; the old
+ * whitespace join destroyed `--flag "two words"` on every save. The field shows
+ * shell words (`--flag 'two words'`) and parses them back with the same quoting
+ * rules, so the round trip is exact without asking the user to write JSON. */
+function formatArgs(args) {
+  return (args||[]).map(arg=>{
+    const text=String(arg);
+    if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text)) return text;
+    return "'"+text.replace(/'/g,"'\\''")+"'";
+  }).join(' ');
+}
+function parseArgs(text) {
+  const raw=String(text||'').trim();
+  if (raw.startsWith('[')) {
+    const args=JSON.parse(raw);
+    if (!Array.isArray(args)||args.some(arg=>typeof arg!=='string')) throw new Error('a JSON list must hold only strings');
+    return args;
+  }
+  const args=[];
+  let current='', started=false, quote=null;
+  for (let index=0;index<raw.length;index++) {
+    const char=raw[index];
+    if (quote==="'") { if (char==="'") quote=null; else current+=char; continue; }
+    if (quote==='"') {
+      if (char==='"') quote=null;
+      else if (char==='\\'&&index+1<raw.length&&'"\\$`'.includes(raw[index+1])) current+=raw[++index];
+      else current+=char;
+      continue;
+    }
+    if (/\s/.test(char)) { if (started) { args.push(current); current=''; started=false; } continue; }
+    started=true;
+    if (char==="'"||char==='"') quote=char;
+    else if (char==='\\'&&index+1<raw.length) current+=raw[++index];
+    else current+=char;
+  }
+  if (quote) throw new Error('a '+(quote==='"'?'double':'single')+' quote is not closed');
+  if (started) args.push(current);
+  return args;
 }
 function profileRow(profile={id:'',name:'',executable:'',args:[]}) {
   const row=document.createElement('div'); row.className='profile-row';
   /* The daemon's id is not derivable from the display name ("Claude Code" is
    * `claude`), so the row carries it: a save must not read as a rename. */
   row.dataset.id=profile.id||'';
-  const make=(cls,placeholder,value)=>{
+  const label=profile.name||profile.id||'new harness';
+  const make=(cls,placeholder,value,name)=>{
     const field=document.createElement('input'); field.className=cls; field.placeholder=placeholder; field.value=value;
+    field.spellcheck=false; field.autocomplete='off';
+    field.setAttribute('aria-label',name+' for '+label);
     row.append(field); return field;
   };
-  make('profile-name','Name',profile.name||'');
-  make('profile-exec','Executable',profile.executable||'');
-  /* BUG-077: a JSON array round-trips spaces and quoting exactly; the old
-   * whitespace join destroyed `--flag "two words"` on every save. */
-  make('profile-args','Args (JSON array)',JSON.stringify(profile.args||[]));
-  const drop=document.createElement('button'); drop.type='button'; drop.className='icon profile-remove'; drop.textContent='×'; drop.title='Remove harness';
-  drop.onclick=()=>row.remove();
+  /* Example text only on a fresh row: five identical placeholders read as values. */
+  const fresh=!profile.id;
+  make('profile-name',fresh?'Name':'',profile.name||'','Name');
+  make('profile-exec',fresh?'codex or /path/to/bin':'',profile.executable||'','Command').oninput=noteProfiles;
+  make('profile-args',fresh?'--flag value':'',formatArgs(profile.args),'Arguments');
+  const drop=document.createElement('button'); drop.type='button'; drop.className='icon profile-remove'; drop.textContent='×';
+  drop.title='Remove harness'; drop.setAttribute('aria-label','Remove '+label);
+  drop.onclick=()=>{ row.remove(); noteProfiles(); };
   row.append(drop);
   return row;
+}
+/* Commands the launch PATH probe did not find are outlined and named once under
+ * the list; an unknown probe result marks nothing. */
+function noteProfiles() {
+  const missing=[];
+  for (const row of element('profiles-editor').children) {
+    const field=row.querySelector('.profile-exec');
+    const executable=field.value.trim();
+    const absent=!!executable&&!profileInstalled({id:row.dataset.id,executable});
+    field.classList.toggle('missing',absent);
+    field.title=absent?executable+' is not on the launch PATH':'';
+    if (absent) missing.push(executable);
+  }
+  element('profiles-note').textContent=missing.length
+    ?'Not found on the launch PATH: '+[...new Set(missing)].join(', ')+'. Install it, or give its full path.'
+    :'';
 }
 function collectProfiles() {
   /* The editor edits three fields and the daemon owns the rest (harness, env,
@@ -3995,13 +4073,9 @@ function collectProfiles() {
     const exec=row.querySelector('.profile-exec').value.trim();
     const original=known.get(row.dataset.id);
     if (!exec&&!original) continue;  // a fresh row nobody filled in
-    const raw=row.querySelector('.profile-args').value.trim()||'[]';
     let args;
-    try { args=JSON.parse(raw); }
-    catch { throw new Error('Args for "'+(name||exec||'profile')+'" must be a JSON array'); }
-    if (!Array.isArray(args)||args.some(arg=>typeof arg!=='string')) {
-      throw new Error('Args for "'+(name||exec||'profile')+'" must be an array of strings');
-    }
+    try { args=parseArgs(row.querySelector('.profile-args').value); }
+    catch (error) { throw new Error('Arguments for "'+(name||exec||'harness')+'": '+error.message); }
     profiles.push({
       ...original,
       id:original?original.id
@@ -4013,7 +4087,11 @@ function collectProfiles() {
   }
   return profiles;
 }
-element('profile-add').onclick=()=>element('profiles-editor').append(profileRow());
+element('profile-add').onclick=()=>{
+  const row=profileRow();
+  element('profiles-editor').append(row);
+  row.querySelector('.profile-name').focus();
+};
 function openSettings() {
   if (!snapshot) { toast('Navi is still connecting'); return; }
   const settings=snapshot.settings;
@@ -4026,6 +4104,8 @@ function openSettings() {
   const editor=element('profiles-editor');
   editor.replaceChildren();
   for (const profile of settings.profiles||[]) editor.append(profileRow(profile));
+  noteProfiles();
+  refreshHarnesses();
   dialog.showModal();
   fillSettingsSelects(settings);
   fillDiagnostics();
