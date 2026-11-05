@@ -407,3 +407,112 @@ pub fn assessment_prompt(adapter: &str, parts: &[String], facts: &str) -> String
     }
     prompt
 }
+
+const LINK_USAGE: &str = "navid link [claude|codex|opencode|pi]   print how to link a harness started outside Navi";
+
+/// `navid link`: the one-time setup that links a harness started outside
+/// Navi. Panes Navi opens are linked per launch; a harness started by hand
+/// needs Navi's MCP server in its own config. The daemon then resolves the
+/// project from the harness's working directory. This prints the snippets
+/// rather than editing config files, so nothing changes without the user.
+pub fn link(args: &[String]) -> Result<()> {
+    let wanted = args.first().map(String::as_str);
+    if matches!(wanted, Some("-h" | "--help")) {
+        println!("{LINK_USAGE}");
+        return Ok(());
+    }
+    let harnesses = ["claude", "codex", "opencode", "pi"];
+    if let Some(name) = wanted.filter(|name| !harnesses.contains(name)) {
+        return Err(format!("Unknown harness {name}\n{LINK_USAGE}"));
+    }
+    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
+    let exe_text = exe.to_string_lossy().into_owned();
+    // Only directory overrides in effect now; a default install needs none.
+    let station_env: BTreeMap<String, String> = ["NAVI_ISOLATED", "NAVI_DATA_DIR", "NAVI_RUNTIME_DIR"]
+        .into_iter()
+        .filter_map(|key| {
+            std::env::var(key)
+                .ok()
+                .filter(|value| !value.is_empty())
+                .map(|value| (key.to_string(), value))
+        })
+        .collect();
+    let env_for = |harness: &str| {
+        let mut env = station_env.clone();
+        env.insert("NAVI_HARNESS".to_string(), harness.to_string());
+        env
+    };
+    let mut sections = Vec::new();
+    for harness in harnesses.into_iter().filter(|name| wanted.is_none_or(|wanted| wanted == *name)) {
+        let env = env_for(harness);
+        let body = match harness {
+            "claude" => {
+                let flags = env
+                    .iter()
+                    .map(|(key, value)| format!("-e {key}={}", shell_word(value)))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                format!(
+                    "Claude Code: run once\n  claude mcp add --scope user navi {flags} -- {} mcp\nthen allow its tools in ~/.claude/settings.json under permissions.allow:\n  {}",
+                    shell_word(&exe_text),
+                    CLAUDE_TOOLS.replace(',', ", ")
+                )
+            }
+            "codex" => {
+                let table = env
+                    .iter()
+                    .map(|(key, value)| format!("{key} = {}", toml_string(value)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(
+                    "Codex: add to ~/.codex/config.toml\n  [mcp_servers.navi]\n  command = {}\n  args = [\"mcp\"]\n  env = {{ {table} }}",
+                    toml_string(&exe_text)
+                )
+            }
+            "opencode" => {
+                let config = json!({"mcp": {"navi": {
+                    "type": "local", "command": [exe_text, "mcp"], "environment": env, "enabled": true,
+                }}});
+                let pretty = serde_json::to_string_pretty(&config).unwrap_or_default();
+                format!(
+                    "OpenCode: merge into ~/.config/opencode/opencode.json\n{}",
+                    indent(&pretty)
+                )
+            }
+            _ => {
+                let mut cli: Vec<String> = env
+                    .iter()
+                    .map(|(key, value)| format!("{key}={}", shell_word(value)))
+                    .collect();
+                cli.push(shell_word(&exe_text));
+                format!(
+                    "Pi: Pi has no MCP; add this to the project's AGENTS.md (or ~/.pi/agent/AGENTS.md)\n{}",
+                    indent(&cli_instructions(&cli.join(" ")))
+                )
+            }
+        };
+        sections.push(body);
+    }
+    println!(
+        "{}\n\nStart the harness inside a project Navi knows (or a folder below it); reports land on that project.",
+        sections.join("\n\n")
+    );
+    Ok(())
+}
+
+fn indent(text: &str) -> String {
+    text.lines().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n")
+}
+
+/// Quote for a POSIX shell only when needed.
+fn shell_word(text: &str) -> String {
+    if !text.is_empty()
+        && text
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "/._-=:,+@".contains(character))
+    {
+        text.to_string()
+    } else {
+        format!("'{}'", text.replace('\'', "'\\''"))
+    }
+}

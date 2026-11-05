@@ -1708,6 +1708,7 @@ fn main() {
         Some("native") => native(),
         Some("mcp") => link::mcp(),
         Some("progress") => link::progress(&args[2..]),
+        Some("link") => link::link(&args[2..]),
         Some("rpc") => serde_json::from_str(
             args.get(2)
                 .map(String::as_str)
@@ -1717,7 +1718,7 @@ fn main() {
         .and_then(rpc)
         .map(|value| println!("{value}")),
         _ => {
-            println!("navid serve | native | mcp | progress [report|task] | rpc '<JSON request>'");
+            println!("navid serve | native | mcp | progress [report|task] | link [harness] | rpc '<JSON request>'");
             Ok(())
         }
     };

@@ -349,6 +349,15 @@ The project is the pane's session project, else the registered project containin
 working directory, else the only project; `--project` overrides it. A report moves the
 number at once and adds one feed row ("Claude Code put Voice at 60% — evidence").
 
+A harness started outside Navi has none of this until its own config names the server.
+`navid link [claude|codex|opencode|pi]` prints that one-time setup with this binary's
+absolute path and the harness name in `NAVI_HARNESS`: a `claude mcp add` command, a
+`[mcp_servers.navi]` table for `~/.codex/config.toml`, an `mcp.navi` block for
+`opencode.json`, and the CLI instructions for Pi's `AGENTS.md`. It prints instead of
+editing those files. Started anywhere inside a registered project folder, the harness
+then reports to that project, because the daemon resolves the project from the
+working directory.
+
 #### Project detector
 
 `project_detect {project_id, via?}` runs from the Assess button, `/assess`, or "assess
