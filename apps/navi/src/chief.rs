@@ -638,6 +638,28 @@ impl App {
         Ok(format!("Which one: {}?", names.join(", ")))
     }
 
+    /// Whether the command's project has a task or part named like `spoken`.
+    fn names_task_or_part(&self, clause: &str, spoken: &str) -> bool {
+        let Ok(project) = self.command_project(clause, &Value::Null) else {
+            return false;
+        };
+        let Ok(graph) = self.graph_get(project["id"].as_str()) else {
+            return false;
+        };
+        let wanted = loose_title(spoken);
+        let aspects = graph["aspects"].as_array().into_iter().flatten();
+        aspects
+            .clone()
+            .flat_map(|aspect| aspect["items"].as_array().into_iter().flatten())
+            .chain(graph["unassigned"].as_array().into_iter().flatten())
+            .chain(aspects)
+            .any(|row| {
+                let title = loose_title(row["title"].as_str().unwrap_or(""));
+                // Whole words: a part named "UI" is not in "the build".
+                !title.is_empty() && (mentioned(&title, &wanted) || mentioned(&wanted, &title))
+            })
+    }
+
     /// The choices of a "Which one" this command just asked, for the chat to
     /// offer as buttons (a pending question from before was taken already).
     fn choice_extra(&self) -> Value {
@@ -1556,6 +1578,12 @@ impl App {
         if short && let Some((task, state)) = parse_task_state(&lower) {
             return Ok(Some(json!({"kind":"task_state","task":task,"state":state})));
         }
+        if short
+            && let Some((task, state)) = parse_task_statement(&lower)
+            && self.names_task_or_part(clause, &task)
+        {
+            return Ok(Some(json!({"kind":"task_state","task":task,"state":state})));
+        }
         let asking = [
             "how far along", "how far are we", "how far is", "how much is done", "how much of",
             "how complete", "how close", "how much is left", "how much left", "what percent",
@@ -1570,7 +1598,9 @@ impl App {
             "is the project done", "is the project finished", "is the project complete",
             "are we done", "are we finished", "are we there yet", "what's next", "what is next",
             "whats next", "what should i work on", "what should i do next", "what do i do next",
-            "needs doing", "need doing", "left to do", "still to do",
+            "needs doing", "need doing", "left to do", "still to do", "where are we",
+            "status update", "coming along", "how's it going", "how is it going", "bring up the progress",
+            "pull up the progress", "bring up the graph", "pull up the graph",
         ]
         .iter()
         .chain(RECENT_PHRASES.iter())
@@ -1579,12 +1609,35 @@ impl App {
             // "Is the voice part done?" asks about one part.
             || (lower.starts_with("is the ")
                 && mentioned(&lower, "part")
-                && ["done", "finished", "complete"].iter().any(|word| lower.ends_with(word)));
+                && ["done", "finished", "complete"].iter().any(|word| lower.ends_with(word)))
+            // "What's the status" of the project, not "… of Codex".
+            || (["what's the status", "what is the status", "whats the status"]
+                .iter()
+                .any(|phrase| lower.starts_with(phrase))
+                && lower.split_once(" status of ").is_none_or(|(_, rest)| {
+                    let rest = rest.strip_prefix("the ").unwrap_or(rest);
+                    matches!(rest, "project" | "this project" | "repo" | "codebase" | "progress")
+                        || self.projects().is_ok_and(|projects| {
+                            projects.iter().any(|project| {
+                                project["name"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(rest))
+                            })
+                        })
+                }))
+            // "Is barge-in done?" asks about one task or part by name.
+            || (lower.strip_prefix("is ").and_then(|rest| {
+                let rest = rest.strip_suffix(" yet").unwrap_or(rest);
+                ["done", "finished", "complete", "blocked"]
+                    .iter()
+                    .find_map(|word| rest.strip_suffix(word))
+                    .map(|name| name.trim().to_string())
+            }))
+            .is_some_and(|name| !name.is_empty() && self.names_task_or_part(clause, &name));
         let core = [" for ", " of ", " in ", " on "]
             .iter()
             .filter_map(|marker| lower.find(marker))
             .min()
             .map_or(lower.as_str(), |cut| &lower[..cut]);
+        let core = core.strip_suffix(" please").unwrap_or(core);
         let last = core.split_whitespace().last().unwrap_or_default();
         let strong = ["progress", "completion", "percent", "percentage", "detector"]
             .iter()
@@ -1613,7 +1666,7 @@ impl App {
             return Ok(Some(json!({"kind":"detect"})));
         }
         if short && asking && progress_subject(&lower) {
-            let show = ["show", "open", "display"].iter().any(|word| mentioned(&lower, word));
+            let show = ["show", "open", "display", "bring up", "pull up"].iter().any(|word| mentioned(&lower, word));
             let left = ["what's left", "what is left", "whats left", "what remains", "what's remaining",
                 "what is remaining", "how much is left", "how much left", "how much remains",
                 "what's next", "what is next", "whats next", "what should i work on",
@@ -1634,7 +1687,7 @@ impl App {
         }
         let settings = self.settings();
         let switching = ["switch", "go back", "go to", "return to", "select", "focus", "jump to",
-            "change to", "move to"]
+            "change to", "move to", "take me to", "show me", "show", "pull up"]
             .iter()
             .any(|word| mentioned(&lower, word));
         let resuming = ["resume", "continue", "existing"]
@@ -1900,7 +1953,7 @@ impl App {
             .iter()
             .any(|phrase| lower.contains(phrase));
         let yes_no = ["is ", "are ", "has ", "did "].iter().any(|prefix| lower.starts_with(prefix))
-            && ["done", "finished", "ready", "waiting", "working", "busy", "still", "stuck", "open",
+            && ["done", "finished", "finish", "complete", "ready", "waiting", "working", "busy", "still", "stuck", "open",
                 "running", "idle", "alive", "blocked", "asking", "thinking"]
                 .iter()
                 .any(|word| mentioned(lower, word));
@@ -1969,13 +2022,37 @@ impl App {
                     .flatten()
                     .filter(|aspect| mentioned(&spoken, &loose_title(aspect["title"].as_str().unwrap_or(""))))
                     .collect();
-                let mut text = match named.as_slice() {
+                // "Is barge-in done?": one task named and no part.
+                let tasks: Vec<(&Value, &Value)> = graph["aspects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|aspect| aspect["items"].as_array().into_iter().flatten().map(move |task| (task, aspect)))
+                    .filter(|(task, _)| mentioned(&spoken, &loose_title(task["title"].as_str().unwrap_or(""))))
+                    .collect();
+                let mut text = match (named.as_slice(), tasks.as_slice()) {
+                    ([], [(task, aspect)]) => {
+                        let state = match task["state"].as_str().unwrap_or_default() {
+                            "done" if task["verified"] == true => "done and verified",
+                            "done" => "done",
+                            "in_progress" => "in progress",
+                            "blocked" => "blocked",
+                            _ => "not started",
+                        };
+                        format!(
+                            "“{}” in {} is {state}.",
+                            task["title"].as_str().unwrap_or("That task"),
+                            aspect["title"].as_str().unwrap_or("its part")
+                        )
+                    }
+                    _ => match named.as_slice() {
                     [aspect] => store::part_sentence(&graph, aspect),
                     _ if action["recent"] == true => {
                         store::recent_sentence(&graph, crate::now().saturating_sub(86_400_000))
                     }
                     _ if action["left"] == true => store::remaining_sentence(&graph),
                     _ => store::progress_sentence(&graph),
+                    },
                 };
                 if graph["percent"].is_null() {
                     text.push_str(" Say “assess the project” and I will ask a harness to judge it.");
@@ -3149,6 +3226,11 @@ fn immediate_request(text: &str) -> bool {
         "fire up",
         "spin up",
         "boot up",
+        "take me to",
+        "show me",
+        "show",
+        "pull up",
+        "new",
     ]
     .iter()
     .any(|verb| {
@@ -3259,6 +3341,45 @@ fn parse_task_state(lower: &str) -> Option<(String, &'static str)> {
     (!title.is_empty() && title.split_whitespace().count() <= 8).then(|| (title.to_string(), state))
 }
 
+/// "Barge-in is done", "we finished barge-in", "voice is blocked": a statement
+/// about one task or part. The caller keeps it only when a task or part by
+/// that name exists, so "the build is done" stays conversation.
+fn parse_task_statement(lower: &str) -> Option<(String, &'static str)> {
+    let text = lower.trim();
+    if ["is ", "are ", "has ", "have ", "did ", "does ", "do ", "what", "how", "when", "why", "which", "who"]
+        .iter()
+        .any(|prefix| text.starts_with(prefix))
+    {
+        return None;
+    }
+    let finished = ["we finished ", "i finished ", "finished ", "we're done with ", "we are done with ",
+        "i'm done with ", "done with ", "we completed ", "i completed "]
+        .iter()
+        .find_map(|prefix| text.strip_prefix(prefix));
+    let (title, state) = match finished {
+        Some(rest) => (rest, "done"),
+        None => {
+            const STATES: [(&str, &str); 8] = [
+                (" is not done", "todo"),
+                (" is done", "done"),
+                (" is finished", "done"),
+                (" is complete", "done"),
+                (" is completed", "done"),
+                (" is blocked", "blocked"),
+                (" is in progress", "in_progress"),
+                (" is started", "in_progress"),
+            ];
+            STATES.iter().find_map(|(suffix, state)| text.strip_suffix(suffix).map(|title| (title, *state)))?
+        }
+    };
+    let title = title.trim();
+    let title = title.strip_prefix("the ").unwrap_or(title);
+    let title = title.strip_suffix(" task").or_else(|| title.strip_suffix(" part")).unwrap_or(title).trim();
+    let whole = matches!(title, "it" | "this" | "that" | "everything" | "project" | "this project"
+        | "we" | "all" | "i");
+    (!whole && !title.is_empty() && title.split_whitespace().count() <= 6).then(|| (title.to_string(), state))
+}
+
 /// The one-line answer to an action the decision model chose, when the action
 /// itself produced no reply.
 fn action_summary(kind: &str, action: &Value, result: &Value) -> Option<String> {
@@ -3330,15 +3451,20 @@ fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
             || words
                 .get(index + 1)
                 .is_some_and(|next| next.starts_with("percent"));
-        (marked && (0.0..=100.0).contains(&value)).then_some((index, value))
+        // "Put the station UI at 75": a bare number ends a set command.
+        let bare = index + 1 == words.len()
+            && index > 0
+            && matches!(words[index - 1], "at" | "to")
+            && matches!(words[0], "set" | "put" | "bump" | "move" | "raise" | "lower" | "mark");
+        ((marked || bare) && (0.0..=100.0).contains(&value)).then_some((index, value))
     })?;
     let before = words[..index].join(" ");
     let name = if let Some(rest) = before.strip_prefix("set ") {
         rest.strip_suffix(" to")
             .or_else(|| rest.strip_suffix(" at"))?
-    } else if let Some(rest) = before
-        .strip_prefix("mark ")
-        .or_else(|| before.strip_prefix("put "))
+    } else if let Some(rest) = ["mark ", "put ", "bump ", "move ", "raise ", "lower "]
+        .iter()
+        .find_map(|verb| before.strip_prefix(verb))
     {
         rest.strip_suffix(" at")
             .or_else(|| rest.strip_suffix(" as"))
