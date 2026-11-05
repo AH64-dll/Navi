@@ -458,7 +458,7 @@ model and without the assistant:
 | "Thanks", "never mind", "cancel", "forget it" | A short acknowledgement, without waking the assistant |
 | "What time is it", "what's the date" | The local time or date |
 | "Navi?", "hello", "um" | Only a wake word, greeting or filler: Navi asks what you need (spoken, so the answer needs no wake word) |
-| "Open settings", "add a project" | Opens that dialog in the station window |
+| "Open settings", "add a project", "full screen" | Opens that dialog in the station window, or toggles full screen |
 | "Stop listening", "turn off the mic", "mute", "stop talking", "speak replies" | Turns the microphone off (or on, outside isolated mode) or the spoken replies off or on; muting also cuts a reply being read out |
 | "Is Codex done?", "what is Claude doing", "what's running", "is anything busy", `/sessions`, "does anything need my input", "list sessions" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them; "is Pi open" with no Pi says it is not open |
 | "What did Codex say?", "what's on the terminal's screen", "what does it say", "read me the last output" | Reads the last four lines with text on that session's screen ("it" or no name means the active session), without the borders, key hints and waiting prompt |

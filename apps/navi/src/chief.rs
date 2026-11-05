@@ -1698,6 +1698,9 @@ impl App {
             "add a project" | "add project" | "add a new project" | "new project" | "register a project" => {
                 Some(("add_project", "Choose the project's folder."))
             }
+            "fullscreen" | "full screen" | "go fullscreen" | "go full screen" | "toggle fullscreen"
+            | "toggle full screen" | "exit fullscreen" | "exit full screen" | "leave full screen"
+            | "leave fullscreen" => Some(("fullscreen", "Toggled full screen.")),
             _ => None,
         };
         // "Stop listening", "mute": the microphone and spoken-reply settings.
