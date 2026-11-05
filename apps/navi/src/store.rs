@@ -1434,6 +1434,9 @@ pub fn progress_text(graph: &Value) -> String {
     if let Some(why) = graph["why"].as_str() {
         lines.push(format!("Basis: {why}"));
     }
+    if graph["pace"]["days"].as_f64().unwrap_or(0.0) >= 1.0 {
+        lines.push(format!("Pace: {}", pace_sentence(graph)));
+    }
     let aspects = graph["aspects"].as_array().cloned().unwrap_or_default();
     if aspects.is_empty() {
         lines.push("No parts are defined yet. Report a part by name to create it.".into());
