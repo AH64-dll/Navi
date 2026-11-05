@@ -1544,6 +1544,18 @@ impl App {
         {
             return Ok(Some(json!({"kind":"ack","reply":"Okay."})));
         }
+        // Station dialogs: the reply carries the action the window takes.
+        let dialog = match bare {
+            "settings" | "open settings" | "open the settings" | "show settings" | "show the settings"
+            | "open preferences" | "preferences" => Some(("show_settings", "Opened settings.")),
+            "add a project" | "add project" | "add a new project" | "new project" | "register a project" => {
+                Some(("add_project", "Choose the project's folder."))
+            }
+            _ => None,
+        };
+        if let Some((action, reply)) = dialog {
+            return Ok(Some(json!({"kind":"ui","action":action,"reply":reply})));
+        }
         if ["which project am i in", "what project am i in", "which project is this",
             "what project is this", "list projects", "list the projects", "list my projects",
             "what projects", "which projects", "my projects"]
@@ -2398,6 +2410,8 @@ impl App {
             "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({}))})),
             "ack" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
                 json!({}))})),
+            "ui" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
+                json!({"action": action["action"]}))})),
             "progress_hide" => Ok(json!({"reply": reply(None, "Closed the progress panel.".into(),
                 json!({"action":"hide_graph"}))})),
             "session_status" => {

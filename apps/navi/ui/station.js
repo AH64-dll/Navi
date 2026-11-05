@@ -19,6 +19,9 @@ let busy = false;
  * events only. */
 const REPLAY_SLACK=15000;
 let replayBefore=Date.now()-REPLAY_SLACK;
+/* Dialogs open only for replies newer than this page: the replay slack above keeps
+ * an in-flight answer live across a reload, but must not reopen a dialog. */
+const PAGE_START=Date.now();
 
 /* ---------------- transport: bounded, expiring, self-healing ---------------- */
 
@@ -1180,6 +1183,9 @@ function replyDone(event) {
     }
     if (details.action==='show_graph') showGraph(true);
     if (details.action==='hide_graph') showGraph(false);
+    const fresh=Number(event.time||Date.now())>=PAGE_START;
+    if (fresh&&details.action==='show_settings') openSettings();
+    if (fresh&&details.action==='add_project') openProjectDialog();
     if (details.action==='show_graph'||details.progress_recorded>0) scheduleGraph(300);
     const project=String(details.project_id||'');
     if (assessing&&assessing.via==='assistant'&&project===assessing.project&&details.source!=='navi') endAssessment(project);

@@ -439,6 +439,7 @@ model and without the assistant:
 | "Reopen Codex", "resume terminal", "reopen Codex #2" | Reopens a finished session from Recent (newest first, this project first) under its old name; a harness that recorded its conversation id continues that conversation. Clicking a finished chip does the same. When nothing finished matches but that session is open, Navi says so; otherwise the words go on to "reopen <task>" |
 | "Help", "what can you do", `/help` | Lists what Navi answers without a model |
 | "Thanks", "never mind", "cancel", "forget it" | A short acknowledgement, without waking the assistant |
+| "Open settings", "add a project" | Opens that dialog in the station window |
 | "Is Codex done?", "what is Claude doing", "what's running", "is anything busy", `/sessions`, "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them; "is Pi open" with no Pi says it is not open |
 
 Steps chain with "then" (or "and" when every half is one of these commands), at most
