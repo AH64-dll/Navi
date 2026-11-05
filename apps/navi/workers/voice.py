@@ -259,7 +259,7 @@ def harness_target(transcript, status):
 
     Resolves the named session among running harnesses ('this'/'active' uses
     the active session). Returns None when the phrase or target is not a
-    harness route. A session whose terminal a child process owns (`busy`) or
+    harness route, or names several sessions (the daemon resolves those). A session whose terminal a child process owns (`busy`) or
     that is still starting reports busy instead of being typed over; the same
     rule as the daemon's typed "tell Codex to ..." route.
     """
@@ -278,12 +278,12 @@ def harness_target(transcript, status):
         wanted_id = settings.get("active_session")
         target = next((s for s in sessions if s.get("id") == wanted_id), None)
     else:
-        target = None
-        for session in sessions:
-            name = (session.get("name") or "").casefold()
-            if name and (name == wanted or name.startswith(wanted) or wanted.startswith(name)):
-                target = session
-                break
+        matches = [s for s in sessions
+                   if (name := (s.get("name") or "").casefold())
+                   and (name == wanted or name.startswith(wanted) or wanted.startswith(name))]
+        # Several by that name (Codex in two projects): the daemon's typed
+        # route picks the one in the station's project, or asks which.
+        target = matches[0] if len(matches) == 1 else None
     if target is None:
         return None
     session_state = str(target.get("state") or "idle").lower()
