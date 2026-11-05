@@ -1964,7 +1964,24 @@ impl App {
         {
             return Ok(Some(json!({"kind":"detect"})));
         }
-        if short && asking && progress_subject(&lower) {
+        // "When will acme-api be done?": the pace, for the project it names.
+        // A session's name ("when will Codex finish") is a session question.
+        let finish = match lower.strip_prefix("when will ").and_then(|rest| {
+            [" be done", " be finished", " be complete", " be completed", " finish", " be ready"]
+                .iter()
+                .find_map(|end| rest.strip_suffix(end))
+        }) {
+            Some("we" | "it" | "the project" | "this project" | "this" | "everything") => true,
+            Some(subject) => {
+                let subject = subject.strip_prefix("the ").unwrap_or(subject);
+                let subject = subject.strip_suffix(" project").unwrap_or(subject);
+                self.projects()?
+                    .iter()
+                    .any(|project| project["name"].as_str().is_some_and(|name| name.eq_ignore_ascii_case(subject)))
+            }
+            None => false,
+        };
+        if short && (asking || finish) && progress_subject(&lower) {
             let show = ["show", "open", "display", "bring up", "pull up"].iter().any(|word| mentioned(&lower, word));
             let left = ["what's left", "what is left", "whats left", "what remains", "what's remaining",
                 "what is remaining", "how much is left", "how much left", "how much remains",
@@ -1980,7 +1997,8 @@ impl App {
             let topic = TOPIC_PHRASES
                 .iter()
                 .find(|(_, phrases)| phrases.iter().any(|phrase| lower.contains(phrase)))
-                .map(|(topic, _)| *topic);
+                .map(|(topic, _)| *topic)
+                .or(finish.then_some("pace"));
             return Ok(Some(json!({"kind":"progress","show":show,"left":left,"recent":recent,
                 "stale":stale,"blocked":blocked,"done":done,"topic":topic})));
         }
@@ -2493,6 +2511,7 @@ impl App {
                         store::recent_sentence(&graph, crate::now().saturating_sub(86_400_000))
                     }
                     _ if action["topic"] == "estimate" => estimate_sentence(&graph, true),
+                    _ if action["topic"] == "pace" => store::pace_sentence(&graph),
                     _ if action["topic"] == "parts" => parts_sentence(&graph),
                     _ if action["topic"] == "active" => active_sentence(&graph),
                     _ if action["topic"] == "next" => match action["for"].as_str() {
@@ -4529,7 +4548,12 @@ const STALE_PHRASES: [&str; 7] = [
 ];
 
 /// Progress questions with their own answer, checked in order.
-const TOPIC_PHRASES: [(&str, &[&str]); 6] = [
+const TOPIC_PHRASES: [(&str, &[&str]); 7] = [
+    ("pace", &["how long until", "how long till", "how long before we", "how long will it take", "how much longer",
+        "when will we be done", "when will we finish", "when will it be done", "when will it be finished",
+        "when will the project be", "when will we be finished", "when are we going to be done",
+        "what's the eta", "whats the eta", "what is the eta", "any eta", "the pace", "how fast are we",
+        "how quickly are we", "finish date", "at this rate", "at this pace"]),
     ("estimate", &["last estimate", "latest estimate", "newest estimate", "the estimate based", "how confident",
         "confidence", "why is it", "why is the project", "why is navi", "where does the number",
         "where does the percent", "what is it based on", "what's it based on", "how was it estimated"]),

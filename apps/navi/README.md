@@ -343,7 +343,11 @@ User: "set the station UI to 70%" (a part, newer than the headline)     → head
 The payload is `{project, percent, percent_null, verified, confidence, as_of, why,
 basis{kind: estimate|parts|none, source, time}, estimate, trend[{time, percent,
 source}], aspects[], unassigned[], tasks{total, todo, in_progress, done, blocked,
-dropped}, risks[], commits_since, signals[], signal_count}`. Each part carries `percent`,
+dropped}, risks[], commits_since, signals[], signal_count, pace{days, from, since,
+per_day, eta_days, history[{time, percent}]}}`. `pace` comes from `progress_days`, which
+keeps each project's headline once a day (the day's last value): `per_day` compares it with
+the oldest kept day of the last two weeks, and `eta_days` is the linear time to 100% while
+the headline rises by at least 0.05 points a day. Each part carries `percent`,
 `percent_null`, `basis` (`estimate`, `tasks` or `none`), its `estimate`, the `derived`
 task mean, `verified`, `confidence` and its task `items[]`. The newest 40 signals (working-tree clean/dirty flips collapsed to the current one)
 travel with the payload, so every number can be explained by the rows behind it.
@@ -449,6 +453,7 @@ model and without the assistant:
 | "Compare the projects", "how are all my projects doing" | Every project with its percent |
 | "What did Codex report?", "what has Claude Code reported" | That harness's three latest estimates or task verdicts on the project, with when and the evidence it gave |
 | "When was the last estimate?", "how confident is the estimate", "why is it 86 percent" | Where the headline comes from (parts or a whole-project estimate), who last estimated the project, when and on what evidence, the confidence, and commits since |
+| "How long until we're done?", "when will acme-api be done", "what's the ETA", "at this rate…" | The pace of the last two weeks of daily headlines and the time to 100% at that pace (linear, so a rough guide); with less than a day of history it says to ask again tomorrow |
 | "List the parts", "list the tasks", "how many tasks are left", "what's in progress", "what's the next task" | Each part with its percent, the open tasks, the open count by state, the tasks in progress, or the task to pick up next (in progress first, then the part furthest behind) |
 | "Tell Codex what's left", "give Codex the next task", "tell Claude to do the next task" | Sends that session a prompt built from Navi's record: the unfinished parts and open tasks, or the next task, with a reminder to report through the progress tools. Voice leaves these to the same route. A terminal is refused: it takes commands, not tasks |
 | "What should Codex work on?" | The next task, and the sentence that sends it to that harness |
@@ -501,7 +506,9 @@ navid ask "tell codex to run the tests"
   Clicking it opens the panel; Escape closes it.
 - The **project switcher** shows each project's headline percent.
 - The **progress panel** (the "Progress" pill) shows the headline, confidence, the
-  task count with its verified share (left out when there are no tasks) and a trend line of whole-project estimates; each part's bar marks the
+  task count with its verified share (left out when there are no tasks), the pace in points a
+  day (its tooltip gives the days to 100% at that pace) and a trend line of the daily
+  headlines (whole-project estimates until there are two days); each part's bar marks the
   task-derived value when an estimate leads. A part expands to its basis, evidence and
   task checklist: ticking a box records a user verdict, and parts, tasks and percents
   can be added or set in place. Risks, unassigned tasks, the last scan and an evidence

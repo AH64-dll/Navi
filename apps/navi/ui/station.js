@@ -3275,7 +3275,8 @@ function meter(value,barClass,fillClass,marker) {
   }
   return bar;
 }
-/* The whole-project estimates over time, oldest first, as one line. */
+/* The headline over time, oldest first, as one line: the daily headlines when
+ * there are two, else the whole-project estimates. */
 function trendLine(trend) {
   const points=(Array.isArray(trend)?trend:[])
     .map(point=>Number(point?.percent))
@@ -3395,7 +3396,8 @@ function graphHeader(graph,project) {
   const value=graphNode('strong','graph-percent',graphScoreLabel(graph));
   value.dataset.null=String(unknown);
   score.append(value,graphNode('span','graph-caption','complete'));
-  const trend=trendLine(graph?.trend);
+  const daily=graph?.pace?.history;
+  const trend=trendLine(Array.isArray(daily)&&daily.length>=2?daily:graph?.trend);
   if (trend) score.append(trend);
   head.append(score);
   head.append(meter(unknown?null:graph.percent,'graph-bar','meter-fill'));
@@ -3415,6 +3417,16 @@ function graphHeader(graph,project) {
     const verified=graphStat('Verified',formatPercent(graph.verified));
     verified.title='Share of task weight backed by a passing test, a commit or your verdict';
     stats.append(verified);
+  }
+  /* Points a day over the last two weeks of daily headlines, once there is a day. */
+  const pace=graph?.pace;
+  if (!unknown&&pace&&Number(pace.days)>=1&&Number.isFinite(Number(pace.per_day))) {
+    const perDay=Number(pace.per_day);
+    const stat=graphStat('Pace',(perDay>0?'+':'')+perDay.toFixed(1)+'/day');
+    const eta=Number(pace.eta_days);
+    stat.title=`From ${wholePercent(pace.from)} over ${Number(pace.days)} day${Number(pace.days)===1?'':'s'}`
+      +(Number.isFinite(eta)&&eta>0?`; about ${eta} day${eta===1?'':'s'} to 100% at this pace`:'; no finish date at this pace');
+    stats.append(stat);
   }
   head.append(stats);
   const actions=graphNode('div','graph-actions');

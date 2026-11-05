@@ -121,6 +121,13 @@ CREATE TABLE IF NOT EXISTS window_state (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS progress_days (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    day INTEGER NOT NULL,
+    percent REAL NOT NULL,
+    time INTEGER NOT NULL,
+    PRIMARY KEY(project_id, day)
+);
 "#;
 
 pub fn migrate(db: &Connection, settings: &Value) -> Result<()> {
@@ -1541,7 +1548,106 @@ fn source_label(source: Option<&str>) -> String {
 }
 
 pub fn graph_score(db: &Connection, project_id: &str) -> Result<Value> {
-    graph_score_at(db, project_id, now())
+    let at = now();
+    let mut graph = graph_score_at(db, project_id, at)?;
+    graph["pace"] = record_pace(db, project_id, graph["percent"].as_f64(), at)?;
+    Ok(graph)
+}
+
+/// How long a pace looks back.
+const PACE_DAYS: u64 = 14;
+
+/// Keeps the headline once per day (the day's last value) and compares it with
+/// the oldest kept day of the last two weeks: `per_day` points a day over
+/// `days`, and `eta_days` to 100% at that pace while it is rising.
+fn record_pace(db: &Connection, project_id: &str, percent: Option<f64>, at: u64) -> Result<Value> {
+    let Some(value) = percent else {
+        return Ok(json!({"days":0}));
+    };
+    let day = at / 86_400_000;
+    db.execute(
+        "INSERT INTO progress_days(project_id,day,percent,time) VALUES(?1,?2,?3,?4)
+         ON CONFLICT(project_id,day) DO UPDATE SET percent=excluded.percent,time=excluded.time
+         WHERE progress_days.percent<>excluded.percent",
+        params![project_id, day as i64, value, at as i64],
+    )
+    .map_err(|error| error.to_string())?;
+    // The last month of daily headlines, oldest first, for the trend line.
+    let mut statement = db
+        .prepare(
+            "SELECT percent,time FROM progress_days WHERE project_id=?1 AND day>=?2 ORDER BY day",
+        )
+        .map_err(|error| error.to_string())?;
+    let history: Vec<Value> = statement
+        .query_map(params![project_id, day.saturating_sub(30) as i64], |row| {
+            Ok(json!({"percent":row.get::<_, f64>(0)?,"time":row.get::<_, i64>(1)?}))
+        })
+        .map_err(|error| error.to_string())?
+        .filter_map(|row| row.ok())
+        .collect();
+    drop(statement);
+    let oldest: Option<(f64, i64)> = db
+        .query_row(
+            "SELECT percent,time FROM progress_days WHERE project_id=?1 AND day>=?2 AND day<?3
+             ORDER BY day LIMIT 1",
+            params![project_id, day.saturating_sub(PACE_DAYS) as i64, day as i64],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((before, since)) = oldest else {
+        return Ok(json!({"days":0,"history":history}));
+    };
+    let days = (at.saturating_sub(since as u64) as f64 / 86_400_000.0).max(1.0);
+    let per_day = (value - before) / days;
+    // Under a twentieth of a point a day is standing still, not a date.
+    let eta = (per_day >= 0.05 && value < 100.0).then(|| ((100.0 - value) / per_day).ceil());
+    Ok(json!({"days":days.round(),"from":before,"since":since,"per_day":(per_day * 10.0).round() / 10.0,
+        "eta_days":eta,"history":history}))
+}
+
+/// "How long until we're done": the pace of the last two weeks and the day
+/// 100% falls on at that pace.
+pub fn pace_sentence(graph: &Value) -> String {
+    let name = graph["project"]["name"].as_str().unwrap_or("The project");
+    let Some(value) = graph["percent"].as_f64() else {
+        return format!("{name} has no estimate yet, so there is no pace to project.");
+    };
+    if value >= 99.5 {
+        return format!("{name} is already at 100%.");
+    }
+    let pace = &graph["pace"];
+    let days = pace["days"].as_f64().unwrap_or(0.0);
+    if days < 1.0 {
+        return format!(
+            "{name} is at {}%. I record the headline once a day, so a pace needs a day of history. Ask again tomorrow.",
+            value.round()
+        );
+    }
+    let from = pace["from"].as_f64().unwrap_or(value);
+    let span = if days == 1.0 { "the last day".to_string() } else { format!("the last {days} days") };
+    let moved = if from.round() == value.round() {
+        format!("{name} has stayed at {}% for {span}", value.round())
+    } else {
+        format!("{name} went from {}% to {}% in {span}", from.round(), value.round())
+    };
+    match pace["eta_days"].as_f64() {
+        Some(eta) => {
+            let when = match eta {
+                eta if eta <= 1.0 => "about a day".to_string(),
+                eta if eta <= 21.0 => format!("about {eta} days"),
+                eta if eta <= 120.0 => format!("about {} weeks", (eta / 7.0).round()),
+                eta if eta <= 365.0 => format!("about {} months", (eta / 30.0).round()),
+                _ => "more than a year".to_string(),
+            };
+            format!(
+                "{moved}, about {} points a day. At that pace it reaches 100% in {when}.",
+                pace["per_day"].as_f64().unwrap_or(0.0)
+            )
+        }
+        None if value < from => format!("{moved}, so it is moving backwards and there is no finish date to project."),
+        None => format!("{moved}, so there is no finish date to project yet."),
+    }
 }
 
 impl App {
