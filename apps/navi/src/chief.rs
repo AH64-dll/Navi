@@ -2412,7 +2412,9 @@ impl App {
             "how many terminals", "open sessions", "running sessions"]
             .iter()
             .any(|phrase| lower.contains(phrase));
-        let yes_no = ["is ", "are ", "has ", "did "].iter().any(|prefix| lower.starts_with(prefix))
+        // "When will Codex finish?" asks for its state; the session filter below
+        // keeps it to a named session.
+        let yes_no = ["is ", "are ", "has ", "did ", "when will "].iter().any(|prefix| lower.starts_with(prefix))
             && ["done", "finished", "finish", "complete", "ready", "waiting", "working", "busy", "still", "stuck", "open",
                 "running", "idle", "alive", "blocked", "asking", "thinking"]
                 .iter()
@@ -2435,6 +2437,20 @@ impl App {
             })
             .map(|session| session["id"].clone())
             .collect();
+        // "Is Codex #2 done", "what's codex two doing": the numbered label
+        // narrows several same-named sessions to one.
+        let labels = session_labels(&sessions);
+        let spoken = format!(" {} ", spoken_numbers(lower));
+        let numbered: Vec<Value> = ids
+            .iter()
+            .filter(|id| {
+                id.as_str()
+                    .and_then(|id| labels.get(id))
+                    .is_some_and(|label| label.contains('#') && spoken.contains(&format!(" {} ", spoken_numbers(label))))
+            })
+            .cloned()
+            .collect();
+        let ids = if numbered.is_empty() { ids } else { numbered };
         if ids.is_empty() && !(waiting || overview) {
             // "Is Codex open?" with no Codex: say so rather than ask a model.
             let settings = self.settings();
