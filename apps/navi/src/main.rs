@@ -1741,7 +1741,14 @@ fn main() {
         .and_then(rpc)
         .map(|value| println!("{value}")),
         _ => {
-            println!("navid serve | native | mcp | progress [report|task] | link [harness] | rpc '<JSON request>'");
+            println!(
+                "navid serve                   run the station daemon
+navid native                  browser native-messaging host
+navid mcp                     MCP server a harness starts to report progress
+navid progress [report|task]  read or report progress from a shell (navid progress -h)
+navid link [harness]          print the setup for a harness started outside Navi
+navid rpc '<JSON request>'    send one request to the daemon"
+            );
             Ok(())
         }
     };

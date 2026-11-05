@@ -234,7 +234,8 @@ pub fn mcp() -> Result<()> {
 
 const PROGRESS_USAGE: &str = "navid progress                                  show this project's progress
 navid progress report <percent> \"<evidence>\" [--part NAME] [--confidence 0-1]
-navid progress task <todo|in_progress|done|blocked> \"<title>\" \"<evidence>\" [--part NAME]";
+navid progress task <todo|in_progress|done|blocked> \"<title>\" \"<evidence>\" [--part NAME]
+Add --project NAME outside the project's folder.";
 
 /// `navid progress …`: the same link for harnesses without MCP.
 pub fn progress(args: &[String]) -> Result<()> {
