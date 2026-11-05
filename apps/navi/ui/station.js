@@ -794,6 +794,17 @@ function atBottom(log) {
   if (!log) return true;
   return log.scrollHeight-log.scrollTop-log.clientHeight<40;
 }
+/* Following the log is the reader's choice, changed only by the reader scrolling
+ * (or sending). Geometry alone strands them: the inline toast shrinks the log
+ * without a scroll, and the `scroll` event of Navi's own pin arrives a frame
+ * later, measured against the shrunken log (42 px off the bottom), so it read
+ * as the reader leaving. Only a position Navi did not set counts as the reader. */
+let followLog=true, ownScrollTop=-1;
+function pinLog(log) {
+  log.scrollTop=log.scrollHeight;
+  ownScrollTop=log.scrollTop;
+  followLog=true;
+}
 function rememberHeight(id,node) {
   const height=node?.getBoundingClientRect().height;
   if (height&&height>0) rowHeights.set(id,height);
@@ -812,7 +823,7 @@ function rebuildLog(log,ids,top,bottom) {
 function updatePill(log) {
   const pill=element('chat-pill');
   if (!pill) return;
-  pill.hidden=atBottom(log)||messages.length===0;
+  pill.hidden=followLog||atBottom(log)||messages.length===0;
 }
 
 function paintChat() {
@@ -820,7 +831,7 @@ function paintChat() {
   const log=chatLog();
   if (!log) return;
   const total=messages.length;
-  const pinned=atBottom(log);
+  const pinned=followLog||atBottom(log);
   let start=0, end=total;
   if (total>RENDER_WINDOW*2+1) {
     if (pinned) {
@@ -847,7 +858,7 @@ function paintChat() {
   }
   const top=sumHeights(0,start), bottom=sumHeights(end,total);
   if (!sameList(nextIds,mountedOrder)||top!==spacerTop||bottom!==spacerBottom) rebuildLog(log,nextIds,top,bottom);
-  if (pinned) log.scrollTop=log.scrollHeight;
+  if (pinned) pinLog(log);
   updatePill(log);
 }
 /* Paint now instead of on the next frame: paging has to measure the height it
@@ -1568,6 +1579,7 @@ async function loadOlder() {
     if (log&&rows.length) {
       flushChat();
       log.scrollTop=top+(log.scrollHeight-height);
+      ownScrollTop=log.scrollTop;
     }
   } finally { pagingHistory=false; }
 }
@@ -1726,6 +1738,7 @@ async function dispatch(text,options={}) {
   if (!value) return null;
   const source=options.source||'typed';
   activeText=value;
+  followLog=true;   // sending is a request to see the answer
   const user=options.userMessage||addMessage({
     role:'user', time:Date.now(), status:'complete',
     parts:[{type:'text',text:value}],
@@ -2356,6 +2369,7 @@ element('empty-settings').onclick=()=>openSettings();
  * bottom, and a pill offers to jump when content lands below it (BUG-047). */
 chatLog().addEventListener('scroll',()=>{
   const log=chatLog();
+  if (Math.abs(log.scrollTop-ownScrollTop)>1) followLog=atBottom(log);
   updatePill(log);
   if (log.scrollTop<200) loadOlder();
   if (messages.length>RENDER_WINDOW*2+1) chatChanged();
@@ -2363,9 +2377,18 @@ chatLog().addEventListener('scroll',()=>{
 element('chat-pill').onclick=()=>{
   const log=chatLog();
   if (!log) return;
-  log.scrollTop=log.scrollHeight;
+  pinLog(log);
   updatePill(log);
 };
+/* The log's own box changes when the toast or the voice banner shows or hides,
+ * or the panel resizes; a following reader stays on the newest row. */
+if (typeof ResizeObserver==='function') {
+  new ResizeObserver(()=>{
+    const log=chatLog();
+    if (followLog) pinLog(log);
+    updatePill(log);
+  }).observe(chatLog());
+}
 /* Enter accepts a voice transcript; Escape turns it into an editable draft. */
 commandInput().addEventListener('keydown',event=>{
   if (!confirmState.active) return;
@@ -3389,7 +3412,7 @@ function syncFrame() {
 const stageRegion=element('stage-region');
 if (stageRegion&&typeof ResizeObserver==='function') new ResizeObserver(()=>syncFrame()).observe(stageRegion);
 
-addEventListener('resize',()=>{ reconcileDock(); syncFrame(); scheduleFit(); });
+addEventListener('resize',()=>{ reconcileDock(); syncFrame(); scheduleFit(); fitStrip(sessionsBar()); });
 
 /* The strip is a session list, not a table dump: live sessions first, dead ones
  * collapsed under Recent, duplicates disambiguated, profile *names* instead of ids,
@@ -3700,6 +3723,15 @@ function renderSessions(list) {
   }
   desired.push(launchWrap);
   orderNodes(bar,desired);
+  fitStrip(bar);
+}
+/* Both layouts are measured in one task, so the one that wraps is never painted. */
+function fitStrip(bar) {
+  if (!bar) return;
+  bar.classList.remove('compact');
+  const items=[...bar.children].filter(node=>!node.hidden&&node.offsetParent!==null);
+  const top=items[0]?.offsetTop??0;
+  if (items.some(node=>node.offsetTop>top+4)) bar.classList.add('compact');
 }
 
 /* New-session dialog: pick a harness profile, project, optional prompt. */

@@ -1322,6 +1322,13 @@ impl App {
         }
     }
 
+    /// Whether Navi's own assistant could answer now: OpenCode is reachable, or
+    /// the gateway would find the CLI to start it. A failed probe is unavailable.
+    pub(crate) fn assistant_available(&self) -> bool {
+        self.gateway_op(&["status"])
+            .is_ok_and(|status| status["reachable"] == true || status["spawnable"] == true)
+    }
+
     /// Background assessment by Navi's own assistant when no harness runs in
     /// the project. It waits behind any running turn like a queued command;
     /// `converse` records the reply's PROGRESS lines.

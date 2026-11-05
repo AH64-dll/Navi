@@ -110,7 +110,9 @@ and rehydrated (`messages`) on boot; scrolling to the top asks for the page befo
 oldest loaded cursor (`messages {limit,before}`) and stops when the store answers
 `has_more:false`, so a page can never repeat or skip a row even when timestamps
 collide. Only the rows around the viewport are mounted. The log autoscrolls only when
-the reader is already at the bottom and otherwise offers a "jump to latest" pill.
+the reader is following it: following stops only when the reader scrolls away from
+the bottom (a toast or banner resizing the log does not count) and resumes when they
+scroll back, press the "jump to latest" pill, or send a message.
 
 The status chip is a projection of the poll payload (`Ready`, `Working`, `Attention`,
 `Host not responding`), beside a short model name with an inline switcher and a
@@ -361,7 +363,12 @@ the project":
    lands as the harness reports it. With none, or with `via:"assistant"`, Navi's own
    assistant reads the project in the background and answers with lines of the form
    `PROGRESS part "<part>" <percent> | <evidence>` and `PROGRESS overall <percent> |
-   <evidence>`, recorded as estimates with confidence 0.6.
+   <evidence>`, recorded as estimates with confidence 0.6. When that assistant cannot
+   answer either (the gateway's `status` finds no OpenCode server and no `opencode`
+   CLI to start one), Navi opens the first launch profile whose harness reports through
+   the link and is installed, in the project, with the assessment request as its first
+   prompt (`via:"launch"`), and the harness reports as above. With nothing installed
+   the request fails with a message that names what to install.
 
 The HUD reads "Assessing…" and a comet circles the ring until reports arrive.
 

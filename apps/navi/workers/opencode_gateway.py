@@ -1030,7 +1030,7 @@ def main(argv):
     import argparse
     parser = argparse.ArgumentParser(prog="opencode_gateway")
     parser.add_argument("mode", choices=["ask", "slash", "models", "agents", "commands",
-                                         "new", "interrupt", "permission"])
+                                         "new", "interrupt", "permission", "status"])
     parser.add_argument("text", nargs="?", default="")
     parser.add_argument("--model", default=None)
     parser.add_argument("--agent", default=None)
@@ -1049,6 +1049,12 @@ def main(argv):
     gateway = Gateway(model=args.model, agent=args.agent, directory=args.directory)
 
     try:
+        if args.mode == "status":
+            # Whether an assistant turn could run now, without starting anything:
+            # a server answers, or `ask` would find the CLI to spawn one.
+            print(json.dumps({"reachable": gateway.reachable(),
+                              "spawnable": bool(gateway.autospawn and shutil.which("opencode"))}))
+            return 0
         if args.mode == "models":
             print(json.dumps(gateway.models()))
             return 0

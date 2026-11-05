@@ -1231,6 +1231,23 @@ impl App {
         Ok(result)
     }
 
+    /// The launch profile an assessment opens when nothing else can judge: the
+    /// first profile, in settings order, whose harness reports through the
+    /// progress link and whose executable resolves on the launch PATH.
+    pub(crate) fn assessment_profile(&self) -> Option<Value> {
+        let dirs = self.launch_dirs();
+        self.settings()["profiles"].as_array()?.iter().find(|profile| {
+            let Some(executable) = profile["executable"].as_str() else {
+                return false;
+            };
+            let harness = profile["harness"].as_str().unwrap_or_else(|| {
+                Path::new(executable).file_name().and_then(|name| name.to_str()).unwrap_or("")
+            });
+            matches!(adapters::adapter_for(harness), "claude" | "codex" | "opencode" | "pi")
+                && adapters::resolve(executable, &dirs).is_ok()
+        }).cloned()
+    }
+
     pub fn create_session(&self, p: &Value) -> Result<Value> {
         let profile = self.profile(p["profile"].as_str().unwrap_or_default())?;
         let cwd = p["cwd"].as_str().ok_or("Select a project directory")?;

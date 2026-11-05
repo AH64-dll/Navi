@@ -143,10 +143,12 @@ class Station(Gtk.Window):
         if os.environ.get("NAVI_QA_OUTPUT"):
             delay = int(os.environ.get("NAVI_QA_DELAY", "8"))
             # QA only: a script that puts the page in the state to capture (for
-            # example `navi.showGraph(true)`), run two seconds before the shot.
+            # example `navi.showGraph(true)`), run two seconds before the shot
+            # unless NAVI_QA_SCRIPT_AT names the second (a slow flow needs longer).
             script = os.environ.get("NAVI_QA_SCRIPT")
             if script:
-                GLib.timeout_add_seconds(max(1, delay - 2), self.evaluate, script)
+                at = int(os.environ.get("NAVI_QA_SCRIPT_AT", str(delay - 2)))
+                GLib.timeout_add_seconds(max(1, min(at, delay - 1)), self.evaluate, script)
             GLib.timeout_add_seconds(max(1, delay), self.capture_qa)
 
     # ---- geometry: the monitor at the pointer, clamped to its work area ----

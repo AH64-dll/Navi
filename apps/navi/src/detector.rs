@@ -10,6 +10,9 @@
 //! runs in the project, Navi types an assessment request into it and the
 //! harness reports through the progress link as it inspects the code. Without
 //! one, Navi's own assistant is asked and its `PROGRESS` lines are recorded.
+//! When that assistant cannot answer either (OpenCode neither reachable nor
+//! installed), Navi opens the first installed linked harness in the project
+//! with the assessment as its first prompt.
 
 use crate::{App, Result, link, now, store};
 use serde_json::{Value, json};
@@ -654,6 +657,45 @@ impl App {
             return Ok(json!({
                 "project_id": project_id, "scan": scan, "seeded": seeded,
                 "via": "harness", "started": true, "session": target,
+                "harness": harness, "message": message,
+            }));
+        }
+        // No harness runs here and Navi's assistant cannot answer: open an
+        // installed harness in the project and let it judge through the link,
+        // instead of failing on a missing OpenCode.
+        if requested != "assistant" && !self.assistant_available() {
+            let Some(profile) = self.assessment_profile() else {
+                return Err(format!(
+                    "Nothing can judge {name} yet: Navi's assistant (OpenCode) is not available and no linked harness is installed. Install OpenCode, Claude Code, Codex or Pi."
+                ));
+            };
+            let executable = profile["executable"].as_str().unwrap_or_default();
+            let harness = profile["harness"].as_str().unwrap_or_else(|| {
+                Path::new(executable).file_name().and_then(|name| name.to_str()).unwrap_or("")
+            });
+            let adapter = crate::adapters::adapter_for(harness);
+            let label = profile["name"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| store::source_name(adapter));
+            let prompt = link::assessment_prompt(adapter, &parts, &digest);
+            let session = self.create_session(&json!({
+                "profile": profile["id"], "cwd": path, "prompt": prompt,
+            }))?;
+            let target = session["id"].as_str().unwrap_or_default().to_string();
+            let message = format!(
+                "Opened {label} to assess {name}, since Navi's assistant is not available. Its estimates will appear as it reports."
+            );
+            self.event_for(
+                Some(&project_id),
+                Some(&target),
+                "progress",
+                &message,
+                json!({"project_id":project_id,"assessment":"launch","session":target,"source":adapter}),
+            );
+            return Ok(json!({
+                "project_id": project_id, "scan": scan, "seeded": seeded,
+                "via": "launch", "started": true, "session": target,
                 "harness": harness, "message": message,
             }));
         }

@@ -312,6 +312,12 @@ body.still .session-dot{animation:none}
 .sessions-recent{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sessions-recent-chips{display:flex;flex-wrap:wrap;gap:8px}
 .recent-toggle{border-style:dashed;color:#9fb6d4;font-size:10px}
+/* Crowded strip: chips drop the state word before the strip wraps onto a second
+   line; the dot and the tooltip still carry it, and a session waiting for input
+   or interrupted keeps its word. */
+.sessions.compact .session-chip{gap:6px;padding:5px 9px}
+.sessions.compact .session-chip:not([data-state="needs_input"]):not([data-state="interrupted"]) .session-state{display:none}
+.sessions.compact .session-name{max-width:130px}
 
 /* Quick launch: one click opens a harness in the active project. */
 .launch-wrap{position:relative;display:flex}
