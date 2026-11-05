@@ -2138,7 +2138,12 @@ impl App {
                         if tasks.is_empty() {
                             "This project has no tasks yet. A harness adds them as it reports, or add one in the progress panel.".to_string()
                         } else if exact.len() + partial.len() > 1 {
-                            format!("More than one task matches “{spoken}”: {}.", names.join(", "))
+                            // "The second one" or a title answers it, as for sessions.
+                            let choices: Vec<Value> =
+                                names.iter().map(|title| json!({"label":title,"task":title})).collect();
+                            *self.pending_choice.lock().unwrap() =
+                                Some(json!({"time":now(),"action":action,"choices":choices}));
+                            format!("More than one task matches “{spoken}”: {}. Which one?", names.join(", "))
                         } else {
                             format!("No task matches “{spoken}”. Tasks: {}.", names.join(", "))
                         }
@@ -3445,6 +3450,8 @@ fn resolve_choice(text: &str, pending: &Value) -> Option<Value> {
     let mut action = pending["action"].clone();
     if action["kind"] == "switch" {
         action = json!({"kind":"switch","id":choice["id"],"name":choice["name"]});
+    } else if action["kind"] == "task_state" {
+        action["task"] = choice["task"].clone();
     } else {
         action["ids"] = json!([choice["id"]]);
     }
