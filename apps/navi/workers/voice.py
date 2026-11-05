@@ -311,42 +311,62 @@ def harness_target(transcript, status):
     return {"id": target["id"], "name": target.get("name"), "text": text}
 
 
-def waiting_transitions(previous, sessions):
-    """Sessions that just started waiting for input.
+# A harness that worked at least this long is announced when it finishes; a
+# shell command that took a second is not news.
+DONE_AFTER = 20.0
 
-    Returns the new state map and the names to announce. A session seen for
-    the first time is never announced, so a restart does not read out every
+
+def session_transitions(previous, sessions, now=None):
+    """Sessions that just started waiting for input, and ones that finished.
+
+    `previous` maps a session id to (state, busy_since). Returns the new map,
+    the names now waiting for input, and the names that went from working
+    (for at least DONE_AFTER seconds) back to ready. A session seen for the
+    first time is never announced, so a restart does not read out every
     harness that was already waiting.
     """
+    now = time.monotonic() if now is None else now
     states = {}
-    names = []
+    waiting = []
+    done = []
     for session in sessions:
         if not session.get("running"):
             continue
+        sid = session.get("id")
         state = str(session.get("state") or "")
-        states[session.get("id")] = state
-        before = previous.get(session.get("id"))
+        before, since = previous.get(sid, (None, None))
+        if state == "busy":
+            since = since if before == "busy" and since is not None else now
+        states[sid] = (state, since if state == "busy" else None)
+        name = session.get("name") or "A harness"
         if before is not None and before != "needs_input" and state == "needs_input":
-            names.append(session.get("name") or "A harness")
-    return states, names
+            waiting.append(name)
+        elif before == "busy" and state == "idle" and since is not None and now - since >= DONE_AFTER:
+            done.append(name)
+    return states, waiting, done
 
 
 def watch_waiting(snapshot, playback, stop, interval=1.0):
-    """Say "Codex is waiting for your input" when Speak replies is on."""
+    """Say "Codex is waiting for your input" and "Codex is done" when Speak
+    replies is on."""
     states = None
     while not stop.wait(interval):
         status = snapshot.value
         if not isinstance(status, dict):
             continue
-        current, names = waiting_transitions(states or {}, status.get("sessions") or [])
+        current, waiting, done = session_transitions(states or {}, status.get("sessions") or [])
         if states is None:
-            names = []
+            waiting, done = [], []
         states = current
         settings = status.get("settings") or {}
-        if not names or not settings.get("speak"):
+        if not (waiting or done) or not settings.get("speak"):
             continue
-        verb = "is" if len(names) == 1 else "are"
-        playback.start(f"{' and '.join(names)} {verb} waiting for your input",
+        lines = []
+        if waiting:
+            lines.append(f"{' and '.join(waiting)} {'is' if len(waiting) == 1 else 'are'} waiting for your input.")
+        if done:
+            lines.append(f"{' and '.join(done)} {'is' if len(done) == 1 else 'are'} done.")
+        playback.start(" ".join(lines),
                        settings.get("persona"),
                        language=(settings.get("speech") or {}).get("language"))
 

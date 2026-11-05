@@ -574,7 +574,10 @@ Piper, and barge-in cancels playback as described above.
 A harness that starts waiting for input is announced once, on the transition. The
 station shows a notice ("Codex is waiting for your input") unless that pane is the one
 on screen. With **Speak replies** on, the voice worker also says it, unless Navi is
-already speaking. Sessions already waiting when Navi starts are not announced.
+already speaking. Sessions already waiting when Navi starts are not announced. In the
+same way, with Speak replies on, a harness that worked for at least 20 seconds and is
+ready for a prompt again is announced as done ("Codex is done"); a quick shell command
+is not.
 
 The single `navi` persona in `config/personas.json` (overridable from
 `~/.config/navi/personas.toml`) only supplies the edge voice, Piper fallback and
