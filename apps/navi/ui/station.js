@@ -277,6 +277,16 @@ function hydrateMessages(rows, options={}) {
   return fresh.length;
 }
 function reindex() { messages.forEach((message,index)=>{ message.index=index; }); }
+/* Remove a row that never received content (a turn placeholder). */
+function dropEmptyRow(id) {
+  const message=messageById.get(id);
+  if (!message||messageText(message)) return;
+  const index=messages.indexOf(message);
+  if (index>=0) messages.splice(index,1);
+  messageById.delete(id);
+  reindex();
+  chatChanged();
+}
 function chatChanged() {
   updateEmptyState();
   if (!chatFrame) chatFrame=requestAnimationFrame(paintChat);
@@ -1083,6 +1093,15 @@ function replyDone(event) {
     finishRequest(requestId);
     return;
   }
+  /* A reply that switched project is stored in the project it was asked in.
+   * Once the station has moved, a second delivery (the feed after the RPC
+   * result) finds no row to match in the new transcript and must not add one. */
+  if (typeof details.switch_project==='string'&&details.switch_project===activeProjectId()
+    &&details.project_id&&details.project_id!==activeProjectId()) {
+    if (requestId) dropEmptyRow(turnRowId(requestId));
+    finishRequest(requestId);
+    return;
+  }
   const message=finalMessage(event);
   const part=lastTextPart(message,true);
   part.text=text;                     // the finished answer owns the row
@@ -1122,6 +1141,9 @@ function replyDone(event) {
     if (target&&target!==activeProjectId()) {
       Promise.resolve(saved).finally(()=>{
         switchProject(target);
+        /* The new project's transcript replaces the view; the answer stays
+         * readable for a moment. */
+        toast(text);
         if (details.action==='show_graph') showGraph(true);
       });
       return;
@@ -3234,7 +3256,9 @@ function taskList(items) {
     });
     const title=graphNode('span','task-title',String(item.title||'Task'));
     const known=item.percent!==null&&item.percent!==undefined;
-    const value=graphNode('span','task-value',known?wholePercent(item.percent):'—');
+    /* An open task at 0% is just open: the checkbox already says so. */
+    const quiet=state==='todo'&&(!known||Number(item.percent)===0);
+    const value=graphNode('span','task-value',quiet?'':known?wholePercent(item.percent):'—');
     value.title=known
       ?`${capitalise(sourceName(item.source))}${item.verified?' · verified':''}${item.time?' · '+relativeTime(item.time):''}`
       :'No evidence yet';

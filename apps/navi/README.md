@@ -417,7 +417,7 @@ model and without the assistant:
 | "Set the UI to 80%", "put voice at 60 percent", "the project is at 70%", `/set voice to 80%` | Records a user estimate for that part, or for the whole project |
 | "Mark barge-in done", "check off barge-in", "reopen barge-in", `/mark barge-in in progress` | Sets a task's state as a user verdict; with no matching task, "mark <part> done" puts the part at 100% |
 | "Open Codex", `/open claude code` | Brings forward the Codex already open in the active project, else launches one; "open a new Codex" (or "… called X") always launches |
-| "Switch to acme-api", "go to acme-api", "open the acme-api project" | Makes that project active in the station (a session with that name wins) and speaks its headline |
+| "Switch to acme-api", "go to acme-api", "open the acme-api project" | Makes that project active in the station (a session with that name wins) and speaks its headline. The reply is stored with the question, in the project it was asked in, and shows as a notice after the switch |
 | "Stop Codex", "interrupt terminal number two", "close terminal #2", "quit Claude Code" | Interrupts (stop, interrupt, pause) or closes (close, quit, exit, kill, end) that one session. The words after the verb must name a single open session, so "stop opening Codex" is not read this way. With two candidates, a session in the active project wins, otherwise Navi asks which. A closed session stays under Recent |
 | "Help", "what can you do", `/help` | Lists what Navi answers without a model |
 | "Is Codex done?", "what is Claude doing", "what's running", `/sessions`, "does anything need my input" | Answers from the panes' state (working, waiting for your input, running a command, idle, starting), named as the session strip names them |

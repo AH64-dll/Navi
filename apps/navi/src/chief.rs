@@ -2320,8 +2320,13 @@ impl App {
         }
         // The last step's reply may be about something else ("…then assess
         // the project"), so the switch travels in its own field.
+        // The reply belongs beside its question, in the project it was asked
+        // in; the station moves to the new project after storing it.
         if !switched.is_null() && reply.is_object() {
             reply["switch_project"] = switched;
+            if let Some(asked_in) = pid.as_deref() {
+                reply["project_id"] = json!(asked_in);
+            }
         }
         // One reply per command reaches the chat: every step's answer joined,
         // unless the only answer was a model turn that already posted itself.
