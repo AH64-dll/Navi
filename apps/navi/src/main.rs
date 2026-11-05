@@ -78,6 +78,8 @@ pub struct App {
     /// The project the station shows; commands without a `project_id`
     /// (voice) default to it.
     current_project: Mutex<Option<String>>,
+    /// A "Which one" question from the last command and its choices.
+    pending_choice: Mutex<Option<Value>>,
     pub generation: AtomicU64,
     pub config_version: AtomicU64,
     workers: Mutex<Vec<(String, Child)>>,
@@ -382,6 +384,7 @@ impl App {
             command_queue: Mutex::new(VecDeque::new()),
             assistant_dir: Mutex::new(None),
             current_project: Mutex::new(None),
+            pending_choice: Mutex::new(None),
             generation: AtomicU64::new(0),
             config_version: AtomicU64::new(0),
             workers: Mutex::new(Vec::new()),

@@ -624,6 +624,20 @@ impl App {
         Ok(AssistantTurn { id, path, context, attachments })
     }
 
+    /// "Which one: Codex in Navi, Codex in acme-api?" — remembered for a
+    /// minute so the next command can be just the answer.
+    fn ask_which(&self, action: &Value, many: &[&Value], labels: &HashMap<String, String>) -> Result<String> {
+        let names = choice_labels(many, labels, &self.projects()?);
+        let choices: Vec<Value> = many
+            .iter()
+            .zip(&names)
+            .map(|(session, label)| json!({"id":session["id"],"name":session["name"],"label":label}))
+            .collect();
+        *self.pending_choice.lock().unwrap() =
+            Some(json!({"time":now(),"action":action,"choices":choices}));
+        Ok(format!("Which one: {}?", names.join(", ")))
+    }
+
     /// Voice sends no project: the one the station last reported, else the
     /// project of the session voice targets.
     fn station_project(&self, projects: &[Value]) -> Option<Value> {
@@ -2174,7 +2188,7 @@ impl App {
                         format!("Sent to {}: “{prompt}”.", label(session))
                     }
                     [] => "That session is no longer open.".to_string(),
-                    many => format!("Which one: {}?", choice_list(many, &labels, &self.projects()?)),
+                    many => self.ask_which(action, many, &labels)?,
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
@@ -2216,7 +2230,7 @@ impl App {
                         }
                     }
                     [] => "That session is no longer open.".to_string(),
-                    many => format!("Which one: {}?", choice_list(many, &labels, &self.projects()?)),
+                    many => self.ask_which(action, many, &labels)?,
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
@@ -2384,7 +2398,7 @@ impl App {
                                     .iter()
                                     .filter(|session| ids.contains(&session["id"]))
                                     .collect();
-                                let text = format!("Which one: {}?", choice_list(&many, &labels, &self.projects()?));
+                                let text = self.ask_which(action, &many, &labels)?;
                                 return Ok(json!({"reply": reply(None, text, json!({}))}));
                             }
                         }
@@ -2493,6 +2507,17 @@ impl App {
         }
         let (persona, _, _) = self.assistant_target();
         let steps = clauses.len();
+        // Any command settles a pending "Which one"; a one-step answer to it
+        // runs the narrowed action. A dry run only peeks.
+        let pending = if dry {
+            self.pending_choice.lock().unwrap().clone()
+        } else {
+            self.pending_choice.lock().unwrap().take()
+        };
+        let mut choice = pending
+            .as_ref()
+            .filter(|_| steps == 1)
+            .and_then(|pending| resolve_choice(clauses[0], pending));
         // "Switch to acme-api then assess the project": a step that switches
         // project rescopes the steps after it.
         let mut scope = params.clone();
@@ -2515,7 +2540,11 @@ impl App {
             }
         };
         for (step, clause) in clauses.into_iter().enumerate() {
-            if let Some(action) = self.fast_intent(clause)? {
+            let fast = match choice.take() {
+                Some(action) => Some(action),
+                None => self.fast_intent(clause)?,
+            };
+            if let Some(action) = fast {
                 let decision = json!({"selected":"fast","action":action});
                 if dry {
                     trace.push(decision);
@@ -3348,7 +3377,7 @@ fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
 
 /// "Which one: Codex in Navi, Codex in acme-api?": labels are numbered per
 /// project, so a label shared across projects gains its project's name.
-fn choice_list(chosen: &[&Value], labels: &HashMap<String, String>, projects: &[Value]) -> String {
+fn choice_labels(chosen: &[&Value], labels: &HashMap<String, String>, projects: &[Value]) -> Vec<String> {
     let names: Vec<String> = chosen
         .iter()
         .map(|session| {
@@ -3372,8 +3401,54 @@ fn choice_list(chosen: &[&Value], labels: &HashMap<String, String>, projects: &[
                 .unwrap_or("no project");
             format!("{name} in {project}")
         })
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect()
+}
+
+/// The answer to a "Which one" question asked in the last minute ("the
+/// second one", "acme-api", "Codex #2"): the pending action narrowed to it.
+fn resolve_choice(text: &str, pending: &Value) -> Option<Value> {
+    if now().saturating_sub(pending["time"].as_u64()?) > 60_000 {
+        return None;
+    }
+    let choices = pending["choices"].as_array()?;
+    let lower = conversational_text(text).to_lowercase();
+    let mut spoken = lower.trim().trim_end_matches(['.', '!', '?']).trim();
+    for prefix in ["the one in ", "the one ", "the ", "number ", "in "] {
+        spoken = spoken.strip_prefix(prefix).unwrap_or(spoken);
+    }
+    spoken = spoken.strip_suffix(" please").unwrap_or(spoken).trim();
+    // "The second one", but "Codex number one" keeps its number.
+    if let Some(head) = spoken.strip_suffix(" one")
+        && matches!(head, "first" | "second" | "third" | "fourth" | "last")
+    {
+        spoken = head;
+    }
+    let spoken = spoken_numbers(spoken);
+    let label = |choice: &Value| spoken_numbers(&choice["label"].as_str().unwrap_or_default().to_lowercase());
+    let ordinal = match spoken.as_str() {
+        "first" | "1" | "1st" => Some(0),
+        "second" | "2" | "2nd" => Some(1),
+        "third" | "3" | "3rd" => Some(2),
+        "fourth" | "4" | "4th" => Some(3),
+        "last" => choices.len().checked_sub(1),
+        _ => None,
+    };
+    let only = |hits: Vec<usize>| (hits.len() == 1).then(|| hits[0]);
+    let index = ordinal.filter(|index| *index < choices.len()).or_else(|| {
+        only((0..choices.len()).filter(|index| label(&choices[*index]) == spoken).collect()).or_else(|| {
+            (spoken.len() >= 3)
+                .then(|| only((0..choices.len()).filter(|index| label(&choices[*index]).contains(&spoken)).collect()))
+                .flatten()
+        })
+    })?;
+    let choice = &choices[index];
+    let mut action = pending["action"].clone();
+    if action["kind"] == "switch" {
+        action = json!({"kind":"switch","id":choice["id"],"name":choice["name"]});
+    } else {
+        action["ids"] = json!([choice["id"]]);
+    }
+    Some(action)
 }
 
 /// Whether `object` (already through `spoken_numbers`) is this session's
