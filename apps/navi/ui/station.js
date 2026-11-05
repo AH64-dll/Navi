@@ -3372,24 +3372,30 @@ function evidenceDrawer(signals,total) {
     row.dataset.source=String(signal.source||'');
     row.dataset.verified=String(signal.verified===true);
     const head=graphNode('div','evidence-head');
-    head.append(graphNode('span','evidence-kind',String(signal.kind||'signal')));
+    const kind=String(signal.kind||'signal');
+    /* Git rows are facts about the repository: their value is a flag, not a percent. */
+    const git=kind.startsWith('git_');
+    head.append(graphNode('span','evidence-kind',EVIDENCE_KINDS[kind]||kind.replace(/_/g,' ')));
     head.append(graphNode('span','evidence-source',capitalise(sourceName(signal.source))));
-    const scope=signal.aspect_id?aspects.get(String(signal.aspect_id)):signal.task_id?'':'whole project';
+    const scope=git?'':signal.aspect_id?aspects.get(String(signal.aspect_id)):signal.task_id?'':'whole project';
     if (scope) head.append(graphNode('span','evidence-scope',scope));
-    if (signal.value!==null&&signal.value!==undefined&&Number.isFinite(Number(signal.value))) {
+    if (!git&&signal.value!==null&&signal.value!==undefined&&Number.isFinite(Number(signal.value))) {
       head.append(graphNode('span','evidence-value',wholePercent(Number(signal.value)*100)));
     }
     if (signal.verified===true) head.append(graphNode('span','evidence-verified','verified'));
     head.append(graphNode('span','evidence-time',relativeTime(signal.time)));
     head.title=formatStamp(signal.time)+(Number.isFinite(Number(signal.id))?' · #'+signal.id:'');
     row.append(head);
-    row.append(graphNode('p','evidence-text',String(signal.evidence||'')));
+    /* Older commit rows hold the bare 40-character HEAD; twelve characters name it. */
+    row.append(graphNode('p','evidence-text',String(signal.evidence||'').replace(/^HEAD ([0-9a-f]{12})[0-9a-f]{28}\b/,'$1')));
     list.append(row);
   }
   drawer.append(list);
   return drawer;
 }
 
+const EVIDENCE_KINDS={git_commit:'commit',git_clean:'clean tree',git_dirty:'uncommitted changes',
+  test_pass:'tests pass',test_fail:'tests fail'};
 function renderGraph() {
   const region=element('graph-region');
   if (!region) return;

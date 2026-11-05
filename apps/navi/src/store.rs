@@ -1524,7 +1524,7 @@ impl App {
     }
 
     /// The HEAD the probes last saw at or before `time`, from the
-    /// `git_commit` signals ("HEAD <sha>").
+    /// `git_commit` signals ("HEAD <hash> <subject>").
     pub fn head_at(&self, project_id: &str, time: u64) -> Option<String> {
         let state = self.state.lock().unwrap();
         state
@@ -1536,7 +1536,10 @@ impl App {
                 |row| row.get::<_, String>(0),
             )
             .ok()
-            .and_then(|evidence| evidence.strip_prefix("HEAD ").map(str::to_string))
+            .and_then(|evidence| {
+                let rest = evidence.strip_prefix("HEAD ")?;
+                rest.split_whitespace().next().map(str::to_string)
+            })
     }
 
     pub fn probe_project(&self, project_id: &str) -> Result<Value> {
@@ -1565,8 +1568,14 @@ impl App {
             .map_err(|error| error.to_string())?;
         drop(state);
         if head.as_deref().unwrap_or_default() != previous_head {
+            // "HEAD 1a2b3c4d5e6f feat: subject": head_at reads the hash back.
             let evidence = match head.as_deref() {
-                Some(head) => format!("HEAD {head}"),
+                Some(head) => {
+                    let subject = git(&path, &["log", "-1", "--format=%s", head])
+                        .map(|text| text.trim().chars().take(120).collect::<String>())
+                        .unwrap_or_default();
+                    format!("HEAD {} {subject}", &head[..head.len().min(12)]).trim_end().to_string()
+                }
                 None => "no commits".to_string(),
             };
             let _ = self.add_signal(
