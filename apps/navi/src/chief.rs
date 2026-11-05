@@ -1492,7 +1492,8 @@ impl App {
             "what's remaining", "what is remaining", "how much remains", "show the graph",
             "show me the graph", "open the graph", "progress graph", "progress panel",
             "is the project done", "is the project finished", "is the project complete",
-            "are we done", "are we finished", "are we there yet",
+            "are we done", "are we finished", "are we there yet", "what's next", "what is next",
+            "whats next", "what should i work on", "what should i do next", "what do i do next",
         ]
         .iter()
         .chain(RECENT_PHRASES.iter())
@@ -1533,7 +1534,9 @@ impl App {
         if short && asking && progress_subject(&lower) {
             let show = ["show", "open", "display"].iter().any(|word| mentioned(&lower, word));
             let left = ["what's left", "what is left", "whats left", "what remains", "what's remaining",
-                "what is remaining", "how much is left", "how much left", "how much remains"]
+                "what is remaining", "how much is left", "how much left", "how much remains",
+                "what's next", "what is next", "whats next", "what should i work on",
+                "what should i do next", "what do i do next"]
                 .iter()
                 .any(|phrase| lower.contains(phrase));
             let recent = RECENT_PHRASES.iter().any(|phrase| lower.contains(phrase));
