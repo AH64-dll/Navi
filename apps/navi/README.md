@@ -454,6 +454,15 @@ Task names match loosely ("barge in" finds "Barge-in"); an ambiguous name lists 
 candidates instead of guessing. With **Speak replies** on, the voice worker speaks the
 reply.
 
+The same commands work from a shell, for scripts and hotkeys. `navid ask` scopes them to
+the pane's project, else the registered project holding the working directory, and
+prints the reply; it does not change the project voice defaults to:
+
+```bash
+navid ask "how far along are we"
+navid ask "tell codex to run the tests"
+```
+
 #### On screen
 
 - The **ring** around the emblem fills to the headline percent. An unknown percent

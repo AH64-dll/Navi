@@ -1490,7 +1490,9 @@ impl App {
         if let Some(reference) = params["project_id"].as_str().filter(|value| !value.trim().is_empty())
             && let Ok(project) = self.resolve_project(reference)
         {
-            *self.current_project.lock().unwrap() = project["id"].as_str().map(str::to_string);
+            if params["source"] != "cli" {
+                *self.current_project.lock().unwrap() = project["id"].as_str().map(str::to_string);
+            }
             return Ok(project);
         }
         if let Some(project) = self.station_project(&projects) {

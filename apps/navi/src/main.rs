@@ -13,7 +13,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -1698,6 +1698,39 @@ fn rpc(request: Value) -> Result<Value> {
     serde_json::from_str(&line).map_err(|e| e.to_string())
 }
 
+/// `navid ask "open codex"`: one command, as voice would send it, scoped to
+/// the pane's project, else the registered project holding the working
+/// directory, else the station's. Prints the reply.
+fn ask(text: &str) -> Result<()> {
+    if text.trim().is_empty() {
+        return Err("Usage: navid ask \"<command>\", for example navid ask \"how far along are we\"".into());
+    }
+    let project = std::env::var("NAVI_PROJECT_ID").ok().filter(|id| !id.is_empty()).or_else(|| {
+        let cwd = std::env::current_dir().ok()?;
+        let status = rpc(json!({"op":"status"})).ok()?;
+        status["result"]["projects"]
+            .as_array()?
+            .iter()
+            .filter_map(|project| Some((project["id"].as_str()?, Path::new(project["path"].as_str()?))))
+            .filter(|(_, path)| cwd.starts_with(path))
+            .max_by_key(|(_, path)| path.components().count())
+            .map(|(id, _)| id.to_string())
+    });
+    // "cli": the shell's project scopes this command only; the station's
+    // remembered project (voice's default) stays as it is.
+    let reply = rpc(json!({"op":"command","params":{"text":text,"project_id":project,"source":"cli"}}))?;
+    if reply["ok"] != true {
+        return Err(reply["error"].as_str().unwrap_or("Navi rejected the command").to_string());
+    }
+    let result = &reply["result"];
+    match result["reply"]["text"].as_str() {
+        Some(text) => println!("{text}"),
+        None if result["queued"] == true => println!("Queued behind the command that is running."),
+        None => println!("Sent; the answer appears in the station."),
+    }
+    Ok(())
+}
+
 fn native() -> Result<()> {
     // Browser native messaging is little endian on supported Linux x86_64.
     let mut input = std::io::stdin().lock();
@@ -1748,6 +1781,7 @@ fn main() {
         Some("mcp") => link::mcp(),
         Some("progress") => link::progress(&args[2..]),
         Some("link") => link::link(&args[2..]),
+        Some("ask") => ask(&args[2..].join(" ")),
         Some("rpc") => serde_json::from_str(
             args.get(2)
                 .map(String::as_str)
@@ -1763,6 +1797,7 @@ navid native                  browser native-messaging host
 navid mcp                     MCP server a harness starts to report progress
 navid progress [report|task]  read or report progress from a shell (navid progress -h)
 navid link [harness]          print the setup for a harness started outside Navi
+navid ask \"<command>\"        say a command as if spoken (\"open codex\", \"how far along are we\")
 navid rpc '<JSON request>'    send one request to the daemon"
             );
             Ok(())
