@@ -2336,6 +2336,27 @@ impl App {
         if let Some(found) = found {
             return Ok(found);
         }
+        // "barge in" is "Barge-in": letters and digits decide.
+        let loose = |text: &str| text.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>();
+        let wanted = loose(&title);
+        let mut statement = state
+            .db
+            .prepare(
+                "SELECT id,title,state,aspect_id FROM tasks WHERE project_id=?1 AND state!='dropped'
+                 ORDER BY (aspect_id IS ?2) DESC, created",
+            )
+            .map_err(|error| error.to_string())?;
+        let close = statement
+            .query_map(params![project_id, aspect_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?))
+            })
+            .map_err(|error| error.to_string())?
+            .filter_map(|row| row.ok())
+            .find(|(_, known, _, _)| !wanted.is_empty() && loose(known) == wanted);
+        drop(statement);
+        if let Some(found) = close {
+            return Ok(found);
+        }
         if !create {
             return Err(format!("No task named “{title}”"));
         }
