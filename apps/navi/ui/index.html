@@ -173,6 +173,25 @@
     </form>
   </dialog>
 
+  <dialog id="project-dialog" class="settings glass" aria-label="Add project">
+    <form id="project-form" method="dialog">
+      <h2>Add project</h2>
+      <label class="field" for="project-path">Folder</label>
+      <div class="path-row">
+        <input id="project-path" placeholder="/path/to/project" spellcheck="false" autocomplete="off">
+        <button type="button" id="project-browse">Browse…</button>
+      </div>
+      <label class="field" for="project-name">Name</label>
+      <input id="project-name" placeholder="Taken from the folder" maxlength="120" spellcheck="false" autocomplete="off">
+      <label class="check"><input type="checkbox" id="project-assess" checked> Assess its progress now</label>
+      <p class="hint" id="project-note"></p>
+      <div class="actions">
+        <button type="button" id="project-cancel">Cancel</button>
+        <button type="submit" class="primary">Add project</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="boot" aria-hidden="true"><div class="boot-title"><b>Navi</b><i>online</i></div></div>
   <script src="vendor/xterm.js"></script>
   <script src="scene.bundle.js"></script><script src="station.js"></script>

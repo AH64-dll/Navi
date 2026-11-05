@@ -1374,6 +1374,7 @@ function projectSwitcher() {
   button.append(name,percent,state,caret);
   button.addEventListener('click',event=>{
     event.stopPropagation();
+    if (!projectList().length) { openProjectDialog(); return; }
     switcherOpen=!switcherOpen;
     renderProjectSwitcher();
   });
@@ -1414,18 +1415,29 @@ function renderProjectSwitcher(force) {
     +`#${active?.id||''}#${switcherOpen?'1':'0'}#${list.length}`;
   if (!force&&signature===switcherSignature) return;
   switcherSignature=signature;
-  shell.bar.hidden=!list.length;
-  shell.name.textContent=active?active.name:'No project';
+  /* With no project the switcher is how one gets added, so it never hides. */
+  shell.bar.hidden=false;
+  shell.name.textContent=active?active.name:'Add a project';
   shell.percent.textContent=active?overviewLabel(active.id):'';
   shell.percent.hidden=!shell.percent.textContent;
   shell.state.textContent=active?pathState(active):'';
   shell.state.dataset.state=active?pathState(active):'none';
   shell.button.title=active
     ?`${active.path}\nCtrl+1..9 switches project`
-    :'Register a project in Settings';
+    :'Add a project folder for Navi to track';
   shell.button.setAttribute('aria-expanded',String(switcherOpen));
   shell.menu.hidden=!switcherOpen;
   if (!switcherOpen) { shell.menu.replaceChildren(); return; }
+  const add=document.createElement('button');
+  add.type='button';
+  add.className='project-add';
+  add.textContent='Add project…';
+  add.addEventListener('click',event=>{
+    event.stopPropagation();
+    switcherOpen=false;
+    renderProjectSwitcher(true);
+    openProjectDialog();
+  });
   shell.menu.replaceChildren(...list.map((project,index)=>{
     const option=document.createElement('button');
     option.type='button';
@@ -1450,8 +1462,74 @@ function renderProjectSwitcher(force) {
       switchProject(String(project.id||''));
     });
     return option;
-  }));
+  }),add);
 }
+
+/* Add project: a folder (typed, or from the host's native chooser), a name that
+ * follows the folder until the user edits it, and an optional first assessment. */
+const projectDialog=element('project-dialog');
+let projectNameEdited=false;
+function folderName(path) {
+  return String(path||'').replace(/[\\/]+$/,'').split(/[\\/]/).pop()||'';
+}
+function projectNote(text,error) {
+  const note=element('project-note');
+  note.textContent=text||'';
+  note.classList.toggle('error',!!error);
+}
+function openProjectDialog(path) {
+  element('project-path').value=path||'';
+  element('project-name').value=folderName(path);
+  projectNameEdited=false;
+  element('project-assess').checked=true;
+  projectNote('Navi scans the files, then asks a linked harness (or its assistant) to estimate each part.');
+  projectDialog.showModal();
+  element('project-path').focus();
+}
+/* A native folder chooser from the host window; resolves to a path or null. */
+function pickFolder(start) {
+  const ticket=++requests;
+  return new Promise((resolve,reject)=>{
+    const budget=10*60*1000;   // the person may browse for a while
+    pending.set(ticket,{op:'pick-folder',resolve,reject,budget,expires:Date.now()+budget});
+    if (!send({type:'pick-folder',ticket,start:String(start||'')})) {
+      pending.delete(ticket);
+      reject(new Error('The folder chooser needs the Navi window'));
+    }
+  });
+}
+element('project-path').addEventListener('input',()=>{
+  if (!projectNameEdited) element('project-name').value=folderName(element('project-path').value.trim());
+});
+element('project-name').addEventListener('input',()=>{ projectNameEdited=!!element('project-name').value.trim(); });
+element('project-browse').onclick=async()=>{
+  try {
+    const result=await pickFolder(element('project-path').value.trim()||activeProjectRow()?.path||'');
+    if (!result?.path) return;
+    element('project-path').value=result.path;
+    if (!projectNameEdited) element('project-name').value=folderName(result.path);
+    projectNote('');
+  } catch (error) { projectNote(error.message,true); }
+};
+element('project-cancel').onclick=()=>projectDialog.close();
+element('project-form').onsubmit=async event=>{
+  event.preventDefault();
+  const path=element('project-path').value.trim();
+  const name=element('project-name').value.trim()||folderName(path);
+  if (!path) { projectNote('Choose the project folder',true); element('project-path').focus(); return; }
+  try {
+    const project=(await rpc('project_add',{name,path}))?.project;
+    if (!project?.id) throw new Error('The daemon did not return the project');
+    /* The poll that carries the new list may already be in flight, so the row is
+     * added here and the next poll replaces it with the daemon's copy. */
+    if (snapshot&&!projectList().some(row=>row.id===project.id)) snapshot.projects=[...projectList(),project];
+    projectDialog.close();
+    switchProject(project.id);
+    syncProgressScope();
+    toast('Added '+(project.name||name));
+    if (element('project-assess').checked) assessProject();
+  } catch (error) { projectNote(error.message,true); }
+};
 
 function updateProjectLine() {
   const node=element('project-status');
@@ -1461,7 +1539,7 @@ function updateProjectLine() {
   node.dataset.state=project?pathState(project):'none';
   node.title=project
     ?`${project.path}\n${pathState(project)}${project.git_head?' · '+String(project.git_head).slice(0,12):''}`
-    :'Register a project to scope the work';
+    :'Add a project to scope the work';
 }
 
 /* One click changes what "this project" means everywhere: the new-session
@@ -2829,7 +2907,7 @@ function scheduleOverview(delay=1500) {
  * own assistant) to estimate each part. The answer arrives as progress events. */
 async function assessProject() {
   const project=activeProjectId();
-  if (!project) { toast('Register a project first'); return null; }
+  if (!project) { openProjectDialog(); return null; }
   if (isAssessing(project)) return null;
   assessing={project,until:Date.now()+ASSESS_WINDOW,via:null};
   renderHud();
@@ -2853,7 +2931,7 @@ async function assessProject() {
 }
 async function reportProgress(params) {
   const project=activeProjectId();
-  if (!project) throw new Error('Register a project first');
+  if (!project) throw new Error('Add a project first');
   return rpc('progress_report',{project_id:project,source:'user',confidence:1,create:false,
     evidence:'set by you in the progress panel',...params});
 }
@@ -3620,7 +3698,19 @@ function renderLaunchMenu() {
   addChip.setAttribute('aria-expanded',String(launchOpen));
   if (!launchOpen) { launchMenu.replaceChildren(); return; }
   const project=activeProjectRow();
-  const items=[graphNode('p','launch-head',project?`Open in ${project.name}`:'Register a project in Settings first')];
+  const items=[graphNode('p','launch-head',project?`Open in ${project.name}`:'Add a project first')];
+  if (!project) {
+    const add=graphNode('button','launch-option launch-more','Add project…');
+    add.type='button';
+    add.setAttribute('role','menuitem');
+    add.onclick=event=>{
+      event.stopPropagation();
+      launchOpen=false;
+      renderLaunchMenu();
+      openProjectDialog();
+    };
+    items.push(add);
+  }
   for (const profile of harnessProfiles()) {
     const button=graphNode('button','launch-option');
     button.type='button';

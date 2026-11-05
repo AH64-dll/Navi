@@ -440,6 +440,12 @@ owns; every turn carries the project, so the gateway reuses that directory's own
 while a turn that is already running keeps its binding for interrupt and permission
 replies. A session launched in another project makes that project active.
 
+"Add project…" at the end of the switcher menu (or the switcher itself, while there is
+no project) opens a dialog: a folder, typed or picked with the window's native folder
+chooser (the host's `pick-folder` message), a name that follows the folder's name until
+edited, and "Assess its progress now", which runs the detector on the new project as
+soon as `project_add {name, path}` registers it and the switcher moves to it.
+
 ### Speech output
 
 Spoken replies are off by default. The settings gear's **Speak replies** toggle stores

@@ -381,6 +381,8 @@ class Station(Gtk.Window):
                     self.unfullscreen()
                 else:
                     self.fullscreen()
+            elif kind == "pick-folder":
+                self.pick_folder(message["ticket"], str(message.get("start") or ""))
             elif kind == "extension-folder":
                 if ISOLATED:
                     raise ValueError("Opening desktop applications is disabled in isolated mode")
@@ -391,6 +393,26 @@ class Station(Gtk.Window):
                 self.reply(ticket, {"ok": False, "error": describe(error)})
             else:
                 self.evaluate(f"navi.notice({json.dumps(describe(error))})")
+
+    def pick_folder(self, ticket, start):
+        """Native folder chooser for "Add project"; replies with a path or None.
+
+        The dialog is non-modal to the main loop (no `run()`), so terminal
+        output and polls keep flowing while it is open."""
+        dialog = Gtk.FileChooserNative.new("Choose a project folder", self,
+                                           Gtk.FileChooserAction.SELECT_FOLDER, "Choose", "Cancel")
+        folder = Path(start).expanduser() if start else Path.home()
+        if folder.is_dir():
+            dialog.set_current_folder(str(folder))
+
+        def done(chooser, response):
+            path = chooser.get_filename() if response == Gtk.ResponseType.ACCEPT else None
+            chooser.destroy()
+            self.reply(ticket, {"ok": True, "result": {"path": path}})
+
+        dialog.connect("response", done)
+        self.folder_dialog = dialog  # a native dialog must outlive this call
+        dialog.show()
 
     def reload(self):
         if not self.closed:
