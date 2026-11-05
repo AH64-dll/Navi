@@ -213,7 +213,8 @@ impl App {
         let launching = ["open", "launch", "start", "create", "new", "fresh"]
             .iter()
             .any(|word| mentioned(text, word));
-        let valid_project = project_for(text, &settings).is_ok();
+        // Registered projects, not the settings file's seed list.
+        let valid_project = project_for(text, &json!({"projects": self.projects()?})).is_ok();
         if !frozen && immediate_request(text) {
             if desktop["status"] == "connected" && mentioned(text, "window") {
                 let observed = self.desktop_request(&json!({"type":"windows"}), generation)?;
