@@ -1552,6 +1552,7 @@ function switchProject(id) {
   writeProject(id);
   renderProjectSwitcher(true);
   updateProjectLine();
+  renderSessions(snapshot?.sessions||[]);
   loadGraph();
   if (!changed) return project;
   /* The assistant session is project-scoped: the daemon rebinds the directory
@@ -3498,11 +3499,46 @@ addEventListener('resize',()=>{ reconcileDock(); syncFrame(); scheduleFit(); fit
  * 700 ms poll never rebuilds the row under the pointer (BUG-043). */
 const sessionsBar=()=>element('sessions');
 const sessionNodes=new Map(), sessionLabels=new Map();
-let recentWrap=null, recentToggle=null, recentChips=null, addChip=null;
+let recentGroup=null, elsewhereGroup=null, addChip=null;
 let launchWrap=null, launchMenu=null, launchOpen=false;
 const SESSION_WORDS={starting:'starting',running:'running',idle:'ready',busy:'working',
   needs_input:'needs input',interrupted:'interrupted',exited:'exited'};
-let recentList=[], recentOpen=false;
+/* A collapsed chip group: finished sessions ("Recent") and live sessions of
+ * other projects ("Elsewhere"). The toggle says how many it holds and, for
+ * Elsewhere, whether one of them waits for input. */
+function sessionGroup(label,title) {
+  const wrap=document.createElement('div');
+  wrap.className='sessions-recent';
+  const toggle=document.createElement('button');
+  toggle.type='button';
+  toggle.className='session-chip recent-toggle';
+  toggle.title=title;
+  const chips=document.createElement('div');
+  chips.className='sessions-recent-chips';
+  wrap.append(toggle,chips);
+  const group={label,wrap,toggle,chips,open:false,list:[]};
+  toggle.onclick=()=>{ group.open=!group.open; renderSessions(snapshot?.sessions||[]); };
+  return group;
+}
+function fillGroup(group,ids,attention) {
+  if (!ids.length) {
+    group.wrap.hidden=true;
+    group.chips.hidden=true;
+    group.list=[];
+    orderNodes(group.chips,[]);
+    return null;
+  }
+  group.wrap.hidden=false;
+  group.toggle.textContent=`${group.label} (${ids.length})`+(attention?' · '+attention:'');
+  group.toggle.classList.toggle('attention',!!attention);
+  group.toggle.setAttribute('aria-expanded',String(group.open));
+  group.chips.hidden=!group.open;
+  if (!sameList(group.list,ids)) {
+    orderNodes(group.chips,ids.map(id=>sessionNodes.get(id)).filter(Boolean));
+    group.list=ids.slice();
+  }
+  return group.wrap;
+}
 
 function profileLabel(id) {
   const profiles=snapshot?.settings?.profiles||[];
@@ -3593,16 +3629,9 @@ function orderNodes(parent,desired) {
   }
 }
 function ensureSessionShell(bar) {
-  if (!recentWrap) {
-    recentWrap=document.createElement('div');
-    recentWrap.className='sessions-recent';
-    recentToggle=document.createElement('button');
-    recentToggle.type='button';
-    recentToggle.className='session-chip recent-toggle';
-    recentToggle.onclick=()=>{ recentOpen=!recentOpen; renderSessions(snapshot?.sessions||[]); };
-    recentChips=document.createElement('div');
-    recentChips.className='sessions-recent-chips';
-    recentWrap.append(recentToggle,recentChips);
+  if (!recentGroup) {
+    elsewhereGroup=sessionGroup('Elsewhere','Live sessions in other projects');
+    recentGroup=sessionGroup('Recent','Finished sessions');
   }
   if (!addChip) {
     /* One click opens a harness in the active project; the dialog stays behind
@@ -3766,24 +3795,38 @@ function renderSessions(list) {
   const sessions=Array.isArray(list)?list:[];
   bar.hidden=false;
   ensureSessionShell(bar);
+  /* The active project's sessions come first; another project's keep a chip
+   * (one click away) but carry that project's name, and numbering ("#2") counts
+   * only same-named sessions of the same project and the same section. */
+  const activeId=activeProjectId();
+  const projectNames=new Map(projectList().map(project=>[project.id,project.name]));
+  const elsewhere=session=>!!activeId&&!!session.project_id&&session.project_id!==activeId;
   const live=sessions.filter(session=>session.running===true)
-    .sort((a,b)=>(Number(a.created)||0)-(Number(b.created)||0));
+    .sort((a,b)=>Number(elsewhere(a))-Number(elsewhere(b))||(Number(a.created)||0)-(Number(b.created)||0));
   const dead=sessions.filter(session=>session.running!==true)
     .sort((a,b)=>(Number(b.last_active)||0)-(Number(a.last_active)||0));
-  const counts=new Map();
-  for (const session of sessions) counts.set(session.name,(counts.get(session.name)||0)+1);
-  const seen=new Map();
-  const liveIds=[], deadIds=[];
+  const labels=new Map();
+  for (const group of [live,dead]) {
+    const key=session=>(session.project_id||'')+'\u0000'+session.name;
+    const counts=new Map(), seen=new Map();
+    for (const session of group) counts.set(key(session),(counts.get(key(session))||0)+1);
+    for (const session of group) {
+      const index=(seen.get(key(session))||0)+1;
+      seen.set(key(session),index);
+      labels.set(session.id,counts.get(key(session))>1?session.name+' #'+index:session.name);
+    }
+  }
+  const liveIds=[], elsewhereIds=[], deadIds=[];
   for (const session of [...live,...dead]) {
-    const index=(seen.get(session.name)||0)+1;
-    seen.set(session.name,index);
-    const label=(counts.get(session.name)||0)>1?session.name+' #'+index:session.name;
+    const label=labels.get(session.id)||session.name;
+    const other=elsewhere(session)?projectNames.get(session.project_id):null;
     let node=sessionNodes.get(session.id);
     if (!node) { node=createSessionChip(session); sessionNodes.set(session.id,node); }
-    updateSessionChip(node,session,label);
+    updateSessionChip(node,session,other?other+' · '+label:label);
+    node.classList.toggle('elsewhere',!!other);
     sessionLabels.set(session.id,label);
     if (session.id===termSession) syncTerminalTitle(session);
-    (session.running===true?liveIds:deadIds).push(session.id);
+    (session.running!==true?deadIds:other?elsewhereIds:liveIds).push(session.id);
   }
   for (const [id,node] of [...sessionNodes]) {
     if (sessions.some(session=>session.id===id)) continue;
@@ -3793,26 +3836,12 @@ function renderSessions(list) {
   }
   /* The switcher is the strip's first control: `orderNodes` removes every child
    * it is not given, so it must be part of the desired list (BUG-090). */
-  const desired=[element('project-switcher'),...liveIds.map(id=>sessionNodes.get(id))]
-    .filter(Boolean);
-  if (deadIds.length) {
-    recentWrap.hidden=false;
-    recentToggle.textContent='Recent ('+deadIds.length+')';
-    recentToggle.setAttribute('aria-expanded',String(recentOpen));
-    recentChips.hidden=!recentOpen;
-    if (!sameList(recentList,deadIds)) {
-      orderNodes(recentChips,deadIds.map(id=>sessionNodes.get(id)).filter(Boolean));
-      recentList=deadIds.slice();
-    }
-    desired.push(recentWrap);
-  } else {
-    recentWrap.hidden=true;
-    recentChips.hidden=true;
-    recentList=[];
-    orderNodes(recentChips,[]);
-  }
+  const desired=[element('project-switcher'),...liveIds.map(id=>sessionNodes.get(id))];
+  const waiting=elsewhereIds.some(id=>sessions.find(session=>session.id===id)?.state==='needs_input');
+  desired.push(fillGroup(elsewhereGroup,elsewhereIds,waiting?'needs input':''));
+  desired.push(fillGroup(recentGroup,deadIds,''));
   desired.push(launchWrap);
-  orderNodes(bar,desired);
+  orderNodes(bar,desired.filter(Boolean));
   fitStrip(bar);
 }
 /* Both layouts are measured in one task, so the one that wraps is never painted. */

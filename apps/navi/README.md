@@ -124,10 +124,12 @@ Navi's own commands (`/progress`, `/assess`, `/open`, `/mark`, `/set`), which ne
 reach the assistant, followed by the OpenCode slash commands (arrows/Tab to complete); a
 Stop button appears while a request runs and
 cancels it, reporting when the server did not confirm the interrupt. A session strip at
-the top-left separates live sessions from a collapsed Recent list, shows the harness
-profile name, its state (a colored dot: running, idle, busy, needs input) and last
-activity, disambiguates duplicate names and reconciles
-its chips in place; clicking one attaches an xterm terminal pane to its live tmux
+the top-left shows the active project's live sessions as chips and collapses the rest
+into "Elsewhere (N)" (live sessions of other projects, named with their project and
+flagged when one needs input) and "Recent (N)" (finished sessions). A chip shows the
+harness profile name, its state (a colored dot: running, idle, busy, needs input) and
+last activity, numbers duplicate names within a project ("Codex #2"), drops the state
+word rather than wrapping when the strip is crowded, and is reconciled in place; clicking one attaches an xterm terminal pane to its live tmux
 session, titled like its chip (`Terminal #2 · Navi`: session, harness when the name
 does not already say it, project), where an inline prompt field sends input straight
 into the harness. The "+" chip opens a quick-launch menu: one click starts Codex,

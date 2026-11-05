@@ -277,6 +277,9 @@ button:disabled{opacity:.45;cursor:default}
   background:linear-gradient(#4564b866,#13266399);cursor:pointer}
 .session-chip:hover,.session-chip:focus-visible{border-color:var(--cyan);outline:none}
 .session-chip.dead{opacity:.72}
+/* A session in another project: still one click away, visibly not "here". */
+.session-chip.elsewhere{opacity:.8;border-style:dotted}
+.session-chip.elsewhere:hover,.session-chip.elsewhere:focus-visible{opacity:1}
 .session-dot{width:6px;height:6px;border-radius:50%;background:#8dffc0;flex:0 0 auto;box-shadow:0 0 8px #8dffc099}
 .session-chip.dead .session-dot{background:#7a8aa8;box-shadow:none}
 /* The dot carries the harness state: working pulses amber, waiting for input
@@ -312,6 +315,7 @@ body.still .session-dot{animation:none}
 .sessions-recent{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sessions-recent-chips{display:flex;flex-wrap:wrap;gap:8px}
 .recent-toggle{border-style:dashed;color:#9fb6d4;font-size:10px}
+.recent-toggle.attention{border-color:#9fe6ffaa;color:#9fe6ff;box-shadow:0 0 10px #9fe6ff33}
 /* Crowded strip: chips drop the state word before the strip wraps onto a second
    line; the dot and the tooltip still carry it, and a session waiting for input
    or interrupted keeps its word. */
