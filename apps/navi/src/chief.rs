@@ -1720,10 +1720,7 @@ impl App {
                 finished
                     .get(session["id"].as_str().unwrap_or_default())
                     .is_some_and(|label| spoken_numbers(label) == object)
-                    || ["name", "profile", "harness"].iter().any(|key| {
-                        session[*key].as_str().is_some_and(|value| spoken_numbers(value) == object)
-                    })
-                    || (session["profile"] == "claude" && object == "claude code")
+                    || names_session(session, &object)
             };
             let mut matches: Vec<&Value> = sessions
                 .iter()
@@ -1742,10 +1739,8 @@ impl App {
                 if spoken_numbers(label) == object {
                     return Some(label.clone());
                 }
-                let same = ["name", "profile", "harness"].iter().any(|key| {
-                    session[*key].as_str().is_some_and(|value| spoken_numbers(value) == object)
-                }) || (session["profile"] == "claude" && object == "claude code");
-                same.then(|| session["name"].as_str().unwrap_or("That session").to_string())
+                names_session(session, &object)
+                    .then(|| session["name"].as_str().unwrap_or("That session").to_string())
             });
             return Ok(open.map(|label| json!({"kind":"session_reopen","ids":[],"open":label})));
         }
@@ -1761,12 +1756,7 @@ impl App {
             .collect();
         if ids.is_empty() {
             ids = running()
-                .filter(|session| {
-                    ["name", "profile", "harness"]
-                        .iter()
-                        .any(|key| session[*key].as_str().is_some_and(|value| spoken_numbers(value) == object))
-                        || (session["profile"] == "claude" && object == "claude code")
-                })
+                .filter(|session| names_session(session, &object))
                 .map(|session| session["id"].clone())
                 .collect();
         }
@@ -3158,6 +3148,15 @@ fn session_labels(sessions: &[Value]) -> HashMap<String, String> {
         labels.insert(session["id"].as_str().unwrap_or_default().to_string(), label);
     }
     labels
+}
+
+/// Whether `object` (already through `spoken_numbers`) is this session's
+/// name, profile or harness; "claude code" also names the claude profile.
+fn names_session(session: &Value, object: &str) -> bool {
+    ["name", "profile", "harness"]
+        .iter()
+        .any(|key| session[*key].as_str().is_some_and(|value| spoken_numbers(value) == object))
+        || (session["profile"] == "claude" && object == "claude code")
 }
 
 /// Finished, not-yet-reopened sessions' labels as the Recent group shows
