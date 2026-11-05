@@ -331,6 +331,9 @@ no user config file is touched:
 A profile opts out with `"link": false`. `navid mcp` speaks newline-delimited JSON-RPC
 2.0 over stdio (MCP 2024-11-05 through 2025-11-25) and offers three tools:
 
+Each tool also takes an optional `project` (name or id) for work outside the project's
+folder. Outside every registered folder, the error lists the known projects.
+
 - `navi_progress` reads the record: headline and basis, each part, the task checklist.
 - `navi_report_progress {percent, part?, evidence, confidence?}` states how complete
   the whole project (no `part`) or one part is. A new part name creates the part.

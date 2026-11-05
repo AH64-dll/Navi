@@ -71,12 +71,14 @@ fn number(value: &Value) -> Option<f64> {
 }
 
 fn tools() -> Value {
+    let project_argument = json!({"type": "string",
+        "description": "Navi project name or id. Only needed when working outside the project's folder."});
     json!([
         {
             "name": "navi_progress",
             "title": "Read project progress",
             "description": "Read Navi's completion record for this project: the overall percent and its basis, each part with its percent, and the task checklist. Call it before reporting so your numbers build on what is recorded.",
-            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+            "inputSchema": {"type": "object", "properties": {"project": project_argument}, "additionalProperties": false},
             "annotations": {"readOnlyHint": true, "openWorldHint": false}
         },
         {
@@ -89,7 +91,8 @@ fn tools() -> Value {
                     "percent": {"type": "number", "minimum": 0, "maximum": 100, "description": "Completion from 0 to 100."},
                     "part": {"type": "string", "description": "Part of the project, such as \"UI\". Omit for the whole project."},
                     "evidence": {"type": "string", "description": "What you checked that supports the number: files read, tests run, behavior verified."},
-                    "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "How sure you are, from 0 to 1. Default 0.7."}
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "How sure you are, from 0 to 1. Default 0.7."},
+                    "project": project_argument
                 },
                 "required": ["percent", "evidence"],
                 "additionalProperties": false
@@ -107,7 +110,8 @@ fn tools() -> Value {
                     "state": {"type": "string", "enum": ["todo", "in_progress", "done", "blocked"]},
                     "part": {"type": "string", "description": "Part the task belongs to, such as \"UI\"."},
                     "evidence": {"type": "string", "description": "What happened: the change made, the test that passed, or the blocker."},
-                    "percent": {"type": "number", "minimum": 0, "maximum": 100, "description": "Optional completion of this task."}
+                    "percent": {"type": "number", "minimum": 0, "maximum": 100, "description": "Optional completion of this task."},
+                    "project": project_argument
                 },
                 "required": ["task", "state", "evidence"],
                 "additionalProperties": false
@@ -130,6 +134,14 @@ fn report_text(result: &Value) -> String {
 
 fn call_tool(params: &Value) -> Value {
     let arguments = &params["arguments"];
+    // A named project overrides the one the pane or working directory gives.
+    let context = || {
+        let mut request = context();
+        if let Some(project) = arguments["project"].as_str().map(str::trim).filter(|name| !name.is_empty()) {
+            request["project_id"] = json!(project);
+        }
+        request
+    };
     let outcome = match params["name"].as_str().unwrap_or_default() {
         "navi_progress" => station("progress_get", context())
             .map(|result| result["text"].as_str().unwrap_or_default().to_string()),

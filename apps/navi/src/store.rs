@@ -1734,7 +1734,24 @@ impl App {
                 .map(str::to_string)
                 .ok_or_else(|| "Missing project id".into());
         }
-        Err("No Navi project contains this directory; register it in Navi first".into())
+        let known = projects
+            .iter()
+            .map(|project| {
+                format!(
+                    "{} ({})",
+                    project["name"].as_str().unwrap_or("?"),
+                    project["path"].as_str().unwrap_or("?")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        Err(if known.is_empty() {
+            "Navi has no projects yet. Add this folder in Navi with Add project.".into()
+        } else {
+            format!(
+                "No Navi project contains this directory. Known projects: {known}. Name one with the `project` argument (`--project` on the CLI), or add this folder in Navi with Add project."
+            )
+        })
     }
 
     /// Find a part by id, key, or title, creating it when allowed. Models name
