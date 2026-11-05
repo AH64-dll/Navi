@@ -441,6 +441,7 @@ model and without the assistant:
 | "Start working on barge-in", "I'm working on barge-in" | Marks that task in progress (only when such a task exists) |
 | "How is the daemon doing?", "what's the voice part at", "show me the voice part", "which part is furthest behind" | Answers for that part (or names the part furthest behind) |
 | "Compare the projects", "how are all my projects doing" | Every project with its percent |
+| "What did Codex report?", "what has Claude Code reported" | That harness's three latest estimates or task verdicts on the project, with when and the evidence it gave |
 | "When was the last estimate?", "how confident is the estimate", "why is it 86 percent" | Where the headline comes from (parts or a whole-project estimate), who last estimated the project, when and on what evidence, the confidence, and commits since |
 | "List the parts", "list the tasks", "how many tasks are left", "what's in progress", "what's the next task" | Each part with its percent, the open tasks, the open count by state, the tasks in progress, or the task to pick up next (in progress first, then the part furthest behind) |
 | "Tell Codex what's left", "give Codex the next task", "tell Claude to do the next task" | Sends that session a prompt built from Navi's record: the unfinished parts and open tasks, or the next task, with a reminder to report through the progress tools. Voice leaves these to the same route |

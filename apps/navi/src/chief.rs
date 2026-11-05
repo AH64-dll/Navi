@@ -1758,6 +1758,32 @@ impl App {
         {
             return Ok(Some(json!({"kind":"project_list"})));
         }
+        // "What did Codex report?": that harness's recorded estimates.
+        let reported = ["what did ", "what has ", "what's ", "whats "]
+            .iter()
+            .find_map(|lead| lower.strip_prefix(lead))
+            .and_then(|rest| {
+                [" report", " reported", " estimate", " estimated", " record", " recorded", " report on the progress"]
+                    .iter()
+                    .find_map(|tail| rest.strip_suffix(tail))
+            })
+            .map(|name| name.strip_prefix("the ").unwrap_or(name).trim());
+        if let Some(name) = reported {
+            let settings = self.settings();
+            let source = settings["profiles"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|profile| {
+                    ["name", "id"].iter().any(|key| profile[*key].as_str().is_some_and(|value| value.eq_ignore_ascii_case(name)))
+                        || (profile["id"] == "claude" && name == "claude code")
+                })
+                .and_then(|profile| profile["id"].as_str().map(str::to_string))
+                .or_else(|| matches!(name, "detector" | "the detector" | "git").then(|| name.to_string()));
+            if let Some(source) = source {
+                return Ok(Some(json!({"kind":"reports","source":source})));
+            }
+        }
         if let Some(screen) = self.screen_intent(&lower)? {
             return Ok(Some(screen));
         }
@@ -3023,6 +3049,38 @@ impl App {
                         self.run_fast(clause, &json!({"kind":"project_switch","id":next["id"],"name":next["name"]}), params)
                     }
                 }
+            }
+            "reports" => {
+                let project = project?;
+                let id = project["id"].as_str().unwrap_or_default().to_string();
+                let source = action["source"].as_str().unwrap_or_default();
+                let who = store::capitalise(&store::source_name(source));
+                let reports = self.source_reports(&id, source, 3)?;
+                let name = project["name"].as_str().unwrap_or("this project");
+                let lines: Vec<String> = reports
+                    .iter()
+                    .map(|report| {
+                        let value = report["value"].as_f64().unwrap_or(0.0) * 100.0;
+                        let what = match (report["task"].as_str(), report["part"].as_str()) {
+                            (Some(task), _) if report["kind"] == "verdict" => format!(
+                                "marked “{task}” {}",
+                                if value >= 100.0 { "done" } else if value > 0.0 { "in progress" } else { "not done" }
+                            ),
+                            (Some(task), _) => format!("put “{task}” at {}%", value.round()),
+                            (None, Some(part)) => format!("put {part} at {}%", value.round()),
+                            (None, None) => format!("put the project at {}%", value.round()),
+                        };
+                        let evidence: String = report["evidence"].as_str().unwrap_or_default().chars().take(100).collect();
+                        let when = relative_time(report["time"].as_u64().unwrap_or(0));
+                        if evidence.trim().is_empty() { format!("{what} {when}") } else { format!("{what} {when} (“{}”)", evidence.trim()) }
+                    })
+                    .collect();
+                let text = if lines.is_empty() {
+                    format!("{who} has not reported progress on {name}.")
+                } else {
+                    format!("{who}'s latest reports on {name}: {}.", lines.join("; "))
+                };
+                Ok(json!({"reply": reply(Some(&id), text, json!({}))}))
             }
             "undo" => {
                 let change = self.last_change.lock().unwrap().take();

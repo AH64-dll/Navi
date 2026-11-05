@@ -1285,7 +1285,7 @@ pub fn recent_sentence(graph: &Value, since: u64) -> String {
     sentence
 }
 
-fn capitalise(text: &str) -> String {
+pub fn capitalise(text: &str) -> String {
     let mut characters = text.chars();
     characters
         .next()
@@ -2416,6 +2416,36 @@ impl App {
             confidence,
             evidence,
         )
+    }
+
+    /// The newest estimates and verdicts one source recorded for a project,
+    /// with the part and task titles they name.
+    pub fn source_reports(&self, project_id: &str, source: &str, limit: usize) -> Result<Vec<Value>> {
+        let state = self.state.lock().unwrap();
+        let mut query = state
+            .db
+            .prepare(
+                "SELECT s.kind, a.title, t.title, s.value, s.evidence, s.time FROM signals s
+                 LEFT JOIN aspects a ON a.id=s.aspect_id LEFT JOIN tasks t ON t.id=s.task_id
+                 WHERE s.project_id=?1 AND s.source=?2 AND s.kind IN ('estimate','verdict')
+                 ORDER BY s.id DESC LIMIT ?3",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = query
+            .query_map(params![project_id, source, limit as i64], |row| {
+                Ok(json!({
+                    "kind": row.get::<_, String>(0)?,
+                    "part": row.get::<_, Option<String>>(1)?,
+                    "task": row.get::<_, Option<String>>(2)?,
+                    "value": row.get::<_, Option<f64>>(3)?,
+                    "evidence": row.get::<_, String>(4)?,
+                    "time": row.get::<_, u64>(5)?,
+                }))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
     }
 
     /// The newest signal id, so a change can name the rows it added.
