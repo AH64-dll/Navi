@@ -361,6 +361,9 @@ body.still .session-dot{animation:none}
 .hud-main:focus-visible{outline:1px solid #8dffe066;outline-offset:3px}
 .hud-text{display:flex;flex-direction:column;gap:3px;min-width:0}
 .hud-label{font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:#7ec8d4}
+.hud-stale{margin-left:8px;color:#ffe08a}
+.hud-stale::before{content:"· "}
+.hud-stale[hidden]{display:none}
 .hud-basis{font-size:10.5px;color:#cfe3ff;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hud-percent{font:italic 700 28px var(--serif);color:#eafcff;line-height:1;letter-spacing:.5px;
   font-variant-numeric:tabular-nums;min-width:62px;text-align:right}

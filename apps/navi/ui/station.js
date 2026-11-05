@@ -2863,14 +2863,20 @@ function graphScoreLabel(graph) {
   return graphUnknown(graph)?'—':wholePercent(graph.percent);
 }
 /* What the headline stands on, in words: whose estimate and how old it is. */
-function basisText(graph) {
+function commitsSince(graph) {
+  const commits=Number(graph?.commits_since)||0;
+  return commits>0?`${commits} commit${commits===1?'':'s'} since`:'';
+}
+/* The HUD shows commitsSince on its label line instead; `full` adds it here. */
+function basisText(graph,full) {
   const basis=graph?.basis||{};
+  const since=full&&commitsSince(graph)?' · '+commitsSince(graph):'';
   if (basis.kind==='estimate') {
-    return `Estimate by ${sourceName(basis.source)} · ${relativeTime(basis.time)}`;
+    return `Estimate by ${sourceName(basis.source)} · ${relativeTime(basis.time)}`+since;
   }
   if (basis.kind==='parts') {
     const parts=Number(basis.parts)||0;
-    return `Across ${parts} part${parts===1?'':'s'}`+(basis.time?` · ${relativeTime(basis.time)}`:'');
+    return `Across ${parts} part${parts===1?'':'s'}`+(basis.time?` · ${relativeTime(basis.time)}`:'')+since;
   }
   return 'No estimate yet';
 }
@@ -3023,6 +3029,10 @@ function renderHud() {
     ?'Assessing…'
     :graph?basisText(graph):(graphLoading?'Reading…':'No estimate yet');
   hud.dataset.state=scanning?'assessing':unknown?'unknown':'known';
+  const stale=element('hud-stale');
+  stale.textContent=scanning?'':commitsSince(graph);
+  stale.hidden=!stale.textContent;
+  stale.title=stale.textContent?'Commits made after this estimate. Reassess to count them.':'';
   const assess=element('hud-assess');
   assess.disabled=scanning;
   assess.textContent=scanning?'Assessing…':unknown?'Assess':'Reassess';
@@ -3186,7 +3196,7 @@ function graphHeader(graph,project) {
   head.append(score);
   head.append(meter(unknown?null:graph.percent,'graph-bar','meter-fill'));
   const scanning=isAssessing(project?.id);
-  head.append(graphNode('p','graph-basis',scanning?'Assessing… estimates appear as they are reported.':basisText(graph)));
+  head.append(graphNode('p','graph-basis',scanning?'Assessing… estimates appear as they are reported.':basisText(graph,true)));
   if (graph?.why&&!scanning) head.append(graphNode('p','graph-why',String(graph.why)));
   /* With no estimate and no evidence there is no weight at all: confidence is
    * vacuous, so it reads as a dash rather than 0% (BUG-089). Verified measures

@@ -1007,6 +1007,30 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
             "{stale_parts} part(s) have no evidence from the last two weeks"
         ));
     }
+    // Work committed after the number was set is work the number has not seen.
+    let headline_time = match (basis, &project_estimate) {
+        ("estimate", Some(estimate)) => Some(estimate.time),
+        ("parts", _) => newest_part,
+        _ => None,
+    };
+    let commits_since: i64 = match headline_time {
+        Some(time) => db
+            .query_row(
+                "SELECT COUNT(*) FROM signals WHERE project_id=?1 AND kind='git_commit'
+                   AND time>?2 AND time<=?3",
+                params![project_id, time as i64, at as i64],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?,
+        None => 0,
+    };
+    if commits_since > 0 {
+        risks.push(format!(
+            "{commits_since} commit{} since the newest estimate; reassess to count {}",
+            if commits_since == 1 { "" } else { "s" },
+            if commits_since == 1 { "it" } else { "them" }
+        ));
+    }
     if unknown_tasks > 0 {
         risks.push(format!("{unknown_tasks} task(s) have no evidence"));
     }
@@ -1108,6 +1132,7 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         "unassigned": unassigned,
         "tasks": counts,
         "risks": risks,
+        "commits_since": commits_since,
         "signals": signals,
         "signal_count": signal_count,
     }))
@@ -1141,6 +1166,13 @@ pub fn progress_sentence(graph: &Value) -> String {
         && graph["aspects"].as_array().is_some_and(|aspects| aspects.len() > 1)
     {
         sentence.push_str(&format!(" Furthest behind: {title} at {}%.", value.round()));
+    }
+    match graph["commits_since"].as_i64().unwrap_or(0) {
+        0 => {}
+        1 => sentence.push_str(" 1 commit landed since the last estimate."),
+        commits => sentence.push_str(&format!(
+            " {commits} commits landed since the last estimate."
+        )),
     }
     sentence
 }

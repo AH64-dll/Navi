@@ -302,7 +302,10 @@ not a measurement. So both count, and the newer one wins:
   estimate's confidence faded by a 10-day half-life (task-only projects keep
   coverage × freshness).
 - **risks** name what is weak: no parts, a headline estimate older than 7 days, parts
-  with no evidence for 14 days, tasks with no evidence, unassigned or blocked tasks.
+  with no evidence for 14 days, tasks with no evidence, unassigned or blocked tasks,
+  and commits made after the headline was set. **commits_since** carries that count;
+  the HUD shows it beside "Progress" and spoken answers end with it, so a number
+  the latest work has not reached reads as such until a reassessment.
 
 A short trace:
 
@@ -317,7 +320,7 @@ User: "set the station UI to 70%" (a part, newer than the headline)     → head
 The payload is `{project, percent, percent_null, verified, confidence, as_of, why,
 basis{kind: estimate|parts|none, source, time}, estimate, trend[{time, percent,
 source}], aspects[], unassigned[], tasks{total, todo, in_progress, done, blocked,
-dropped}, risks[], signals[], signal_count}`. Each part carries `percent`,
+dropped}, risks[], commits_since, signals[], signal_count}`. Each part carries `percent`,
 `percent_null`, `basis` (`estimate`, `tasks` or `none`), its `estimate`, the `derived`
 task mean, `verified`, `confidence` and its task `items[]`. The newest 40 signals (working-tree clean/dirty flips collapsed to the current one)
 travel with the payload, so every number can be explained by the rows behind it.
