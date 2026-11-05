@@ -1889,6 +1889,27 @@ impl App {
         let trimmed = text.trim();
         // ASCII lowercasing keeps byte offsets equal to the original's.
         let lower = trimmed.to_ascii_lowercase();
+        // "Say hello to Codex", "type ls in the terminal": the prompt comes
+        // first and the session last.
+        for (verb, marker) in [("say ", " to "), ("send ", " to "), ("type ", " in "), ("type ", " into ")] {
+            let Some(body) = trimmed.get(verb.len()..).filter(|_| lower.starts_with(verb)) else {
+                continue;
+            };
+            let Some(at) = body.to_ascii_lowercase().rfind(marker) else {
+                continue;
+            };
+            let prompt = body[..at].trim().trim_matches(['"', '“', '”']).trim();
+            let target = body[at + marker.len()..].trim().trim_end_matches(['.', '!', '?']);
+            if prompt.is_empty() || target.is_empty() {
+                continue;
+            }
+            let reordered = format!("tell {target} to {prompt}");
+            // Only an open session: "send the error log to Claude" must not
+            // start Claude with "the error log" as its prompt.
+            if let Some(action) = self.harness_prompt_intent(&reordered)?.filter(|action| action["kind"] == "harness_prompt") {
+                return Ok(Some(action));
+            }
+        }
         let rest_at = ["tell ", "ask ", "send ", "message ", "continue in ", "have ", "get "]
             .iter()
             .find_map(|verb| lower.starts_with(verb).then_some(verb.len()));
@@ -3223,8 +3244,9 @@ fn routes_to_conversation(kind: &str) -> bool {
 fn conversational_text(text: &str) -> String {
     // Wake words and spoken fillers lead the request: "Hey Navi. Stop Codex.",
     // "um, open a terminal", "okay Navi, what's left".
-    const LEADS: [&str; 13] = ["hey navi", "okay navi", "ok navi", "navi", "umm", "um", "uhh",
-        "uh", "erm", "hmm", "okay", "ok", "alright"];
+    const LEADS: [&str; 19] = ["hey navi", "okay navi", "ok navi", "navi", "umm", "um", "uhh",
+        "uh", "erm", "hmm", "okay", "ok", "alright", "well", "so", "now", "right", "go ahead and",
+        "and"];
     let separator = |c: char| c.is_whitespace() || matches!(c, ',' | ':' | '.' | '!');
     let mut current = text.trim();
     'strip: loop {
