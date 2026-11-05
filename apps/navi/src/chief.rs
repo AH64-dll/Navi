@@ -3024,7 +3024,7 @@ impl App {
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
-            "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({}))})),
+            "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({"speech": HELP_SPOKEN}))})),
             "ack" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
                 json!({}))})),
             "task_add" => {
@@ -3429,12 +3429,16 @@ impl App {
         let mut shown_action = Value::Null;
         // Each step posts its own reply to the chat; voice speaks them as one.
         let mut spoken: Vec<String> = Vec::new();
+        // What voice reads: a step's shorter `speech` when it has one ("help"
+        // lists everything in the chat but says a summary).
+        let mut speech: Vec<String> = Vec::new();
         let mut say = |reply: &Value| {
             if let Some(text) = reply["text"].as_str().map(str::trim).filter(|text| !text.is_empty())
                 // A step's summary often ends the previous step's reply too.
                 && !spoken.iter().any(|earlier| earlier.contains(text))
             {
                 spoken.push(text.to_string());
+                speech.push(reply["speech"].as_str().map_or(text, str::trim).to_string());
             }
         };
         for (step, clause) in clauses.into_iter().enumerate() {
@@ -3603,6 +3607,7 @@ impl App {
         }
         if !spoken.is_empty() && reply.is_object() {
             reply["text"] = json!(spoken.join(" "));
+            reply["speech"] = if speech == spoken { Value::Null } else { json!(speech.join(" ")) };
         }
         if !shown_action.is_null()
             && reply.is_object()
@@ -4516,7 +4521,10 @@ const RECENT_PHRASES: [&str; 12] = ["what changed", "what's changed", "what has 
     "whats new", "progress today", "today's progress", "what happened today", "what did we do today",
     "what got done", "since yesterday", "any progress"];
 
-/// What Navi answers itself, without a model; spoken too, so it stays short.
+/// What voice says for "help": the full list is in the chat.
+const HELP_SPOKEN: &str = "I can open harnesses and give them tasks, report and record progress, and stop, close or reopen sessions. The full list is in the chat. Try “what's left” or “open Codex”.";
+
+/// What Navi answers itself, without a model, as the chat shows it.
 const HELP: &str = "Without a model I can: open a harness (“open Codex”, “open a new Claude Code”), switch project (“go to acme-api”, “which project am I in”), report progress (“how far along is the project”, “what's left”, “what's blocked”, “what changed today”), assess it (“assess the project”), record progress (“set voice to 80%”, “mark barge-in done”, “add a task called fix login to the daemon”, “undo”), check sessions (“is Codex done”, “what's running”, “what did Codex say”), give one a task (“tell Codex to run the tests”, “give Codex the next task”; a closed harness opens first, a busy one gets it when free), stop, close or reopen one (“stop Codex”, “close terminal 2”, “reopen Codex”, “stop everything”), show or close the progress panel, and turn the microphone or spoken replies off (“stop listening”, “mute”). Anything else goes to the assistant.";
 
 fn navi_slash(text: &str) -> Option<&'static str> {

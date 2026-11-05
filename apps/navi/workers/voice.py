@@ -666,7 +666,8 @@ def main():
             return
         reply = result.get("reply")
         if isinstance(reply, dict):
-            reply = reply.get("text")
+            # A reply may carry a shorter spoken form ("help" lists the rest).
+            reply = reply.get("speech") or reply.get("text")
         if not reply:
             return
         status = snapshot.value

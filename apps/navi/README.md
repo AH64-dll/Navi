@@ -461,7 +461,7 @@ model and without the assistant:
 | "The second one", "Codex #2", "acme-api", "last" | Answers a "Which one" question from the last minute (for stop, close, switch, a prompt, or a task name that matched several tasks) and runs the original command on that session. In the chat the choices are buttons on the question until it is answered, another command runs, or the minute passes. Any other command drops the question |
 | "Which project am I in", "list projects" | Names the active project and every project with its percent |
 | "Reopen Codex", "resume terminal", "reopen Codex #2" | Reopens a finished session from Recent (newest first, this project first) under its old name; a harness that recorded its conversation id continues that conversation. Clicking a finished chip does the same. When nothing finished matches but that session is open, Navi says so; otherwise the words go on to "reopen <task>" |
-| "Help", "what can you do", `/help` | Lists what Navi answers without a model |
+| "Help", "what can you do", `/help` | Lists what Navi answers without a model in the chat; voice says a two-sentence summary instead of the whole list |
 | "Thanks", "never mind", "cancel", "forget it" | A short acknowledgement, without waking the assistant |
 | "What time is it", "what's the date" | The local time or date |
 | "Navi?", "hello", "um" | Only a wake word, greeting or filler: Navi asks what you need (spoken, so the answer needs no wake word) |
