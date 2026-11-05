@@ -2165,6 +2165,34 @@ impl App {
         let start = rest_at.unwrap_or(0);
         let rest = &trimmed[start..];
         let rest_lower = &lower[start..];
+        // "Tell everyone the build is fixed": every open harness (shells take
+        // commands, not news); "tell all sessions to stop" is Stop for each.
+        if !direct && lower.starts_with("tell ") {
+            for everyone in ["everyone", "everybody", "all sessions", "all the sessions", "all harnesses",
+                "all the harnesses", "every session", "every harness", "all agents", "all the agents", "all of them"]
+            {
+                let Some(after) = rest_lower.strip_prefix(everyone) else {
+                    continue;
+                };
+                let skip = everyone.len() + if after.starts_with(" to ") { 4 } else { 0 };
+                let prompt = rest[skip..].trim().trim_start_matches([':', ',']).trim();
+                if prompt.is_empty() || !(after.is_empty() || after.starts_with([' ', ':', ','])) {
+                    break;
+                }
+                if matches!(prompt.to_ascii_lowercase().trim_end_matches(['.', '!']), "stop" | "stop working"
+                    | "stop what you're doing" | "halt" | "pause")
+                {
+                    return Ok(Some(json!({"kind":"session_control_all","op":"interrupt","filter":""})));
+                }
+                let ids: Vec<Value> = self
+                    .sessions()?
+                    .iter()
+                    .filter(|session| session["running"] == true && !shell_session(session))
+                    .map(|session| session["id"].clone())
+                    .collect();
+                return Ok((!ids.is_empty()).then(|| json!({"kind":"harness_prompt","ids":ids,"text":prompt,"all":true})));
+            }
+        }
         let sessions = self.sessions()?;
         let labels = session_labels(&sessions);
         let active = self.pronoun_session();
@@ -2765,6 +2793,49 @@ impl App {
                     .iter()
                     .filter(|session| session["running"] == true && ids.contains(&session["id"]))
                     .collect();
+                // "Tell everyone …": the harnesses of this project when it has
+                // any, else every open one.
+                if action["all"] == true {
+                    let local: Vec<&Value> = chosen
+                        .iter()
+                        .copied()
+                        .filter(|session| session["project_id"].as_str() == here.as_deref())
+                        .collect();
+                    if !local.is_empty() {
+                        chosen = local;
+                    }
+                    let spoken = action["text"].as_str().unwrap_or_default();
+                    let work = self.work_prompt_for(spoken, here.as_deref())?;
+                    let (prompt, shown) = match &work {
+                        Some((text, summary)) => (text.as_str(), summary.clone()),
+                        None => (spoken, format!("“{spoken}”")),
+                    };
+                    let mut sent = Vec::new();
+                    let mut held = Vec::new();
+                    for session in &chosen {
+                        let id = session["id"].as_str().unwrap_or_default();
+                        let name = labels.get(id).cloned().unwrap_or_else(|| session["name"].as_str().unwrap_or("a session").to_string());
+                        if matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) {
+                            self.deliver_when_free(id, prompt, &name)?;
+                            held.push(name);
+                        } else {
+                            self.inject(id, prompt, true)?;
+                            sent.push(name);
+                        }
+                    }
+                    let mut text = match (sent.is_empty(), held.is_empty()) {
+                        (true, true) => "No harness is open.".to_string(),
+                        (false, _) => format!("Sent to {}: {shown}.", join_names(&sent)),
+                        (true, false) => String::new(),
+                    };
+                    if !held.is_empty() {
+                        text = format!("{text} {} busy; I will send it when free.", match held.as_slice() {
+                            [one] => format!("{one} is"),
+                            many => format!("{} are", join_names(many)),
+                        }).trim().to_string();
+                    }
+                    return Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}));
+                }
                 // Several Codex sessions: the active one, else the one here.
                 if chosen.len() > 1 {
                     if let Some(session) = chosen.iter().find(|session| session["id"].as_str() == active.as_deref()) {
@@ -2788,9 +2859,7 @@ impl App {
                 };
                 let spoken = action["text"].as_str().unwrap_or_default();
                 // A shell takes the command itself: "tell terminal to run ls" types `ls`.
-                let shell = chosen.len() == 1
-                    && (chosen[0]["profile"] == "terminal"
-                        || matches!(chosen[0]["harness"].as_str(), Some("bash" | "zsh" | "sh" | "fish" | "dash" | "ksh")));
+                let shell = chosen.len() == 1 && shell_session(chosen[0]);
                 let prompt = match spoken.get(..4) {
                     Some(head) if shell && head.eq_ignore_ascii_case("run ") => spoken[4..].trim(),
                     _ => spoken,
@@ -4928,6 +4997,21 @@ fn literal_name(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// A shell pane: it takes commands, not prompts.
+fn shell_session(session: &Value) -> bool {
+    session["profile"] == "terminal"
+        || matches!(session["harness"].as_str(), Some("bash" | "zsh" | "sh" | "fish" | "dash" | "ksh"))
+}
+
+/// "Codex #1", "Codex #1 and Claude Code", "A, B and C".
+fn join_names(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 #[cfg(test)]
