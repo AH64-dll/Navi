@@ -1186,7 +1186,8 @@ function replyDone(event) {
     const fresh=Number(event.time||Date.now())>=PAGE_START;
     if (fresh&&details.action==='show_settings') openSettings();
     if (fresh&&details.action==='add_project') openProjectDialog();
-    if (fresh&&details.action==='fullscreen') send({type:'fullscreen'});
+    const screenModes={fullscreen:'toggle',fullscreen_on:'on',fullscreen_off:'off'};
+    if (fresh&&screenModes[details.action]) send({type:'fullscreen',mode:screenModes[details.action]});
     if (details.action==='show_graph'||details.progress_recorded>0) scheduleGraph(300);
     const project=String(details.project_id||'');
     if (assessing&&assessing.via==='assistant'&&project===assessing.project&&details.source!=='navi') endAssessment(project);

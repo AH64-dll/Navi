@@ -1716,9 +1716,11 @@ impl App {
             "add a project" | "add project" | "add a new project" | "new project" | "register a project" => {
                 Some(("add_project", "Choose the project's folder."))
             }
-            "fullscreen" | "full screen" | "go fullscreen" | "go full screen" | "toggle fullscreen"
-            | "toggle full screen" | "exit fullscreen" | "exit full screen" | "leave full screen"
-            | "leave fullscreen" => Some(("fullscreen", "Toggled full screen.")),
+            "fullscreen" | "full screen" | "go fullscreen" | "go full screen" | "enter full screen"
+            | "enter fullscreen" | "make it full screen" => Some(("fullscreen_on", "Full screen on.")),
+            "exit fullscreen" | "exit full screen" | "leave full screen" | "leave fullscreen"
+            | "full screen off" | "fullscreen off" => Some(("fullscreen_off", "Full screen off.")),
+            "toggle fullscreen" | "toggle full screen" => Some(("fullscreen", "Toggled full screen.")),
             _ => None,
         };
         // "Stop listening", "mute": the microphone and spoken-reply settings.

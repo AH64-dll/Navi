@@ -385,10 +385,13 @@ class Station(Gtk.Window):
                 if self.master is not None:
                     fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", self.geometry[1], self.geometry[0], 0, 0))
             elif kind == "fullscreen":
-                if self.get_window().get_state() & Gdk.WindowState.FULLSCREEN:
-                    self.unfullscreen()
-                else:
+                # "on" and "off" are idempotent; anything else toggles.
+                full = bool(self.get_window().get_state() & Gdk.WindowState.FULLSCREEN)
+                mode = message.get("mode")
+                if mode == "on" or (mode not in ("on", "off") and not full):
                     self.fullscreen()
+                else:
+                    self.unfullscreen()
             elif kind == "pick-folder":
                 self.pick_folder(message["ticket"], str(message.get("start") or ""))
             elif kind == "extension-folder":
