@@ -2413,8 +2413,8 @@ function openTerminal(session) {
   if (!session?.running) { toast('Session is not running'); return; }
   ensureTerm();
   setDock(preferredDock());
-  element('terminal-title').textContent=session.name+' · '+profileLabel(session.profile);
   termSession=session.id;
+  syncTerminalTitle(session);
   term.clear();
   send({type:'attach',id:session.id});
   /* Opening a session makes it the active one, which is what a spoken "tell this
@@ -2423,6 +2423,17 @@ function openTerminal(session) {
   renderSessions(snapshot?.sessions||[]);
   scheduleFit();
   requestAnimationFrame(()=>{ fitTerm(); term.focus(); });
+}
+/* The header names the session the way its chip does ("Terminal #2"), then
+ * the harness only when the name does not already say it, then the project:
+ * "Terminal · Terminal" told the user nothing the chip had not. */
+function syncTerminalTitle(session) {
+  if (!session||session.id!==termSession) return;
+  const name=sessionLabels.get(session.id)||String(session.name||'');
+  const profile=profileLabel(session.profile);
+  const project=projectList().find(row=>row.id===session.project_id)?.name;
+  const parts=[name,profile.toLowerCase()!==String(session.name||'').toLowerCase()?profile:null,project];
+  element('terminal-title').textContent=parts.filter(Boolean).join(' · ')||'Terminal';
 }
 function closeTerminal() {
   setDock('closed');
@@ -3385,7 +3396,7 @@ addEventListener('resize',()=>{ reconcileDock(); syncFrame(); scheduleFit(); });
  * state and last activity visible, and every chip reconciled in place by id so the
  * 700 ms poll never rebuilds the row under the pointer (BUG-043). */
 const sessionsBar=()=>element('sessions');
-const sessionNodes=new Map();
+const sessionNodes=new Map(), sessionLabels=new Map();
 let recentWrap=null, recentToggle=null, recentChips=null, addChip=null;
 let launchWrap=null, launchMenu=null, launchOpen=false;
 const SESSION_WORDS={starting:'starting',running:'running',idle:'ready',busy:'working',
@@ -3655,12 +3666,15 @@ function renderSessions(list) {
     let node=sessionNodes.get(session.id);
     if (!node) { node=createSessionChip(session); sessionNodes.set(session.id,node); }
     updateSessionChip(node,session,label);
+    sessionLabels.set(session.id,label);
+    if (session.id===termSession) syncTerminalTitle(session);
     (session.running===true?liveIds:deadIds).push(session.id);
   }
   for (const [id,node] of [...sessionNodes]) {
     if (sessions.some(session=>session.id===id)) continue;
     node.remove();
     sessionNodes.delete(id);
+    sessionLabels.delete(id);
   }
   /* The switcher is the strip's first control: `orderNodes` removes every child
    * it is not given, so it must be part of the desired list (BUG-090). */
