@@ -1586,11 +1586,18 @@ impl App {
             row.generation + 1,
         )?;
         if let Some(new_id) = result["id"].as_str() {
-            let state = self.state.lock().unwrap();
-            let _ = state.db.execute(
-                "UPDATE sessions SET replaced_by=?1 WHERE id=?2",
-                params![new_id, target],
-            );
+            {
+                let state = self.state.lock().unwrap();
+                let _ = state.db.execute(
+                    "UPDATE sessions SET replaced_by=?1 WHERE id=?2",
+                    params![new_id, target],
+                );
+            }
+            // The replacement continues the same session, so a voice target the
+            // user chose follows it rather than pointing at a closed pane.
+            if self.settings()["active_session"].as_str() == Some(target) {
+                self.set_active(new_id)?;
+            }
         }
         Ok(result)
     }
