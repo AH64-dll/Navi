@@ -1335,6 +1335,16 @@ function launchedEvent(event) {
     meta:{},
   });
 }
+/* A prompt Navi held for a busy session reached it. */
+function deliveredEvent(event) {
+  const text=String(event.message||'Prompt sent');
+  toast(text);
+  addMessage({
+    role:'system', time:Number(event.time)||Date.now(), status:'complete',
+    parts:[{type:'text',text,tone:'tool'}],
+    meta:{},
+  });
+}
 function transcriptEvent(event) {
   /* A transcript event opens the user turn when the request came from outside the
      composer (voice, host). Its id is the request id, so a re-sent copy merges. */
@@ -1410,6 +1420,7 @@ function handleEvent(event) {
     case 'error': failedEvent(event); break;
     case 'stopped': stoppedEvent(event); break;
     case 'launched': if (!event.replayed) launchedEvent(event); break;
+    case 'delivered': if (!event.replayed) deliveredEvent(event); break;
     case 'progress': progressEvent(event); break;
     case 'transcript': transcriptEvent(event); break;
     /* A harness tail that produced evidence moves the graph; the panel and the

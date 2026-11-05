@@ -661,6 +661,58 @@ impl App {
             })
     }
 
+    /// "Tell Codex to …" while Codex is busy: wait (up to ten minutes) for the
+    /// pane to free up, then type the prompt. Stop cancels the wait.
+    fn deliver_when_free(&self, id: &str, prompt: &str, label: &str) -> Result<()> {
+        let app = self.me.upgrade().ok_or("Navi is shutting down")?;
+        let (id, prompt, label) = (id.to_string(), prompt.to_string(), label.to_string());
+        let generation = self.generation.load(Ordering::SeqCst);
+        std::thread::spawn(move || {
+            let started = now();
+            let outcome = loop {
+                std::thread::sleep(Duration::from_secs(2));
+                if app.generation.load(Ordering::SeqCst) != generation {
+                    break Err("Stop was pressed".to_string());
+                }
+                if now().saturating_sub(started) > 600_000 {
+                    break Err("it stayed busy for ten minutes".to_string());
+                }
+                let Ok(sessions) = app.sessions() else { continue };
+                let Some(session) = sessions.iter().find(|session| session["id"] == id.as_str()) else {
+                    break Err("the session is gone".to_string());
+                };
+                if session["running"] != true {
+                    break Err(format!("{label} closed"));
+                }
+                if !matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) {
+                    break app.inject(&id, &prompt, true).map(|_| ());
+                }
+            };
+            let project = app.sessions().ok().and_then(|sessions| {
+                sessions.iter().find(|session| session["id"] == id.as_str())?["project_id"]
+                    .as_str()
+                    .map(str::to_string)
+            });
+            match outcome {
+                Ok(()) => app.event_for(
+                    project.as_deref(),
+                    Some(&id),
+                    "delivered",
+                    &format!("Sent to {label}: “{prompt}”"),
+                    json!({"id":id,"name":label}),
+                ),
+                Err(reason) => app.event_for(
+                    project.as_deref(),
+                    Some(&id),
+                    "warning",
+                    &format!("Did not send “{prompt}” to {label}: {reason}."),
+                    json!({"id":id}),
+                ),
+            }
+        });
+        Ok(())
+    }
+
     /// The choices of a "Which one" this command just asked, for the chat to
     /// offer as buttons (a pending question from before was taken already).
     fn choice_extra(&self) -> Value {
@@ -2305,7 +2357,9 @@ impl App {
                 let text = match chosen.as_slice() {
                     // A child process owns the terminal: typing would go to it.
                     [session] if matches!(session["state"].as_str(), Some("busy" | "starting" | "created")) => {
-                        format!("{} is busy, so I did not type over it. Try again when it is free.", label(session))
+                        let name = label(session);
+                        self.deliver_when_free(session["id"].as_str().unwrap_or_default(), prompt, &name)?;
+                        format!("{name} is busy; I will send “{prompt}” when it is free.")
                     }
                     [session] => {
                         self.inject(session["id"].as_str().unwrap_or_default(), prompt, true)?;

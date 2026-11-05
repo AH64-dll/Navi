@@ -259,9 +259,9 @@ def harness_target(transcript, status):
 
     Resolves the named session among running harnesses ('this'/'active' uses
     the active session). Returns None when the phrase or target is not a
-    harness route, or names several sessions (the daemon resolves those). A session whose terminal a child process owns (`busy`) or
-    that is still starting reports busy instead of being typed over; the same
-    rule as the daemon's typed "tell Codex to ..." route.
+    harness route, names several sessions, or names one that is busy or still
+    starting: the daemon's typed route resolves those and holds a prompt for
+    a busy pane until it is free.
     """
     wanted = text = None
     for pattern in _HARNESS_PATTERNS:
@@ -288,7 +288,8 @@ def harness_target(transcript, status):
         return None
     session_state = str(target.get("state") or "idle").lower()
     if session_state in ("busy", "starting", "created"):
-        return {"busy": True, "target": target.get("name")}
+        # The daemon's typed route holds the prompt until the pane is free.
+        return None
     return {"id": target["id"], "name": target.get("name"), "text": text}
 
 
@@ -697,8 +698,6 @@ def _handle_transcript(transcript, source, meta, commands, loaded_speech,
             return "discarded"
         route = harness_target(transcript, status)
         if route is not None:
-            if route.get("busy"):
-                return "session busy"
             try:
                 rpc("prompt", {"id": route["id"], "text": route["text"]}, timeout=2)
                 return f"sent to {route['name']}"
