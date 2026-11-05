@@ -1488,6 +1488,7 @@ impl App {
         let asking = [
             "how far along", "how far are we", "how far is", "how much is done", "how much of",
             "how complete", "how close", "how much is left", "how much left", "what percent",
+            "completion percentage", "completion percent", "percent complete", "percent done",
             "what percentage", "progress report", "what's the progress", "what is the progress",
             "whats the progress", "project status", "status of the project", "show progress",
             "show the progress", "show me the progress", "open the progress", "open progress",
@@ -1580,6 +1581,12 @@ impl App {
             if matched.len() == 1 {
                 return Ok(Some(json!({"kind":"switch","id":matched[0]["id"],
                     "name":matched[0]["name"]})));
+            }
+            // Several by that name ("Codex" here and in another project):
+            // the run step prefers the one in the command's project.
+            if matched.len() > 1 {
+                let ids: Vec<Value> = matched.iter().map(|session| session["id"].clone()).collect();
+                return Ok(Some(json!({"kind":"switch","ids":ids,"name":matched[0]["name"]})));
             }
             // No session by that name: "switch to acme-api" names a project.
             let projects = self.projects()?;
@@ -2229,7 +2236,31 @@ impl App {
                     "reply": reply(Some(&id), text, json!({"action":"switch_project"}))}))
             }
             "switch" => {
-                let target = action["id"].as_str().ok_or("Missing session")?;
+                let target = match action["id"].as_str() {
+                    Some(id) => id.to_string(),
+                    None => {
+                        let here = project.as_ref().ok().and_then(|project| project["id"].as_str());
+                        let ids = action["ids"].as_array().cloned().unwrap_or_default();
+                        let sessions = self.sessions()?;
+                        let local: Vec<&Value> = sessions
+                            .iter()
+                            .filter(|session| ids.contains(&session["id"]))
+                            .filter(|session| session["project_id"].as_str() == here)
+                            .collect();
+                        match local.as_slice() {
+                            [session] => session["id"].as_str().unwrap_or_default().to_string(),
+                            _ => {
+                                let labels = session_labels(&sessions);
+                                let names: Vec<String> = ids
+                                    .iter()
+                                    .filter_map(|id| labels.get(id.as_str()?).cloned())
+                                    .collect();
+                                let text = format!("Which one: {}?", names.join(", "));
+                                return Ok(json!({"reply": reply(None, text, json!({}))}));
+                            }
+                        }
+                    }
+                };
                 self.session_target(&json!({"id":target}))?;
                 let text = format!("Switched to {}.", action["name"].as_str().unwrap_or("the session"));
                 Ok(json!({"id":target,"reply":reply(None, text, json!({}))}))
@@ -2775,29 +2806,31 @@ fn routes_to_conversation(kind: &str) -> bool {
 // bridge: "hey navi, what is X" and "navi what is X" both become "what is X".
 // A bare wake word keeps the original text so the bridge still gets a request.
 fn conversational_text(text: &str) -> String {
-    let trimmed = text.trim();
-    let lower = trimmed.to_lowercase();
-    for wake in ["hey navi", "okay navi", "ok navi", "navi"] {
-        let Some(rest) = lower.strip_prefix(wake) else {
-            continue;
-        };
-        // Require a word boundary so "navigation tips" keeps its text.
-        if !rest.is_empty()
-            && !rest.starts_with(|c: char| c.is_whitespace() || matches!(c, ',' | ':'))
-        {
-            continue;
+    // Wake words and spoken fillers lead the request: "Hey Navi. Stop Codex.",
+    // "um, open a terminal", "okay Navi, what's left".
+    const LEADS: [&str; 13] = ["hey navi", "okay navi", "ok navi", "navi", "umm", "um", "uhh",
+        "uh", "erm", "hmm", "okay", "ok", "alright"];
+    let separator = |c: char| c.is_whitespace() || matches!(c, ',' | ':' | '.' | '!');
+    let mut current = text.trim();
+    'strip: loop {
+        for lead in LEADS {
+            let Some(head) = current.get(..lead.len()) else {
+                continue;
+            };
+            let rest = &current[lead.len()..];
+            // Require a word boundary so "navigation tips" keeps its text.
+            if !head.eq_ignore_ascii_case(lead) || !(rest.is_empty() || rest.starts_with(separator)) {
+                continue;
+            }
+            let stripped = rest.trim_start_matches(separator).trim();
+            if stripped.is_empty() {
+                return current.to_string();
+            }
+            current = stripped;
+            continue 'strip;
         }
-        let rest = &trimmed[trimmed.len() - rest.len()..];
-        let stripped = rest
-            .trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ',' | ':'))
-            .trim();
-        return if stripped.is_empty() {
-            trimmed.to_string()
-        } else {
-            stripped.to_string()
-        };
+        return current.to_string();
     }
-    trimmed.to_string()
 }
 
 // Deterministic voice-command grammar for persona changes, independent of the
@@ -2981,6 +3014,7 @@ fn progress_subject(lower: &str) -> bool {
                 matches!(
                     *next,
                     "of" | "on" | "for" | "in" | "so" | "now" | "today" | "overall" | "report"
+                        | "percentage" | "percent"
                         | "status" | "check" | "please" | "is" | "looks" | "look" | "again"
                 )
             })

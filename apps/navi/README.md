@@ -18,7 +18,8 @@ flowchart LR
     Rust --> Progress
 ```
 
-Decisions select registered identifiers. Model output never supplies executable
+Leading wake words and fillers ("Hey Navi.", "okay Navi,", "um", "uh") are dropped
+before a request is read. Decisions select registered identifiers. Model output never supplies executable
 commands, paths, selectors or desktop scripts. Requests must explicitly name their
 target. Supported requests start with an action verb, optionally preceded by
 “please”, “can you” or “could you”. Negated, deferred, explanatory and ambiguous
