@@ -3665,8 +3665,9 @@ function ensureSessionShell(bar) {
     addChip=document.createElement('button');
     addChip.type='button';
     addChip.className='session-chip new';
-    addChip.textContent='+ harness';
+    addChip.append('+',graphNode('span','new-label',' harness'));
     addChip.title='Open a harness in the active project';
+    addChip.setAttribute('aria-label','Open a harness');
     addChip.setAttribute('aria-haspopup','menu');
     addChip.setAttribute('aria-expanded','false');
     addChip.onclick=event=>{

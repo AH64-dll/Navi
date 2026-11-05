@@ -325,6 +325,7 @@ body.still .session-dot{animation:none}
 .sessions.compact .session-chip{gap:6px;padding:5px 9px}
 .sessions.compact .session-chip:not([data-state="needs_input"]):not([data-state="interrupted"]) .session-state{display:none}
 .sessions.compact .session-name{max-width:130px}
+.sessions.compact .new-label{display:none}
 
 /* Quick launch: one click opens a harness in the active project. */
 .launch-wrap{position:relative;display:flex}
