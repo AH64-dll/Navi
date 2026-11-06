@@ -631,10 +631,16 @@ body[data-dock="max"] .terminal-pane{grid-area:stage;margin-left:0;width:auto;he
   #chat-log{min-height:var(--composer-line)}
 }
 
-/* Short windows: the first-run block keeps its buttons and drops its prose. */
+/* Short windows: the first-run block keeps its buttons and drops its prose,
+   the note first; at 652 px both lines still fit beside a 70 px gap. */
 @media(max-height:700px){
   .chat-empty{padding:8px 10px;gap:4px}
-  .empty-hint,.empty-note{display:none}
+}
+@media(max-height:640px){
+  .empty-note{display:none}
+}
+@media(max-height:600px){
+  .empty-hint{display:none}
 }
 
 /* Harness profile editor rows in settings. */
