@@ -23,11 +23,16 @@ def write(path, text, executable=False):
 
 def opencode_unit(opencode, path):
     """The one OpenCode server on this machine. Navi's gateway and the DSH stack's bridge
-    both start this unit instead of a server of their own, and it restarts itself."""
+    both start this unit instead of a server of their own, and it restarts itself.
+
+    An open `opencode` terminal starts the same server when the port is empty, and a second
+    `serve --service` exits at once, so with Restart=always this unit would retry forever
+    while a terminal's server is running. The condition makes it step aside instead."""
     return (
         "[Unit]\nDescription=OpenCode server shared by Navi and the DSH stack\n"
         "After=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=0\n\n"
         f"[Service]\nType=simple\nWorkingDirectory=%h\nEnvironment=PATH={path}\n"
+        "ExecCondition=/usr/bin/bash -c '! (exec 3<>/dev/tcp/127.0.0.1/49374) 2>/dev/null'\n"
         f"ExecStart={opencode} serve --service --hostname 127.0.0.1 --port 49374\n"
         "Restart=always\nRestartSec=2\nKillMode=control-group\n\n"
         "[Install]\nWantedBy=default.target\n"

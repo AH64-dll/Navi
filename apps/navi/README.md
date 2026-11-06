@@ -259,7 +259,9 @@ unit on `127.0.0.1:49374`. It restarts itself after a crash, and `navi-station.s
 wants it. The gateway starts this unit instead of a server of its own, and falls back to a
 plain `opencode serve` only in a source checkout without it. Other programs that need the
 server should run `~/.local/share/navi/bin/opencode-start`, so they also share this one
-server. Check it with `systemctl --user status navi-opencode.service` and read its log with
+server. An open `opencode` terminal starts the same kind of server when the port is empty,
+and OpenCode allows only one, so the unit stays inactive while another copy is answering.
+Check it with `systemctl --user status navi-opencode.service` and read its log with
 `journalctl --user -u navi-opencode.service`.
 
 The editable system prompt is the OpenCode agent file

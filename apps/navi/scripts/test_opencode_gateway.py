@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -577,7 +578,26 @@ class GatewayTests(unittest.TestCase):
         self.assertIn("ExecStart=/bin/opencode serve --service --hostname 127.0.0.1 --port 49374\n", unit)
         self.assertIn("Restart=always\n", unit)
         self.assertNotIn("proxychains", unit)
-        self.assertEqual(f"{gateway_module.DEFAULT_URL.rsplit(':', 1)[-1]}", "49374")
+        self.assertIn("/dev/tcp/127.0.0.1/49374", unit.split("ExecCondition=")[1])
+        self.assertEqual(gateway_module.DEFAULT_URL.rsplit(":", 1)[-1], "49374")
+
+    # The unit's condition decides whether it starts; a wrong exit code would either race
+    # a running server or leave the machine with none.
+    def test_the_condition_steps_aside_only_when_the_port_answers(self):
+        spec = importlib.util.spec_from_file_location("navi_install", Path(__file__).with_name("install.py"))
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        line = next(item for item in installer.opencode_unit("/bin/opencode", "/bin").splitlines()
+                    if item.startswith("ExecCondition="))
+        script = re.search(r"-c '(.*)'$", line).group(1)
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        port = listener.getsockname()[1]
+        probe = script.replace("49374", str(port))
+        self.assertEqual(subprocess.run(["/usr/bin/bash", "-c", probe]).returncode, 1)
+        listener.close()
+        self.assertEqual(subprocess.run(["/usr/bin/bash", "-c", probe]).returncode, 0)
 
     def test_catalog_recovers_after_restart(self):
         port = self.server.server_port
