@@ -2568,6 +2568,20 @@ impl App {
             })
             .cloned()
             .collect();
+        // "Is Codex #1 busy" after #1 was renamed: no label carries the number,
+        // so say which sessions are open rather than answer for all of them.
+        let number = lower.find('#').map(|at| lower[at + 1..].chars().take_while(char::is_ascii_digit).collect::<String>());
+        if numbered.is_empty()
+            && ids.len() > 1
+            && let Some(number) = number.filter(|number| !number.is_empty())
+        {
+            let names: Vec<String> = ids
+                .iter()
+                .filter_map(|id| labels.get(id.as_str().unwrap_or_default()).cloned())
+                .collect();
+            return Ok(Some(json!({"kind":"ack",
+                "reply":format!("No open session is #{number}. Open: {}.", join_names(&names))})));
+        }
         let ids = if numbered.is_empty() { ids } else { numbered };
         if ids.is_empty() && !(waiting || overview) {
             // "Is Codex open?" with no Codex: say so rather than ask a model.
