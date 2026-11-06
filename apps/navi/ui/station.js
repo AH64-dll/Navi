@@ -860,6 +860,10 @@ function atBottom(log) {
 let followLog=true, ownScrollTop=-1;
 function pinLog(log) {
   log.scrollTop=log.scrollHeight;
+  /* A newest row taller than the log would lose its heading ("Assistant
+   * unavailable", the sender) off the top: start it at the top instead. */
+  const rows=log.querySelectorAll('.msg'), last=rows[rows.length-1];
+  if (last&&last.offsetHeight>log.clientHeight-8) log.scrollTop=Math.max(0,last.offsetTop-log.offsetTop-4);
   ownScrollTop=log.scrollTop;
   followLog=true;
 }
@@ -1292,10 +1296,12 @@ const ASSISTANT_HINT='Navi’s own commands still work: “open Claude Code”, 
 /* A usage or lookup error is the command's answer: retrying it changes nothing.
  * Only a transport failure means the assistant itself is unavailable. */
 function failurePart(text) {
-  const usage=/^(Use \/|Use at most|No (task|part|Navi project|project)|Unknown |Missing |This project|Progress needs|Command must)/.test(text);
+  const usage=/^(Use \/|Use at most|No (task|part|Navi project|project)|Unknown |Missing |This project|Progress needs|Command must|Percent must|Value must|state must)/.test(text);
+  /* Without the daemon nothing works, not only the assistant. */
+  const daemonDown=/daemon is not running|Host not responding/i.test(text);
   return usage
     ?{part:{type:'error',text:'Could not do that',detail:text,retry:false},source:'navi'}
-    :{part:{type:'error',text:'Assistant unavailable',detail:text,retry:true,
+    :{part:{type:'error',text:daemonDown?'Navi is not running':'Assistant unavailable',detail:text,retry:true,
       hint:ASSISTANT_DOWN.test(text)?ASSISTANT_HINT:undefined},source:'unavailable'};
 }
 /* A failure the user must act on (the assistant is down) raises attention; a
