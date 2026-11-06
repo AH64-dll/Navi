@@ -54,6 +54,8 @@
 /* While the first-run block shows, the log keeps room for it: an overlay on a
    one-line log would hide its buttons. */
 .chat:has(#chat-empty:not([hidden])) .chat-log-wrap{min-height:min(124px,20vh)}
+/* …and the panel must be tall enough for it, or the status line spills out below. */
+.chat:has(#chat-empty:not([hidden])){max-height:max(var(--composer-max),236px)}
 
 /* A message is a row of parts: head (who + time), parts, meta, actions. One accent
    per role, no gradients in text, and every state carries its own `data-status`. */
