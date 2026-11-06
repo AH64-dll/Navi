@@ -2545,16 +2545,23 @@ impl App {
             return Ok(None);
         }
         let sessions = self.sessions()?;
-        let ids: Vec<Value> = sessions
-            .iter()
-            .filter(|session| session["running"] == true)
-            .filter(|session| {
-                ["name", "profile", "harness"].iter().any(|key| {
-                    mentioned(lower, session[*key].as_str().unwrap_or(""))
-                }) || (session["profile"] == "claude" && mentioned(lower, "claude code"))
-            })
-            .map(|session| session["id"].clone())
-            .collect();
+        // Its own name first: "is Codex busy" with a Codex renamed "reviewer"
+        // asks about the one still called Codex.
+        let matching = |keys: &[&str]| -> Vec<Value> {
+            sessions
+                .iter()
+                .filter(|session| session["running"] == true)
+                .filter(|session| {
+                    keys.iter().any(|key| mentioned(lower, session[*key].as_str().unwrap_or("")))
+                        || (keys.contains(&"profile") && session["profile"] == "claude" && mentioned(lower, "claude code"))
+                })
+                .map(|session| session["id"].clone())
+                .collect()
+        };
+        let ids = match matching(&["name"]) {
+            named if !named.is_empty() => named,
+            _ => matching(&["profile", "harness"]),
+        };
         // "Is Codex #2 done", "what's codex two doing": the numbered label
         // narrows several same-named sessions to one.
         let labels = session_labels(&sessions);
@@ -4990,17 +4997,25 @@ fn parse_set_progress(lower: &str) -> Option<(Option<String>, f64)> {
 fn named_sessions(sessions: &[Value], labels: &HashMap<String, String>, active: Option<&str>, name: &str) -> Vec<Value> {
     let name = spoken_numbers(name.trim().trim_end_matches([':', ',']));
     let name = name.strip_prefix("the ").unwrap_or(&name).to_string();
-    sessions
-        .iter()
-        .filter(|session| session["running"] == true)
+    let running = || sessions.iter().filter(|session| session["running"] == true);
+    // A session's own name or label wins: with "Codex" and a Codex renamed
+    // "reviewer", "tell Codex …" means the one still called Codex.
+    let named: Vec<Value> = running()
         .filter(|session| {
             let id = session["id"].as_str().unwrap_or_default();
             (matches!(name.as_str(), "this" | "it" | "active" | "this session" | "active session")
                 && active == Some(id))
                 || labels.get(id).is_some_and(|label| spoken_numbers(label) == name)
-                || ["name", "profile", "harness"].iter().any(|key| {
-                    session[*key].as_str().is_some_and(|value| spoken_numbers(value) == name)
-                })
+                || session["name"].as_str().is_some_and(|value| spoken_numbers(value) == name)
+        })
+        .map(|session| session["id"].clone())
+        .collect();
+    if !named.is_empty() {
+        return named;
+    }
+    running()
+        .filter(|session| {
+            ["profile", "harness"].iter().any(|key| session[*key].as_str().is_some_and(|value| spoken_numbers(value) == name))
                 || (session["profile"] == "claude" && name == "claude code")
         })
         .map(|session| session["id"].clone())
