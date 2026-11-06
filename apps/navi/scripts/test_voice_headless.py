@@ -447,11 +447,10 @@ class HarnessRouteTests(unittest.TestCase):
         route = voice.harness_target("ask the active session to continue", self.status())
         self.assertEqual(route["id"], "s2")
 
-    def test_busy_session_is_reported_not_typed_over(self):
+    def test_busy_session_is_left_to_the_daemon_that_holds_the_prompt(self):
         status = self.status()
         status["sessions"][0]["state"] = "busy"
-        route = voice.harness_target("tell Claude to run the tests", status)
-        self.assertTrue(route["busy"])
+        self.assertIsNone(voice.harness_target("tell Claude to run the tests", status))
 
     def test_non_harness_phrases_pass_through(self):
         self.assertIsNone(voice.harness_target("what time is it", self.status()))

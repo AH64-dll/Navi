@@ -353,8 +353,9 @@ class GraphTests(unittest.TestCase):
         kinds = [row["kind"] for row in
                  self.call("graph_get", {"project_id": project["id"]})["result"]["signals"]]
         self.assertEqual(kinds.count("git_commit"), 2, kinds)
+        # Only the newest working-tree flip is listed: the current state.
         self.assertEqual(kinds.count("git_clean"), 1, kinds)
-        self.assertEqual(kinds.count("git_dirty"), 1, kinds)
+        self.assertEqual(kinds.count("git_dirty"), 0, kinds)
 
         # A non-repository directory is path state only, never a fake signal.
         plain = self.folder / "plain"

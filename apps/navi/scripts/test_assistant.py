@@ -92,11 +92,18 @@ class AssistantTests(unittest.TestCase):
     def tearDown(self):
         self.process.terminate()
         self.process.wait(timeout=3)
+        self.stop_tmux(self.data)
         self.opencode.shutdown()
         self.opencode.server_close()
         self.chief.shutdown()
         self.chief.server_close()
         self.temporary.cleanup()
+
+    def stop_tmux(self, data):
+        # The daemon leaves its panes running by design, and deleting the socket's
+        # folder would strand the server with nothing able to reach it.
+        subprocess.run(["tmux", "-S", str(data / "terminals.sock"), "kill-server"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def call(self, op, params=None, timeout=10):
         with socket.socket(socket.AF_UNIX) as connection:
@@ -240,7 +247,8 @@ class AssistantTests(unittest.TestCase):
             settings["model"]["endpoint"] = (
                 f"http://127.0.0.1:{self.chief.server_port}/v1/systemone")
             self.assertTrue(call("settings", settings)["ok"])
-            result = call("command", {"text": "what time is it"}, timeout=20)
+            # The clock answers the time locally, so ask what only the assistant can.
+            result = call("command", {"text": "why is the sky blue"}, timeout=20)
             self.assertFalse(result["ok"], result)
             self.assertIn("error", result)
             status = call("status")["result"]
@@ -250,6 +258,7 @@ class AssistantTests(unittest.TestCase):
         finally:
             process.terminate()
             process.wait(timeout=3)
+            self.stop_tmux(dead / "data")
 
     # BUG-016/018: a second command queues while the first runs, then drains.
     def test_second_command_queues_and_runs(self):

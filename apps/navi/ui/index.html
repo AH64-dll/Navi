@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="surface.css">
   <link rel="stylesheet" href="station.css">
   <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="classic.css">
 </head>
 <body class="booting">
   <canvas id="field" aria-hidden="true"></canvas><div class="scan" aria-hidden="true"></div>
@@ -68,8 +69,8 @@
         <!-- First run: the three ways to act, and why the mic may be unavailable. It
              overlays an empty log, so it never steals height from the composer. -->
         <div id="chat-empty" class="chat-empty">
-          <p class="empty-title">Ask Navi for real work.</p>
-          <p class="empty-hint">Say “Hey Navi, open Claude Code” or “how far along is the project?” · type a request · press <b>/</b> for commands</p>
+          <p class="empty-title">Ask Navi for anything on this PC.</p>
+          <p class="empty-hint">Say “Hey Navi, search for flights to Cairo”, “open Codex in my-project” or “check my email” · type a request · press <b>/</b> for commands</p>
           <div class="empty-actions">
             <button type="button" id="empty-launch" class="primary" hidden>Open harness</button>
             <button type="button" id="empty-assess">Assess progress</button>
@@ -87,6 +88,7 @@
         <button type="button" id="attach" class="mic attach" title="Attach files" aria-label="Attach files"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M16.5 6.5v9a4.5 4.5 0 0 1-9 0V5a3 3 0 0 1 6 0v9.5a1.5 1.5 0 0 1-3 0V7h1.5v7.5a.2.2 0 0 0 .4 0V5a1.7 1.7 0 0 0-3.4 0v10.5a3 3 0 0 0 6 0v-9h1.5Z"/></svg></button>
         <input id="attach-input" type="file" multiple hidden accept="image/*,text/*,.md,.json,.diff,.patch,.log,.csv,.txt">
         <button type="button" id="microphone" class="mic" aria-pressed="false" title="Microphone"><span>Mic</span></button>
+        <button type="button" id="speak-toggle" class="mic" aria-pressed="false" title="Read replies out loud"><span>Sound</span></button>
         <label class="sr-only" for="command">Message Navi</label>
         <input id="command" placeholder="Ask Navi… or /help" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="slash-list" aria-expanded="false">
         <button type="button" id="stop" class="stop" hidden>Stop</button>
@@ -120,6 +122,32 @@
         <label><input type="checkbox" id="setting-speak"> Speak replies</label>
         <label><input type="checkbox" id="setting-mic"> Microphone</label>
       </div>
+      <fieldset id="connections" class="connections">
+        <legend>Connections</legend>
+        <p class="connection-state" id="mail-state">Email: checking…</p>
+        <div class="connection-row" id="mail-form">
+          <label class="sr-only" for="mail-address">Email address</label>
+          <input id="mail-address" type="email" placeholder="you@gmail.com" autocomplete="off" spellcheck="false">
+          <label class="sr-only" for="mail-password">App password</label>
+          <input id="mail-password" type="password" placeholder="App password" autocomplete="new-password">
+          <button type="button" id="mail-connect">Connect</button>
+        </div>
+        <div class="connection-row" id="mail-connected" hidden>
+          <button type="button" id="mail-disconnect">Disconnect</button>
+        </div>
+        <p class="hint">Lets Navi read your mail to you and send what you confirm. Use an app password, not your normal one; it stays in a private file on this PC. Without one, Navi opens webmail instead.</p>
+        <p class="connection-state" id="browser-state"></p>
+        <div class="connection-row" id="account-links" role="group" aria-label="Open an account in your browser">
+          <button type="button" data-open="open gmail">Gmail</button>
+          <button type="button" data-open="open outlook">Outlook</button>
+          <button type="button" data-open="open x">X</button>
+          <button type="button" data-open="open facebook">Facebook</button>
+          <button type="button" data-open="open instagram">Instagram</button>
+          <button type="button" data-open="open linkedin">LinkedIn</button>
+          <button type="button" data-open="open reddit">Reddit</button>
+        </div>
+        <p class="hint">Social accounts use your browser's own login. Navi opens pages and fills in posts; you press Post yourself.</p>
+      </fieldset>
       <label class="field" for="setting-language">Speech language</label>
       <input id="setting-language" maxlength="12" autocomplete="off" spellcheck="false"
              placeholder="en" aria-describedby="speech-note">

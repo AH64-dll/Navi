@@ -147,6 +147,31 @@ class SentenceLimitTests(unittest.TestCase):
         self.assertNotIn("rm -rf", out)
         self.assertIn("then stop.", out)
 
+    def test_a_dot_inside_a_number_or_short_form_ends_nothing(self):
+        self.assertEqual(persona.first_sentences("Version 1.2.3 is out, e.g. on npm. It works."),
+                         "Version 1.2.3 is out, e.g. on npm. It works.")
+        self.assertEqual(persona.split_sentences("Version 1.2.3 is out, e.g. on npm. It works."),
+                         ["Version 1.2.3 is out, e.g. on npm.", "It works."])
+
+    def test_links_are_not_read_out(self):
+        self.assertEqual(persona.first_sentences("Done. See https://example.com/a/b?x=1 for details."),
+                         "Done. See a link for details.")
+
+    def test_paths_say_only_the_file_name(self):
+        self.assertEqual(
+            persona.first_sentences("Edited `apps/navi/src/main.rs` and /home/amr/Documents/navi/README.md today."),
+            "Edited main.rs and README.md today.")
+
+    def test_a_slash_in_words_is_left_alone(self):
+        self.assertEqual(persona.sanitize_for_tts("Use and/or TCP/IP on 1/2."), "Use and/or TCP/IP on 1/2.")
+
+    def test_emoji_are_not_spoken(self):
+        self.assertEqual(persona.first_sentences("Great news! \U0001F600 All tests pass."), "Great news! All tests pass.")
+
+    def test_progress_lines_are_not_spoken(self):
+        text = "Fixed the bug.\n\nPROGRESS part \"Voice\" 80 | tests pass\nPROGRESS overall 70 | read the code"
+        self.assertEqual(persona.first_sentences(text), "Fixed the bug.")
+
 
 class SpeechOutTests(unittest.TestCase):
     def test_full_reply_kept_but_only_three_sentences_spoken(self):

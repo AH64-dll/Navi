@@ -21,13 +21,22 @@ DEFAULT_PERSONAS_PATH = os.path.join(CONFIG_DIR, "personas.json")
 USER_PERSONAS_PATH = os.path.expanduser("~/.config/navi/personas.toml")
 DEFAULT_PERSONA_NAME = "navi"
 NAVI_PROMPT = (
-    "You are Navi, the user's voice assistant on their own machine. Your name "
-    "is Navi; that is your only name. Answer directly and concisely — one to "
+    "You are Navi, the user's assistant on their own computer. Your name is "
+    "Navi; that is your only name. Answer directly and concisely — one to "
     "three short sentences unless the user asks for detail. Plain prose: no "
     "markdown, no code blocks, no emoji, because your replies may be spoken "
     "aloud. You run inside the Navi desktop app and OpenCode provides your "
     "tools; use them when a request needs real work on the machine."
 )
+
+# What a reply may hold that nobody wants read out character by character.
+_URL = re.compile(r"(?:https?://|www\.)[^\s)\]>\"']+")
+# Absolute, home or relative paths, and "a/b/c.rs": the last part is what is
+# said. Requiring a leading slash or an extension leaves "and/or" alone.
+_PATH = re.compile(r"(?:(?<![\w/.~])(?:~|\.{1,2})?/(?:[\w.+-]+/)*|\b(?:[\w.+-]+/)+(?=[\w+-]+\.\w))([\w.+-]+)")
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿️‍]")
+_SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*(?=\s|$)")
+_SHORT_FORMS = {"e.g.", "i.e.", "etc.", "vs.", "mr.", "mrs.", "ms.", "dr.", "no.", "approx."}
 
 BUILTIN = {
     "navi": {
@@ -180,6 +189,8 @@ def sanitize_for_tts(text):
     """Strip markdown / code so spoken output is clean prose."""
     if not text:
         return text
+    # Navi's own bookkeeping lines are for the station, never for the ear.
+    text = re.sub(r"^\s*(?:PROGRESS|TASK)\s.*$", "", text, flags=re.M)
     text = re.sub(r"```.*?```", " ", text, flags=re.S)   # fenced code
     text = re.sub(r"```.*", " ", text, flags=re.S)      # unterminated fence
     text = re.sub(r"`([^`]*)`", r"\1", text)            # inline code
@@ -194,6 +205,9 @@ def sanitize_for_tts(text):
     text = re.sub(r"^\s*>\s?", "", text, flags=re.M)           # quotes
     text = re.sub(r"^\s*[-*_]{3,}\s*$", "", text, flags=re.M)  # rules
     text = re.sub(r"\|", ", ", text)                    # table pipes
+    text = _URL.sub("a link", text)
+    text = _PATH.sub(lambda match: match.group(1), text)
+    text = _EMOJI.sub("", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(
         r"\n\s*\n+",
@@ -206,6 +220,26 @@ def sanitize_for_tts(text):
     return text.strip()
 
 
+def split_sentences(text):
+    """Split where a sentence ends: punctuation, then space or the end.
+
+    "Version 1.2.3 is out, e.g. on npm." is one sentence; a dot inside a number
+    or a file name, or after a short form like "e.g.", ends nothing.
+    """
+    sentences = []
+    start = 0
+    for match in _SENTENCE_END.finditer(text):
+        word = text[start:match.start() + 1].rsplit(None, 1)[-1].lower()
+        if word in _SHORT_FORMS:
+            continue
+        sentences.append(text[start:match.end()].strip())
+        start = match.end()
+    rest = text[start:].strip()
+    if rest:
+        sentences.append(rest)
+    return sentences
+
+
 def first_sentences(text, count=3, maximum=600):
     """Return clean prose capped to *count* sentences for speech.
 
@@ -215,8 +249,7 @@ def first_sentences(text, count=3, maximum=600):
     text = sanitize_for_tts(text)
     if not text:
         return text or ""
-    sentences = re.findall(r"[^.!?]+[.!?]+|[^.!?]+$", text)
-    spoken = " ".join(sentence.strip() for sentence in sentences[:count]).strip()
+    spoken = " ".join(split_sentences(text)[:count]).strip()
     if len(spoken) > maximum:
         spoken = spoken[:maximum].rsplit(" ", 1)[0].rstrip(" ,;:") + "."
     return spoken

@@ -2,6 +2,12 @@
 (async () => {
   const report = {ok: false, steps: []};
   const assert = (condition, message) => {if (!condition) throw new Error(message);};
+  /* The chip opens the launch menu; the full dialog is its last entry. */
+  function openNewDialogFromChip() {
+    document.querySelector('#sessions .session-chip.new').click();
+    const entries = [...document.querySelectorAll('#sessions .launch-more')];
+    entries.find(entry => entry.textContent.startsWith('More options')).click();
+  }
   async function waitFor(condition, message) {
     const deadline = performance.now() + 8000;
     while (!condition()) {
@@ -49,6 +55,14 @@
       assert(state.overlaps.length === 0, `${label}: panels overlap (${state.overlaps.join(', ')})`);
       assert(state.stage && state.stage.height >= 180, `${label}: the stage is ${state.stage?.height}px tall`);
       assert(state.chat && state.chat.height >= 120, `${label}: the chat is ${state.chat?.height}px tall`);
+      /* The panel can sit in the window while what it holds spills out of it: the
+       * text box and the status line have to be inside both. */
+      const chatBox = document.querySelector('.chat').getBoundingClientRect();
+      for (const selector of ['#chat-form', '.chat-meta', '#command', '#speak-toggle']) {
+        const box = document.querySelector(selector).getBoundingClientRect();
+        assert(box.height > 0 && box.bottom <= chatBox.bottom + 1 && box.bottom <= innerHeight,
+          `${label}: ${selector} ends at ${Math.round(box.bottom)}, the chat at ${Math.round(chatBox.bottom)} in a ${innerHeight}px window`);
+      }
       /* The art is framed by its own cell, not by the window: the emblem, the halo,
        * the floor and the rings all have to land inside it, or a panel's edge cuts
        * a straight line through the glow (BUG-020/023). */
@@ -143,7 +157,7 @@
     assert(document.getElementById('project-status').textContent.includes('Alpha'),
       `the status line reads ${document.getElementById('project-status').textContent}`);
     /* The new-session dialog defaults to the active project's directory. */
-    document.querySelector('#sessions .session-chip.new').click();
+    openNewDialogFromChip();
     await waitFor(() => document.getElementById('new-dialog').open, 'the new dialog did not open');
     assert(document.getElementById('new-cwd').value === switched.project.path,
       `the new-session cwd is ${document.getElementById('new-cwd').value}`);
@@ -251,8 +265,9 @@
 
     // Session strip must show the launched harness; clicking it opens the
     // attached terminal pane with the session's TUI.
-    await waitFor(() => document.querySelectorAll('#sessions .session-chip:not(.new)').length === before + 1, 'Session chip did not render');
-    document.querySelectorAll('#sessions .session-chip:not(.new)')[before].click();
+    const sessionChips = () => [...document.querySelectorAll('#sessions .session-chip:not(.new):not(.recent-toggle)')];
+    await waitFor(() => sessionChips().length === before + 1, 'Session chip did not render');
+    sessionChips()[before].click();
     await waitFor(() => !document.getElementById('terminal-pane').hidden, 'Terminal pane did not open');
     await waitFor(() => document.querySelector('#terminal-host .xterm') !== null, 'xterm did not mount');
     report.steps.push('Terminal pane opened with xterm for the harness session');
@@ -274,7 +289,7 @@
 
 
     // New-session dialog: launch a harness and inject its first prompt.
-    document.querySelector('#sessions .session-chip.new').click();
+    openNewDialogFromChip();
     await waitFor(() => document.getElementById('new-dialog').open, 'New-session dialog did not open');
     document.getElementById('new-profile').value = 'fixture-shell';
     document.getElementById('new-prompt').value = 'echo navi-create-$((3+4))';
@@ -298,13 +313,35 @@
     assert(lastReplyRow && lastReplyRow.querySelector('.msg-action[data-action="retry"]'),
       'An assistant row has no Retry action');
     /* No finished session exists yet, so the Recent group is absent, not open. */
-    const recentGroup = document.getElementById('sessions').querySelector('.sessions-recent');
+    const recentGroup = [...document.querySelectorAll('#sessions .sessions-recent')]
+      .find(group => group.querySelector('.recent-toggle').textContent.startsWith('Recent'));
     assert(!recentGroup || recentGroup.hidden, 'Recent is open while every session is running');
+    /* Sound starts on and its button saves the change. The settings form below turns
+       it back on, so that save is a real change and not the default. */
+    const sound = document.getElementById('speak-toggle');
+    assert(snapshot.settings.speak === true, 'Spoken replies are not on by default');
+    assert(sound.textContent === 'Sound on', 'The sound button reads ' + sound.textContent);
+    sound.click();
+    await waitFor(() => snapshot.settings.speak === false && sound.textContent === 'Sound off', 'The sound button did not turn sound off');
+    report.steps.push('The sound button turned spoken replies off');
     /* The composer model switcher opens the same catalog and Escape closes it. */
     document.getElementById('settings-button').click();
     assert(document.getElementById('settings-dialog').open, 'Settings did not open');
     assert(document.getElementById('setting-model').value.length > 0, 'Model select not populated');
     assert(document.querySelectorAll('#profiles-editor .profile-row').length >= 4, 'Harness profiles not listed');
+    /* Connections: an isolated station has no account and no browser to open. */
+    await waitFor(() => document.getElementById('mail-state').textContent === 'Email: not connected',
+      'Mail state reads ' + document.getElementById('mail-state').textContent);
+    assert(document.getElementById('browser-state').textContent.startsWith('Browser:'), 'The browser state is empty');
+    const shown = id => getComputedStyle(document.getElementById(id)).display !== 'none';
+    assert(shown('mail-form'), 'The email form is hidden while not connected');
+    assert(!shown('mail-connected'), 'Disconnect is offered while not connected');
+    const tick = document.getElementById('setting-speak').getBoundingClientRect();
+    assert(tick.width === 13 && tick.height === 13, `A checkbox is ${tick.width}x${tick.height}`);
+    assert(document.getElementById('mail-connect').disabled, 'Connect is enabled in isolated mode');
+    assert([...document.querySelectorAll('#account-links button')].every(button => button.disabled),
+      'An account button is enabled in isolated mode');
+    report.steps.push('Connections showed email and browser state, and offered nothing an isolated station cannot do');
     await waitFor(() => document.getElementById('diagnostics-body')?.textContent.includes('renderer'), 'Diagnostics block did not render');
     assert(document.getElementById('diagnostics-reload'), 'Diagnostics reload button missing');
     assert(document.getElementById('diagnostics-copy'), 'Diagnostics copy button missing');

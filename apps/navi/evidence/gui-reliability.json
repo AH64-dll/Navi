@@ -21,17 +21,17 @@
       "opacity": "0"
     },
     "art": {
-      "x": 421.2,
-      "y": 107.5,
-      "w": 549.6,
-      "h": 492.2,
-      "scale": 0.516,
+      "x": 411.7,
+      "y": 112.1,
+      "w": 568.6,
+      "h": 508.8,
+      "scale": 0.54,
       "settled": true,
       "cell": {
         "x": 12,
-        "y": 69,
+        "y": 71,
         "w": 1368,
-        "h": 546
+        "h": 564
       }
     },
     "devtools": false,
@@ -40,8 +40,8 @@
     "pendingOps": [],
     "pendingStale": 0,
     "pendingOldestMs": 0,
-    "cursor": 1836621848552451,
-    "polls": 6,
+    "cursor": 1837054756905988,
+    "polls": 7,
     "pollFailures": 0,
     "offline": false,
     "backoff": 700,
@@ -49,7 +49,7 @@
     "dropped": 1,
     "unknownReplies": 0,
     "daemon": {
-      "pid": 1463192,
+      "pid": 704778,
       "version": "0.1.0"
     },
     "workers": {
@@ -59,7 +59,7 @@
     "errors": [
       {
         "type": "log",
-        "at": "2026-11-01T23:34:11.201Z",
+        "at": "2026-11-06T21:00:12.910Z",
         "level": "error",
         "message": "timeout: status got no reply within 15000ms"
       }
@@ -67,13 +67,13 @@
     "diagnostics": [
       {
         "type": "log",
-        "at": "2026-11-01T23:33:51.226Z",
+        "at": "2026-11-06T20:59:52.935Z",
         "level": "warn",
         "message": "dropped reply for ticket 1"
       },
       {
         "type": "log",
-        "at": "2026-11-01T23:34:11.201Z",
+        "at": "2026-11-06T21:00:12.910Z",
         "level": "error",
         "message": "timeout: status got no reply within 15000ms"
       }
@@ -81,14 +81,15 @@
     "sessions": [
       {
         "active": false,
-        "created": 1793576024120,
-        "cwd": "/tmp/navi-isolated-ryeovd0i",
+        "created": 1793998786124,
+        "cwd": "/tmp/navi-isolated-5zw1sd01",
         "exit_status": null,
         "exited": null,
         "gen": 0,
         "harness": "bash",
-        "id": "navi-abef4305bd85090f",
-        "last_active": 1793576031222,
+        "id": "navi-9bbda696346b73fc",
+        "label": "Isolated validation",
+        "last_active": 1793998792929,
         "last_launched": true,
         "launch_kind": "new",
         "name": "Isolated validation",
@@ -96,21 +97,21 @@
         "native_name": null,
         "origin": "navi",
         "orphan": false,
-        "pid": 1463252,
+        "pid": 704836,
         "profile": "terminal",
         "project_id": null,
         "replaced_by": null,
         "running": true,
-        "state": "needs_input",
+        "state": "idle",
         "voice_target": false
       }
     ],
     "title": "Navi",
-    "messages": 1,
+    "messages": 0,
     "chat": {
-      "count": 1,
-      "mounted": 1,
-      "rows": 1,
+      "count": 0,
+      "mounted": 0,
+      "rows": 0,
       "empty": true,
       "emptyVisible": true,
       "streaming": false,
@@ -118,16 +119,12 @@
       "status": "ready",
       "label": "Ready",
       "failed": 0,
-      "ids": [
-        "m-mvygvfd8-1"
-      ],
-      "cursors": [
-        null
-      ],
+      "ids": [],
+      "cursors": [],
       "savedIds": [],
-      "lastId": "m-mvygvfd8-1",
-      "lastText": "Harness session started: Isolated validation",
-      "lastStatus": "complete",
+      "lastId": null,
+      "lastText": "",
+      "lastStatus": null,
       "pendingFinalise": null,
       "history": {
         "limit": 200,
@@ -157,9 +154,15 @@
     },
     "rpcOps": [
       "status",
+      "harness_list",
+      "progress_overview",
+      "graph_get",
+      "assistant_scope",
       "messages",
+      "graph_get",
       "status",
       "ping",
+      "status",
       "status",
       "status",
       "status",
@@ -175,17 +178,43 @@
         }
       },
       {
+        "op": "harness_list",
+        "params": {}
+      },
+      {
+        "op": "progress_overview",
+        "params": {}
+      },
+      {
+        "op": "graph_get",
+        "params": {
+          "project_id": "prj-7c42848e"
+        }
+      },
+      {
+        "op": "assistant_scope",
+        "params": {
+          "project_id": "prj-7c42848e"
+        }
+      },
+      {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-ea44ca67"
+          "project_id": "prj-7c42848e"
+        }
+      },
+      {
+        "op": "graph_get",
+        "params": {
+          "project_id": "prj-7c42848e"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 0
+          "since": 1837054756905988
         }
       },
       {
@@ -196,35 +225,42 @@
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621848552451
+          "since": 1837054756905988
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621848552451
+          "since": 1837054756905988
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621848552451
+          "since": 1837054756905988
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621848552451
+          "since": 1837054756905988
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621848552451
+          "since": 1837054756905988
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1837054756905988
         }
       }
     ],
@@ -236,45 +272,59 @@
     "graphOpen": false,
     "phase": "idle",
     "project": {
-      "id": "prj-ea44ca67",
+      "id": "prj-7c42848e",
       "name": "Navi",
-      "path": "/home/amrhares/Documents/navi",
+      "path": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
       "path_state": "ok",
       "label": "Navi",
       "switcher": false,
       "options": 1,
-      "scope": null
+      "scope": {
+        "directory": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
+        "project_id": "prj-7c42848e",
+        "session": null
+      }
     },
     "graph": {
       "open": false,
       "loading": false,
-      "project_id": null,
+      "project_id": "prj-7c42848e",
       "percent": null,
-      "percent_null": false,
+      "percent_null": true,
       "unknown": true,
-      "label": null,
+      "basis": "none",
+      "label": "\u2014",
+      "hud": "\u2014",
+      "ring": {
+        "fill": 0,
+        "known": false,
+        "scanning": false
+      },
+      "assessing": false,
       "verified": null,
-      "confidence": null,
+      "confidence": "\u2014",
       "aspects": [],
-      "risks": [],
-      "evidence": 0,
-      "evidenceTotal": null,
-      "empty": false,
-      "as_of": null
+      "risks": [
+        "No aspects defined"
+      ],
+      "evidence": 2,
+      "evidenceTotal": "Evidence (2)",
+      "empty": true,
+      "as_of": "as of Nov 6, 10:59 PM"
     },
     "layout": {
       "stage": {
         "x": 12,
-        "y": 69,
+        "y": 71,
         "width": 1368,
-        "height": 546,
+        "height": 564,
         "visible": true
       },
       "chat": {
         "x": 236,
-        "y": 627,
+        "y": 647,
         "width": 920,
-        "height": 233,
+        "height": 213,
         "visible": true
       },
       "terminal": {
@@ -287,8 +337,8 @@
       "sessions": {
         "x": 12,
         "y": 12,
-        "width": 461,
-        "height": 45,
+        "width": 298,
+        "height": 34,
         "visible": true
       },
       "graph": {
@@ -302,27 +352,27 @@
     },
     "host": {
       "push": {
-        "delivered": 1,
+        "delivered": 2,
         "skipped": 36,
         "errors": 0,
         "unhandled": 0,
-        "bytes": 3886,
-        "cursor": 1836621848552451,
+        "bytes": 6219,
+        "cursor": 1837054756905988,
         "active": false,
-        "rate": 0.04
+        "rate": 0.07
       }
     }
   },
   "dropped_reply": {
     "timeouts": 1,
-    "polls": 6,
+    "polls": 7,
     "pending": 0
   },
   "verbose_rpc_log": [
-    "rpc status 9ms ok=True bytes=4886",
+    "rpc status 6ms ok=True bytes=6609",
+    "rpc progress_overview 1ms ok=True bytes=160",
+    "rpc assistant_scope 1ms ok=True bytes=147",
     "rpc messages 0ms ok=True bytes=59",
-    "rpc status 9ms ok=True bytes=4886",
-    "rpc ping 0ms ok=True bytes=60",
-    "rpc status 2ms ok=True bytes=3911"
+    "rpc graph_get 2ms ok=True bytes=1342"
   ]
 }

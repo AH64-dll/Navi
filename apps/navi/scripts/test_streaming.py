@@ -123,6 +123,10 @@ class StreamingTests(unittest.TestCase):
     def tearDown(self):
         self.process.terminate()
         self.process.wait(timeout=5)
+        # The daemon leaves its panes running by design, and deleting the socket's
+        # folder would strand the server with nothing able to reach it.
+        subprocess.run(["tmux", "-S", str(self.data / "terminals.sock"), "kill-server"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.opencode.shutdown()
         self.opencode.server_close()
         self.chief.shutdown()

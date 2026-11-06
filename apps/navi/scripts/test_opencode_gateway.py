@@ -10,6 +10,7 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 
 WORKERS = Path(__file__).resolve().parents[1] / "workers"
 sys.path.insert(0, str(WORKERS))
@@ -482,6 +483,56 @@ class GatewayTests(unittest.TestCase):
         for call in (dead.commands, dead.models, dead.agents):
             with self.assertRaises(gateway_module.GatewayError):
                 call()
+
+    # A server left on the user's port by an isolated test locked their own Navi out:
+    # Stop started it, the password differed, and every later call tried to start another.
+
+    def test_stop_never_starts_a_server(self):
+        dead = Gateway(base_url="http://127.0.0.1:1", password="pw", autospawn=True,
+                       session_file=self.session_file)
+        with mock.patch.object(Gateway, "spawn") as spawn:
+            self.assertFalse(dead.interrupt())
+        spawn.assert_not_called()
+
+    def test_a_server_that_refuses_the_password_is_named_and_not_raced(self):
+        class Refusing(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(401)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *unused):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Refusing)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            gateway = Gateway(base_url=f"http://127.0.0.1:{server.server_port}", password="wrong",
+                              autospawn=True, session_file=self.session_file)
+            with mock.patch.object(Gateway, "spawn") as spawn:
+                with self.assertRaisesRegex(gateway_module.GatewayError, "refused"):
+                    gateway.ensure_up()
+            spawn.assert_not_called()
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_an_isolated_station_never_starts_or_reaches_the_users_server(self):
+        with (mock.patch.dict(os.environ, {"NAVI_ISOLATED": "1"}),
+              mock.patch.object(Gateway, "spawn") as spawn,
+              mock.patch.object(gateway_module.urllib.request, "urlopen") as opened):
+            os.environ.pop("NAVI_OPENCODE_URL", None)
+            gateway = Gateway(password="pw", autospawn=True, session_file=self.session_file)
+            self.assertFalse(gateway.reachable())
+            self.assertFalse(gateway.interrupt())
+            with self.assertRaises(gateway_module.GatewayError):
+                gateway.ensure_up()
+            opened.assert_not_called()
+            spawn.assert_not_called()
+            # A named server may be used, but still is never started.
+            self.assertFalse(Gateway(base_url="http://127.0.0.1:1", password="pw", autospawn=True,
+                                     session_file=self.session_file).autospawn)
 
     def test_catalog_recovers_after_restart(self):
         port = self.server.server_port

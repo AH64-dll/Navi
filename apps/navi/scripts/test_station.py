@@ -164,7 +164,10 @@ class StationTests(unittest.TestCase):
         settings["model"]["endpoint"]="https://example.com/v1/systemone"
         self.assertFalse(self.call("settings",settings)["ok"])
         self.assertTrue(self.call("cancel")["ok"])
-        self.assertFalse(self.call("command",{"text":"Open Codex"})["ok"])
+        # Launches run without a model now, so ask for what still needs one: a desktop
+        # action. It also keeps this test from starting the machine's real Codex.
+        self.assertTrue(self.call("desktop_state", {"status": "connected"})["ok"])
+        self.assertFalse(self.call("command",{"text":"Scroll down"})["ok"])
         self.assertEqual(self.call("status")["result"]["sessions"],[])
 
     def test_isolated_mode_cannot_open_desktop_or_microphone(self):
@@ -180,7 +183,8 @@ class StationTests(unittest.TestCase):
 
     def test_navi_defaults_and_settings_validation(self):
         settings = self.call("status")["result"]["settings"]
-        self.assertFalse(settings["speak"])
+        self.assertTrue(settings["speak"])
+        self.assertIn("opencode", [profile["id"] for profile in settings["profiles"]])
         self.assertEqual(settings["persona"], "navi")
         self.assertIn("Navi", settings["system_prompt"])
         self.assertNotIn("Jarvis", settings["system_prompt"])
@@ -204,11 +208,13 @@ class StationTests(unittest.TestCase):
         settings = self.call("status")["result"]["settings"]
         settings["model"]["endpoint"] = f"http://127.0.0.1:{server.server_port}/v1/systemone"
         self.assertTrue(self.call("settings", settings)["ok"])
+        # A launch runs without a model now; a desktop action still asks one.
+        self.assertTrue(self.call("desktop_state", {"status": "connected"})["ok"])
         Fixture.delay = 3
         Fixture.inference_started.clear()
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
-                pending = pool.submit(self.call, "command", {"text": "Open terminal"})
+                pending = pool.submit(self.call, "command", {"text": "Scroll down"})
                 self.assertTrue(Fixture.inference_started.wait(timeout=2))
                 started = time.monotonic()
                 self.assertTrue(self.call("cancel")["ok"])
@@ -216,7 +222,7 @@ class StationTests(unittest.TestCase):
                 self.assertLess(time.monotonic() - started, .5)
             self.assertEqual(self.call("status")["result"]["sessions"], [])
             Fixture.delay = 0
-            self.assertTrue(self.call("decide", {"text": "Open terminal"})["ok"])
+            self.assertTrue(self.call("decide", {"text": "Scroll down"})["ok"])
         finally:
             Fixture.delay = 0
             server.shutdown()

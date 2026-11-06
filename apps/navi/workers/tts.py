@@ -29,6 +29,7 @@ import wave
 from pathlib import Path
 
 
+import persona
 import speech_config
 __doc__ = __doc__.replace(
     "{CHAIN}", " -> ".join(
@@ -94,6 +95,8 @@ PIPER_DEFAULT = "en_GB-alan-medium"
 
 # name -> monotonic timestamp until which the provider is disabled.
 _BREAKERS = {}
+# name -> failures in a row since the provider last worked.
+_FAILURES = {}
 
 
 def _breaker_open(name, now=None):
@@ -102,11 +105,17 @@ def _breaker_open(name, now=None):
 
 
 def _breaker_fail(name):
-    _BREAKERS[name] = time.monotonic() + speech_config.breaker_seconds()
+    """Open after several failures in a row (`breaker_failures`). One slow reply
+    from a good network should not switch voices for five minutes."""
+    _FAILURES[name] = _FAILURES.get(name, 0) + 1
+    if _FAILURES[name] >= speech_config.breaker_failures():
+        _FAILURES.pop(name, None)
+        _BREAKERS[name] = time.monotonic() + speech_config.breaker_seconds()
 
 
 def _breaker_ok(name):
     _BREAKERS.pop(name, None)
+    _FAILURES.pop(name, None)
 
 
 def _to_edge_rate(rate):
@@ -286,7 +295,9 @@ def synthesize(text, voice=None, rate=None, order=None, language=None):
     """
     if not text or not text.strip():
         return None
-    timeout = speech_config.timeout_seconds()
+    # Cloud voices return a whole sentence at once: measured on edge, 14 chars
+    # took 2.1 s and 222 chars 3.3 s, so a flat limit fails only long sentences.
+    timeout = speech_config.timeout_seconds() + len(text) / 120
     resolved = voice_for(voice, language)
     for name in (order or speech_config.provider_order("tts")):
         provider = PROVIDERS.get(name)
@@ -355,12 +366,20 @@ def _play_bytes(audio, fmt, cancel_event=None):
             pass
 
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
-
-
 def _sentences(text):
-    parts = [part.strip() for part in _SENTENCE_SPLIT.split(text) if part and part.strip()]
+    parts = [sentence for line in text.splitlines() for sentence in persona.split_sentences(line)]
     return parts or [text]
+
+
+def warm():
+    """Load the local voice in the background. Its first load takes about 5 s
+    (measured), which would otherwise land on the first reply after a network
+    failure, when the user is already waiting."""
+    if "piper" in speech_config.provider_order("tts") and provider_available("piper"):
+        try:
+            _load_piper(voice_for())
+        except Exception:  # noqa: BLE001 - a broken local voice shows when used
+            pass
 
 
 def speak(text, voice=None, rate=None, cancel_event=None, language=None):

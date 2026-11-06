@@ -23,11 +23,13 @@
     "art": null,
     "devtools": false,
     "isolated": true,
-    "pending": 0,
-    "pendingOps": [],
+    "pending": 1,
+    "pendingOps": [
+      "status"
+    ],
     "pendingStale": 0,
-    "pendingOldestMs": 0,
-    "cursor": 1836621791238147,
+    "pendingOldestMs": 101,
+    "cursor": 1837054833172484,
     "polls": 9,
     "pollFailures": 0,
     "offline": false,
@@ -36,7 +38,7 @@
     "dropped": 0,
     "unknownReplies": 0,
     "daemon": {
-      "pid": 1461490,
+      "pid": 707621,
       "version": "0.1.0"
     },
     "workers": {
@@ -47,7 +49,7 @@
     "diagnostics": [
       {
         "type": "log",
-        "at": "2026-11-01T23:32:54.894Z",
+        "at": "2026-11-06T21:01:06.908Z",
         "level": "warn",
         "message": "stage unavailable: NAVI_FORCE_WEBGL_FAIL"
       }
@@ -55,14 +57,15 @@
     "sessions": [
       {
         "active": false,
-        "created": 1793575968088,
-        "cwd": "/tmp/navi-isolated-0x8ednyk",
+        "created": 1793998860583,
+        "cwd": "/tmp/navi-isolated-dn4f1dux",
         "exit_status": null,
         "exited": null,
         "gen": 0,
         "harness": "bash",
-        "id": "navi-8d890c0c288139b5",
-        "last_active": 1793575974901,
+        "id": "navi-1bef0e629f6186af",
+        "label": "Isolated validation",
+        "last_active": 1793998866914,
         "last_launched": true,
         "launch_kind": "new",
         "name": "Isolated validation",
@@ -70,12 +73,12 @@
         "native_name": null,
         "origin": "navi",
         "orphan": false,
-        "pid": 1461550,
+        "pid": 707681,
         "profile": "terminal",
         "project_id": null,
         "replaced_by": null,
         "running": true,
-        "state": "needs_input",
+        "state": "idle",
         "voice_target": false
       }
     ],
@@ -93,13 +96,13 @@
       "label": "Ready",
       "failed": 0,
       "ids": [
-        "m-mvygtrer-1"
+        "m-mw5glszg-1"
       ],
       "cursors": [
         null
       ],
       "savedIds": [],
-      "lastId": "m-mvygtrer-1",
+      "lastId": "m-mw5glszg-1",
       "lastText": "Harness session started: Isolated validation",
       "lastStatus": "complete",
       "pendingFinalise": null,
@@ -131,9 +134,15 @@
     },
     "rpcOps": [
       "status",
+      "harness_list",
+      "progress_overview",
+      "graph_get",
+      "assistant_scope",
       "messages",
       "ping",
       "status",
+      "status",
+      "graph_get",
       "status",
       "status",
       "status",
@@ -151,10 +160,30 @@
         }
       },
       {
+        "op": "harness_list",
+        "params": {}
+      },
+      {
+        "op": "progress_overview",
+        "params": {}
+      },
+      {
+        "op": "graph_get",
+        "params": {
+          "project_id": "prj-57a26231"
+        }
+      },
+      {
+        "op": "assistant_scope",
+        "params": {
+          "project_id": "prj-57a26231"
+        }
+      },
+      {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-00da0982"
+          "project_id": "prj-57a26231"
         }
       },
       {
@@ -165,56 +194,69 @@
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172483
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172484
+        }
+      },
+      {
+        "op": "graph_get",
+        "params": {
+          "project_id": "prj-57a26231"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172484
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172484
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172484
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172484
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172484
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1836621791238147
+          "since": 1837054833172484
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1837054833172484
         }
       }
     ],
@@ -226,45 +268,55 @@
     "graphOpen": false,
     "phase": "idle",
     "project": {
-      "id": "prj-00da0982",
+      "id": "prj-57a26231",
       "name": "Navi",
-      "path": "/home/amrhares/Documents/navi",
+      "path": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
       "path_state": "ok",
       "label": "Navi",
       "switcher": false,
       "options": 1,
-      "scope": null
+      "scope": {
+        "directory": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
+        "project_id": "prj-57a26231",
+        "session": null
+      }
     },
     "graph": {
       "open": false,
       "loading": false,
-      "project_id": null,
+      "project_id": "prj-57a26231",
       "percent": null,
-      "percent_null": false,
+      "percent_null": true,
       "unknown": true,
-      "label": null,
+      "basis": "none",
+      "label": "\u2014",
+      "hud": "\u2014",
+      "ring": null,
+      "assessing": false,
       "verified": null,
-      "confidence": null,
+      "confidence": "\u2014",
       "aspects": [],
-      "risks": [],
-      "evidence": 0,
-      "evidenceTotal": null,
-      "empty": false,
-      "as_of": null
+      "risks": [
+        "No aspects defined"
+      ],
+      "evidence": 2,
+      "evidenceTotal": "Evidence (2)",
+      "empty": true,
+      "as_of": "as of Nov 6, 11:01 PM"
     },
     "layout": {
       "stage": {
         "x": 12,
-        "y": 69,
+        "y": 71,
         "width": 1368,
-        "height": 588,
+        "height": 564,
         "visible": true
       },
       "chat": {
         "x": 236,
-        "y": 669,
+        "y": 647,
         "width": 920,
-        "height": 191,
+        "height": 213,
         "visible": true
       },
       "terminal": {
@@ -277,8 +329,8 @@
       "sessions": {
         "x": 12,
         "y": 12,
-        "width": 461,
-        "height": 45,
+        "width": 298,
+        "height": 34,
         "visible": true
       },
       "graph": {
@@ -292,14 +344,14 @@
     },
     "host": {
       "push": {
-        "delivered": 1,
+        "delivered": 2,
         "skipped": 8,
         "errors": 0,
         "unhandled": 0,
-        "bytes": 3886,
-        "cursor": 1836621791238147,
+        "bytes": 6219,
+        "cursor": 1837054833172484,
         "active": false,
-        "rate": 0.12
+        "rate": 0.24
       }
     }
   }

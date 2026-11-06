@@ -43,6 +43,10 @@ pane is free), `Ask Claude to fix the build` (opens Claude Code first when it is
 closed), `/help`. When Navi asks "Which one?", the next command can be just the answer
 ("the second one"). The same commands run from a shell with `navid ask "…"`.
 
+Neither do requests about the rest of the PC: `Search the web for flights to Cairo`,
+`Check my X notifications`, `Check my email`, `Find the file tax report`, `Volume up`,
+`Open Codex in zen-relay to fix the login bug`. See [Around the PC](#around-the-pc).
+
 Every harness Navi opens is linked to the progress graph. The model reads the
 recorded completion and reports its own estimate per part through Navi's MCP server, or
 through the `navid progress` CLI for Pi. Running `navid link` prints the one-time setup
@@ -579,10 +583,17 @@ soon as `project_add {name, path}` registers it and the switcher moves to it.
 
 ### Speech output
 
-Spoken replies are off by default. The settings gear's **Speak replies** toggle stores
-the `speak` key; when it is false the voice worker never starts `speech_out` and no
-TTS provider is contacted. When enabled, TTS tries edge-tts -> Cloudflare -> Gemini ->
-Piper, and barge-in cancels playback as described above.
+Spoken replies are on by default; an install that had them off is turned on once, and
+after that the choice stays yours. The **Sound** button beside the composer and the
+settings gear's **Speak replies** toggle store the `speak` key; when it is false the
+voice worker never starts `speech_out` and no TTS provider is contacted. When enabled,
+TTS tries edge-tts -> Cloudflare -> Gemini -> Piper, and barge-in cancels playback as
+described above.
+
+Replies are spoken however the request arrived, typed or said. A reply that takes more
+than three seconds is preceded by "One moment.", and a failed command is said out loud
+too. What is read is cleaned for the ear: links become "a link", paths become their
+file name, emoji and PROGRESS lines are dropped.
 
 A harness that starts waiting for input is announced once, on the transition. The
 station shows a notice ("Codex is waiting for your input") unless that pane is the one
@@ -613,7 +624,9 @@ Provider tuning lives in `~/.config/navi/speech.json`:
 ```
 
 `speech_mode` is `cloud-first` (default), `local-only` (skip every cloud STT/TTS
-hop) or `cloud-only` (never use local TTS/STT fallbacks). Credentials go in
+hop) or `cloud-only` (never use local TTS/STT fallbacks). A synthesis gets
+`timeout_seconds` plus a second for every 120 characters, since a provider takes longer
+over a longer sentence. Credentials go in
 `~/.config/navi/secrets.env`; process environment wins:
 
 ```bash
@@ -637,6 +650,7 @@ CARGO_TARGET_DIR=/tmp/navi-cargo-target cargo build --locked --manifest-path app
 cargo test --locked --manifest-path apps/navi/Cargo.toml
 ~/.local/share/navi/venv/bin/python apps/navi/scripts/test_cloud_stt.py
 ~/.local/share/navi/venv/bin/python apps/navi/scripts/test_tts.py
+~/.local/share/navi/venv/bin/python apps/navi/scripts/test_mail.py
 ~/.local/share/navi/venv/bin/python apps/navi/scripts/test_persona.py
 ~/.local/share/navi/venv/bin/python apps/navi/scripts/test_voice_policy.py
 ~/.local/share/navi/venv/bin/python apps/navi/scripts/test_voice_stream.py
@@ -649,6 +663,50 @@ cargo test --locked --manifest-path apps/navi/Cargo.toml
 ~/.local/share/navi/venv/bin/python apps/navi/scripts/smoke_tts.py
 python3 apps/navi/scripts/test_capture_pipeline.py
 ```
+
+## Around the PC
+
+These requests run directly, without a model. They work typed, spoken, and from a shell
+with `navid desk "…"`, which is also how the assistant reaches them. `navid desk` only
+runs direct commands and never starts a model turn.
+
+| Say | What happens |
+| --- | --- |
+| "Search the web for flights to Cairo", "google the weather", "look up cats on youtube" | Opens the search in your browser |
+| "Open reddit", "check my x notifications", "open my linkedin messages" | Opens the site or page in your browser, where you are already logged in |
+| "Post cats and dogs on x" | Opens X's compose box with the text filled in. Nothing is posted until you press Post |
+| "Check my email", "read my latest email" | Reads your inbox when email is connected, without marking anything read; otherwise opens webmail |
+| "Email bob at example dot com saying see you then" | Connected: asks you to confirm, then sends. Not connected: opens a webmail draft |
+| "Find the file tax report", "open my downloads" | Lists matching files to choose from, skipping hidden folders, or opens the folder |
+| "Open spotify", "volume up", "mute the volume", "lock the screen", "take a screenshot", "battery status" | Starts the app or uses the desktop's own controls. Plain "mute" still means Navi's own speech |
+| "Open Codex in zen-relay to fix the login bug", "open the zen relay project" | Finds a project by its spoken name under your folders, registers it, opens the harness there and hands it the task |
+
+A project is any folder under `~/Documents`, `~/projects` and the like that holds a
+marker such as `.git`; `NAVI_PROJECT_ROOTS` (colon-separated) replaces the folders
+searched. `NAVI_BROWSER` names the browser to open; by default Navi uses Zen when it is
+installed, then `xdg-open`.
+
+### Email
+
+In **Settings → Connections**, enter your address and an app password (a separate
+password your mail provider issues for one program; it is not your normal one). Navi
+signs in over verified TLS before storing anything, and stores it in
+`~/.config/navi/secrets.env` with mode 0600. It is never returned by any request and
+**Disconnect** removes it. Gmail, Outlook, Yahoo and iCloud servers are known by address;
+other providers default to `imap.<domain>` and `smtp.<domain>`, and `NAVI_MAIL_IMAP_HOST`
+and `NAVI_MAIL_SMTP_HOST` in that file override them.
+
+Some Microsoft personal accounts refuse app passwords for IMAP. Those keep working
+through webmail in the browser.
+
+### What Navi will not do alone
+
+Sending email needs your own command and your confirmation. `navid desk` refuses it, so
+text the assistant reads in an email or on a web page cannot send mail through that
+route. Social posts stop at the filled-in box, and Navi stores no social passwords. The
+assistant's prompt treats what it reads as information rather than instructions, but a
+prompt is not a hard boundary, and OpenCode's own tools remain available to it: review
+what it proposes when it has been reading untrusted content.
 
 ## Desktop and browser
 
@@ -687,6 +745,8 @@ offload and reduced process priority.
 ```bash
 CARGO_TARGET_DIR=/tmp/navi-cargo-target cargo build --locked --manifest-path apps/navi/Cargo.toml -j 2
 python3 apps/navi/scripts/test_station.py
+python3 apps/navi/scripts/test_desk.py
+python3 apps/navi/scripts/test_mail.py
 python3 apps/navi/scripts/test_assistant.py
 python3 apps/navi/scripts/test_streaming.py
 python3 apps/navi/scripts/test_harness.py

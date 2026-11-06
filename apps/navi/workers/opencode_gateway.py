@@ -133,7 +133,9 @@ SENSITIVE_ASSIGNMENT = re.compile(
 
 
 class GatewayError(Exception):
-    pass
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 def _log(msg):
@@ -259,15 +261,21 @@ def _attachment_part(path):
 class Gateway:
     def __init__(self, base_url=None, password=None, model=None, agent=None,
                  autospawn=None, session_file=None, directory=None):
-        self.base_url = (base_url or os.environ.get("NAVI_OPENCODE_URL") or DEFAULT_URL).rstrip("/")
+        chosen_url = base_url or os.environ.get("NAVI_OPENCODE_URL")
+        self.base_url = (chosen_url or DEFAULT_URL).rstrip("/")
+        # An isolated station is a test. It never starts a server, and it reaches one
+        # only when handed a URL: a server it started would sit on the user's port with
+        # a password the user's own Navi does not know.
+        isolated = os.environ.get("NAVI_ISOLATED") == "1"
+        self.sealed = isolated and not chosen_url
         self.password = (password if password is not None
                          else os.environ.get("NAVI_OPENCODE_PASSWORD")
                          or os.environ.get("OPENCODE_SERVER_PASSWORD")
                          or service_password() or "navi")
         self.model_ref = model or os.environ.get("NAVI_OPENCODE_MODEL") or DEFAULT_MODEL
         self.agent = agent or os.environ.get("NAVI_OPENCODE_AGENT") or DEFAULT_AGENT
-        self.autospawn = (autospawn if autospawn is not None
-                          else os.environ.get("NAVI_OPENCODE_AUTOSPAWN", "1") != "0")
+        self.autospawn = not isolated and (autospawn if autospawn is not None
+                                           else os.environ.get("NAVI_OPENCODE_AUTOSPAWN", "1") != "0")
         self.session_file = session_file if session_file is not None else _session_file()
         directory = directory if directory is not None else os.environ.get("NAVI_PROJECT_DIR")
         self.directory = os.path.abspath(os.path.expanduser(directory)) if directory else ""
@@ -299,6 +307,8 @@ class Gateway:
     # -- HTTP ---------------------------------------------------------------
 
     def _request(self, method, path, body=None, timeout=10.0):
+        if self.sealed:
+            raise GatewayError("An isolated station has no OpenCode server")
         data = json.dumps(body).encode() if body is not None else None
         request = urllib.request.Request(self.base_url + path, data=data, method=method)
         request.add_header("Authorization", f"Basic {self._token}")
@@ -309,7 +319,7 @@ class Gateway:
                 payload = json.loads(response.read().decode() or "null")
         except urllib.error.HTTPError as error:
             detail = error.read().decode(errors="replace")[:300]
-            raise GatewayError(f"{method} {path} -> {error.code}: {detail}")
+            raise GatewayError(f"{method} {path} -> {error.code}: {detail}", status=error.code)
         except (urllib.error.URLError, OSError) as error:
             reason = getattr(error, "reason", error)
             raise GatewayError(f"{method} {path} unreachable: {reason}")
@@ -361,8 +371,15 @@ class Gateway:
         raise GatewayError(f"OpenCode did not start at {self.base_url} (its log: /tmp/navi-opencode-serve.log)")
 
     def ensure_up(self):
-        if self.reachable():
+        try:
+            self._get("/api/agent", timeout=3.0)
             return
+        except GatewayError as error:
+            # A server answers and refuses us, so a second one could only fail on
+            # the port this one holds.
+            if error.status in (401, 403):
+                raise GatewayError(f"Another OpenCode server is holding {self.base_url} and refused Navi's "
+                                   "password. Stop that server and try again.") from None
         if not self.autospawn:
             raise GatewayError(f"OpenCode is not running at {self.base_url}")
         self.spawn()
@@ -557,8 +574,8 @@ class Gateway:
         return True
 
     def interrupt(self):
-        """POST /interrupt, check the response, retry once after 1 s."""
-        self.ensure_up()
+        """POST /interrupt, check the response, retry once after 1 s. Stop never starts
+        a server: with none running, there is no turn to stop."""
         if not self.session_id:
             self.session_id = self._load_session()
         if not self.session_id:

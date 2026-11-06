@@ -31,7 +31,8 @@ const PAGE_START=Date.now();
 const budgets={status:15000,ping:10000,window_state:10000,settings:20000,create:20000,
   command:200000,prompt:20000,cancel:10000,select:10000,attach:10000,
   voice_start:20000,voice_stop:20000,desktop_start:20000,desktop_stop:20000,
-  oc_models:30000,oc_agents:30000,oc_commands:30000,oc_new:30000};
+  oc_models:30000,oc_agents:30000,oc_commands:30000,oc_new:30000,
+  mail_connect:45000,mail_disconnect:10000,mail_status:10000,desk:45000};
 const DEFAULT_BUDGET=15000, PENDING_LIMIT=64, SWEEP_INTERVAL=5000, DIAGNOSTIC_LIMIT=200;
 const diagnostics=[];
 let timeouts=0, dropped=0, unknownReplies=0;
@@ -95,13 +96,16 @@ function toast(message) {
   clearTimeout(toast.timer); toast.timer=setTimeout(()=>element('toast').classList.remove('visible'),6000);
 }
 /* The clipboard API is not available on every file:// page, so the diagnostics
- * path (a hidden textarea and execCommand) stays as the fallback. */
+ * path (a hidden textarea and execCommand) stays as the fallback. WebKit can also
+ * leave its promise unsettled in a window without focus, which would mean a Copy
+ * button with no feedback at all, so it only gets a moment. */
 async function copyText(value) {
   const text=String(value??'');
   try {
     if (navigator.clipboard&&navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
+      const wrote=navigator.clipboard.writeText(text).then(()=>true);
+      const gaveUp=new Promise(resolve=>setTimeout(()=>resolve(false),1500));
+      if (await Promise.race([wrote,gaveUp])) return true;
     }
   } catch { /* fall through to the deprecated path */ }
   const area=document.createElement('textarea');
@@ -2564,6 +2568,12 @@ function surfaceSettings(value) {
     mic.firstElementChild.textContent=settings.microphone?'Mic on':'Mic off';
     mic.title=micExplanation(status);
   }
+  const sound=element('speak-toggle');
+  if (sound) {
+    sound.setAttribute('aria-pressed',String(!!settings.speak));
+    sound.firstElementChild.textContent=settings.speak?'Sound on':'Sound off';
+    sound.title=settings.speak?'Navi reads its replies out loud':'Navi only writes its replies';
+  }
   const emptyMic=element('empty-mic');
   if (emptyMic) emptyMic.disabled=value.isolated===true||!!settings.microphone;
   const launch=element('empty-launch');
@@ -2701,6 +2711,16 @@ function toggleMicrophone() {
     if (next.microphone) rpc('voice_start').catch(()=>null);
   }).catch(error=>surfaceFailure(error.message));
 }
+function toggleSpeak() {
+  if (!snapshot) return;
+  const settings=snapshot.settings||{};
+  const next={...settings,speak:!settings.speak};
+  rpc('settings',next).then(()=>{
+    snapshot.settings=next;
+    surfaceSettings(snapshot);
+  }).catch(error=>surfaceFailure(error.message));
+}
+element('speak-toggle').onclick=toggleSpeak;
 element('microphone').onclick=toggleMicrophone;
 element('voice-pill').onclick=toggleMicrophone;
 element('voice-use').onclick=()=>useConfirm();
@@ -4776,8 +4796,60 @@ function openSettings() {
   if (element('link-outside').open) fillLinkSetup();
   dialog.showModal();
   fillSettingsSelects(settings);
+  fillConnections();
   fillDiagnostics();
 }
+/* The password goes straight to the daemon and out of the field: it is never kept
+ * in the page, and neither the host nor the daemon logs parameters. */
+function showMail(status) {
+  const state=element('mail-state');
+  const connected=status?.connected===true;
+  state.dataset.state=connected?'on':'off';
+  state.textContent=connected?'Email: connected as '+status.address:'Email: not connected';
+  element('mail-form').hidden=connected;
+  element('mail-connected').hidden=!connected;
+}
+async function fillConnections() {
+  const isolated=snapshot?.isolated===true;
+  element('browser-state').textContent=snapshot?.browser_connected
+    ?'Browser: connected through the Navi extension.'
+    :'Browser: links open in your normal browser. The Navi extension is not connected.';
+  for (const button of element('account-links').querySelectorAll('button')) button.disabled=isolated;
+  element('mail-connect').disabled=isolated;
+  try { showMail(await rpc('mail_status')); }
+  catch (error) { showMailFailure(error.message); }
+}
+function showMailFailure(message) {
+  const state=element('mail-state');
+  state.dataset.state='error';
+  state.textContent=message;
+}
+element('mail-connect').onclick=async()=>{
+  const button=element('mail-connect');
+  const address=element('mail-address').value.trim();
+  const password=element('mail-password');
+  if (!address||!password.value) { showMailFailure('Type your email address and an app password first.'); return; }
+  button.disabled=true;
+  element('mail-state').textContent='Email: signing in…';
+  try {
+    const status=await rpc('mail_connect',{address,password:password.value});
+    password.value='';
+    showMail(status);
+  } catch (error) { showMailFailure(error.message); }
+  button.disabled=snapshot?.isolated===true;
+};
+element('mail-disconnect').onclick=async()=>{
+  try {
+    showMail(await rpc('mail_disconnect'));
+    element('mail-address').value='';
+  } catch (error) { showMailFailure(error.message); }
+};
+element('account-links').onclick=async event=>{
+  const text=event.target.closest?.('button')?.dataset.open;
+  if (!text) return;
+  try { toast((await rpc('desk',{text})).text||'Opened'); }
+  catch (error) { toast(error.message); }
+};
 element('settings-button').onclick=()=>openSettings();
 element('settings-cancel').onclick=()=>dialog.close();
 element('settings-new').onclick=async()=>{
@@ -4845,7 +4917,6 @@ function diagnosticsBlock() {
   block=document.createElement('section');
   block.id='diagnostics';
   block.setAttribute('aria-label','Diagnostics');
-  block.style.cssText='margin-top:12px;padding:10px;border:1px solid rgba(141,255,224,.22);border-radius:6px;background:rgba(3,10,43,.5)';
   const title=document.createElement('b');
   title.textContent='Diagnostics';
   const body=document.createElement('pre');

@@ -1619,6 +1619,19 @@ impl App {
             }) {
                 return Ok(project.clone());
             }
+            // "Open Codex in zen relay to fix the bug" names a folder that was
+            // never registered. Without this it would run in the current project.
+            if marker == " in " {
+                let words = crate::desk::project_words(target);
+                if let Some(project) = projects.iter().find(|project| {
+                    project["name"].as_str().is_some_and(|name| name.to_lowercase() == words)
+                }) {
+                    return Ok(project.clone());
+                }
+                if let Some(path) = crate::desk::discover_project(words) {
+                    return self.register_discovered(&path);
+                }
+            }
         }
         let named: Vec<&Value> = projects
             .iter()
@@ -1649,6 +1662,28 @@ impl App {
     /// switch to a session, ask for or set progress, run the detector. `None`
     /// leaves the clause to the model and the conversation bridge.
     fn fast_intent(&self, clause: &str) -> Result<Option<Value>> {
+        // The desk's own verbs ("search", "check my email") claim nothing the
+        // station uses; its "open <name>" waits, so a session of that name wins.
+        if let Some(action) = crate::desk::early(clause) {
+            return Ok(Some(action));
+        }
+        if let Some(action) = self.station_intent(clause)? {
+            return Ok(Some(action));
+        }
+        Ok(crate::desk::late(clause))
+    }
+
+    /// For `navid desk`: what `run_command` would do without a model.
+    pub(crate) fn direct_intent(&self, clause: &str) -> Result<Option<Value>> {
+        self.fast_intent(clause)
+    }
+
+    pub(crate) fn run_direct(&self, clause: &str, action: &Value, params: &Value) -> Result<Value> {
+        let result = self.run_fast(clause, action, params)?;
+        Ok(json!({"text":result["reply"]["text"],"result":result}))
+    }
+
+    fn station_intent(&self, clause: &str) -> Result<Option<Value>> {
         // Navi's own slash commands read as the sentence they stand for; any
         // other slash command belongs to the assistant.
         let text = slash_sentence(&conversational_text(clause));
@@ -3272,6 +3307,33 @@ impl App {
                 Ok(json!({"reply": reply(here.as_deref(), text, json!({}))}))
             }
             "help" => Ok(json!({"reply": reply(None, HELP.into(), json!({"speech": HELP_SPOKEN}))})),
+            "desk" => {
+                // Sending takes the user's own words, and their own yes. `navid
+                // ask` and `navid desk` are shells a model can run, and what a
+                // model read in a mail must not be able to send one.
+                if action["op"] == "mail_send" && params["source"] == "cli" {
+                    return Err("Sending email needs the user's own command in the Navi window or by voice.".into());
+                }
+                if action["op"] == "project" {
+                    let path = action["path"].as_str().ok_or("Missing project path")?;
+                    let found = self.register_discovered(std::path::Path::new(path))?;
+                    let switch = json!({"kind":"project_switch","id":found["id"],"name":found["name"]});
+                    return self.run_fast(clause, &switch, params);
+                }
+                let outcome = self.run_desk(action)?;
+                let mut extra = json!({});
+                if let Some(speech) = outcome.speech {
+                    extra["speech"] = json!(speech);
+                }
+                if let Some(pending) = outcome.pending {
+                    *self.pending_choice.lock().unwrap() = Some(pending);
+                    if let (Some(extra), Some(choices)) = (extra.as_object_mut(), self.choice_extra().as_object()) {
+                        extra.extend(choices.clone());
+                    }
+                }
+                let here = project.as_ref().ok().and_then(|project| project["id"].as_str().map(str::to_string));
+                Ok(json!({"reply": reply(here.as_deref(), outcome.text, extra)}))
+            }
             "ack" => Ok(json!({"reply": reply(None, action["reply"].as_str().unwrap_or("Okay.").into(),
                 json!({}))})),
             "task_add" => {
@@ -3653,7 +3715,12 @@ impl App {
         // split on "and" only when every half is a fast intent, so "write a
         // parser and its tests" still reaches the model whole.
         let mut clauses: Vec<String> = Vec::new();
-        for clause in text.split(" then ") {
+        let parts: Vec<&str> = if crate::desk::holds_message(text) { vec![text] } else { text.split(" then ").collect() };
+        for clause in parts {
+            if crate::desk::holds_message(clause) {
+                clauses.push(clause.to_string());
+                continue;
+            }
             let mut halves: Vec<String> = clause.split(" and ").map(str::to_string).collect();
             // "Close Codex #2 and Codex #1", "stop Codex and the terminal": a
             // session verb carries over to the bare names after it.
@@ -3787,7 +3854,9 @@ impl App {
                 {
                     *self.pronoun_target.lock().unwrap() = Some(session.to_string());
                 }
-                if matches!(action["kind"].as_str(), Some("project_switch" | "project_cycle")) {
+                if matches!(action["kind"].as_str(), Some("project_switch" | "project_cycle"))
+                    || (action["kind"] == "desk" && action["op"] == "project")
+                {
                     scope["project_id"] = result["project_id"].clone();
                     switched = result["project_id"].clone();
                 }
@@ -3875,13 +3944,8 @@ impl App {
                                 "Opening the user's browser is disabled in isolated mode".into()
                             );
                         }
-                        Command::new("zen")
-                            .stdin(Stdio::null())
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .spawn()
-                            .map_err(|e| e.to_string())?;
-                        json!({"message":"Zen launch requested"})
+                        self.open_browser()?;
+                        json!({"message":"Browser launch requested"})
                     }
                     "url" => {
                         if self.isolated {
@@ -3890,16 +3954,7 @@ impl App {
                             );
                         }
                         let url = action["url"].as_str().ok_or("Missing favorite URL")?;
-                        if !url.starts_with("https://") && !url.starts_with("http://") {
-                            return Err("Favorite URL must be http or https".into());
-                        }
-                        Command::new("zen")
-                            .args(["--new-tab", url])
-                            .stdin(Stdio::null())
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .spawn()
-                            .map_err(|e| e.to_string())?;
+                        self.open_url(url)?;
                         json!({"message":"Browser favorite launch requested","url":url})
                     }
                     "browser_action" => {
@@ -5086,7 +5141,7 @@ fn resolve_choice(text: &str, pending: &Value) -> Option<Value> {
             "yes" | "yeah" | "yep" | "yes please" | "sure" | "do it" | "confirm" | "go ahead" | "okay" | "ok"
             | "yes do it" | "correct" => Some(pending["action"].clone()),
             "no" | "nope" | "no thanks" | "don't" | "cancel" | "never mind" | "stop" | "no don't" => {
-                Some(json!({"kind":"ack","reply":"Okay, nothing was closed."}))
+                Some(json!({"kind":"ack","reply":pending["decline"].as_str().unwrap_or("Okay, nothing was closed.")}))
             }
             _ => None,
         };

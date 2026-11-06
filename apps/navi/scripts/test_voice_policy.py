@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workers"))
 os.environ["NAVI_HEX_DISABLE"] = "1"  # this suite asserts the cloud/local order
-from voice import (command_for, command_text, enabled, ignored_wake,
+from voice import (ReplySpeaker, event_speech, watch_replies, command_for, command_text, enabled, ignored_wake,
                    input_device, speech_keywords)
 
 
@@ -211,6 +211,78 @@ class VoicePolicyTests(unittest.TestCase):
         finally:
             cloud_stt.available, cloud_stt.transcribe_result = old_available, old_result
             speech_config._speech_cache = old_cache
+
+
+class ReplySpeechTests(unittest.TestCase):
+    def test_a_reply_says_its_spoken_form(self):
+        self.assertEqual(event_speech({"kind": "reply", "details": {"text": "long list", "speech": "short"}}), "short")
+        self.assertEqual(event_speech({"kind": "reply", "details": {"text": "Opened."}}), "Opened.")
+
+    def test_stops_and_other_events_say_nothing(self):
+        self.assertIsNone(event_speech({"kind": "reply", "details": {"text": "Stopped.", "stopped": True}}))
+        self.assertIsNone(event_speech({"kind": "command", "details": {"text": "x"}}))
+        self.assertIsNone(event_speech({"kind": "error", "message": "boom", "details": {"op": "status"}}))
+
+    def test_a_failed_command_says_why(self):
+        event = {"kind": "error", "message": "Connect your email first.", "details": {"op": "command"}}
+        self.assertEqual(event_speech(event), "Connect your email first.")
+
+    def test_a_slow_turn_says_one_moment_once(self):
+        speaker = ReplySpeaker()
+        speaker.feed([{"kind": "working"}], 10.0)
+        self.assertIsNone(speaker.next_line(11.0))
+        self.assertEqual(speaker.next_line(13.1), "One moment.")
+        self.assertIsNone(speaker.next_line(20.0))
+
+    def test_a_quick_reply_needs_no_one_moment(self):
+        speaker = ReplySpeaker()
+        speaker.feed([{"kind": "working"}, {"kind": "reply", "details": {"text": "Opened."}}], 10.0)
+        self.assertEqual(speaker.next_line(10.0), "Opened.")
+        self.assertIsNone(speaker.next_line(30.0))
+
+    def test_only_the_newest_waiting_reply_is_kept(self):
+        speaker = ReplySpeaker()
+        speaker.feed([{"kind": "reply", "details": {"text": "First."}}], 1.0)
+        speaker.feed([{"kind": "reply", "details": {"text": "Second."}}], 2.0)
+        self.assertEqual(speaker.next_line(2.0), "Second.")
+
+    def test_watcher_starts_at_now_and_speaks_only_new_replies(self):
+        said = []
+
+        class FakePlayback:
+            def speaking(self):
+                return False
+
+            def cancel(self):
+                said.append("cancelled")
+
+            def start(self, text, persona_name=None, language=None):
+                said.append(text)
+
+        class StopAfter:
+            def __init__(self, ticks):
+                self.ticks = ticks
+
+            def wait(self, _interval):
+                self.ticks -= 1
+                return self.ticks < 0
+
+        pages = [
+            {"boot_id": "a", "events_latest": 7, "generation": 0, "settings": {"speak": True},
+             "events": [{"seq": 7, "kind": "reply", "details": {"text": "Old."}}]},
+            {"boot_id": "a", "generation": 0, "settings": {"speak": True},
+             "events": [{"seq": 8, "kind": "reply", "details": {"text": "New."}}]},
+            {"boot_id": "a", "generation": 0, "settings": {"speak": False}, "events": []},
+        ]
+        asked = []
+
+        def rpc_call(op, params, timeout):
+            asked.append(params["since"])
+            return pages.pop(0)
+
+        watch_replies(rpc_call, FakePlayback(), StopAfter(3))
+        self.assertEqual(said, ["New.", "cancelled"])
+        self.assertEqual(asked, [0, 7, 8])
 
 
 if __name__ == "__main__":

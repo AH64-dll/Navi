@@ -22,6 +22,7 @@ from ipc import DATA, RUNTIME, rpc
 import hex_asr
 import speech_config
 import speech_out
+import tts
 from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, SttQueue,
                           StatusSnapshot, agc)
 
@@ -384,6 +385,100 @@ def watch_waiting(snapshot, playback, stop, interval=1.0):
                        language=(settings.get("speech") or {}).get("language"))
 
 
+def event_speech(event):
+    """What to say for one event, or None. A reply says its short spoken form
+    when it has one ("help" lists everything but says a summary), and a failed
+    command says why, or a voice user would only hear silence."""
+    details = event.get("details") or {}
+    if event.get("kind") == "reply":
+        if details.get("stopped") or details.get("source") == "stopped":
+            return None
+        return details.get("speech") or details.get("text") or event.get("message")
+    if event.get("kind") == "error" and details.get("op") == "command":
+        return event.get("message")
+    return None
+
+
+class ReplySpeaker:
+    """Decides what is said for a stream of events; `watch_replies` feeds it.
+
+    Example: "working" at t=0 and no reply by t=3 says "One moment." once, so a
+    long model turn is not silence; the reply then replaces that wait. A reply
+    arriving while another is playing waits, and only the newest one is kept.
+    """
+
+    patience = 3.0
+
+    def __init__(self):
+        self.waiting_since = None
+        self.pending = None
+
+    def feed(self, events, now):
+        for event in events:
+            if event.get("kind") == "working":
+                self.waiting_since = now
+            said = event_speech(event)
+            if said:
+                self.pending = said
+                self.waiting_since = None
+            elif event.get("kind") == "reply":
+                self.waiting_since = None
+
+    def reset(self):
+        self.pending = None
+        self.waiting_since = None
+
+    def next_line(self, now):
+        """Text to start now, or None. Call only while nothing is playing."""
+        if self.pending:
+            line, self.pending = self.pending, None
+            return line
+        if self.waiting_since is not None and now - self.waiting_since >= self.patience:
+            self.waiting_since = None
+            return "One moment."
+        return None
+
+
+def watch_replies(rpc_call, playback, stop, interval=0.3):
+    """Speak new replies while Speak replies is on, and honour Stop and mute.
+
+    Runs whether or not the microphone is on, so typed commands get an answer
+    out loud and the stop paths still work with the capture loop idle.
+    """
+    speaker = ReplySpeaker()
+    cursor = boot = generation = None
+    last_cancel = cancel_stamp()
+    while not stop.wait(interval):
+        try:
+            status = rpc_call("status", {"sections": ["settings"], "since": cursor or 0}, timeout=2)
+        except (OSError, RuntimeError):
+            continue
+        # Start at "now" so a restart does not read old replies out loud.
+        if cursor is None or status.get("boot_id") != boot:
+            cursor, boot = status.get("events_latest") or 0, status.get("boot_id")
+            generation = status.get("generation")
+            continue
+        events = status.get("events") or []
+        if events:
+            cursor = max(cursor, *(event.get("seq") or 0 for event in events))
+        now = time.monotonic()
+        speaker.feed(events, now)
+        settings = status.get("settings") or {}
+        stamp = cancel_stamp()
+        stopped = stamp != last_cancel or status.get("generation") != generation
+        last_cancel, generation = stamp, status.get("generation")
+        if stopped or not settings.get("speak"):
+            speaker.reset()
+            playback.cancel()
+            continue
+        if playback.speaking():
+            continue
+        line = speaker.next_line(now)
+        if line:
+            playback.start(line, settings.get("persona"),
+                           language=(settings.get("speech") or {}).get("language"))
+
+
 # ------------------------------------------------------------------ loading
 
 def load_spotter(speech, data=DATA):
@@ -694,32 +789,22 @@ def main():
     playback = Playback()
     snapshot = StatusSnapshot(rpc)
 
-    def on_result(result):
-        if not isinstance(result, dict):
-            return
-        reply = result.get("reply")
-        if isinstance(reply, dict):
-            # A reply may carry a shorter spoken form ("help" lists the rest).
-            reply = reply.get("speech") or reply.get("text")
-        if not reply:
-            return
-        status = snapshot.value
-        if status is not None:
-            settings = status.get("settings", {})
-        else:
-            try:
-                settings = rpc("status", timeout=2)["settings"]
-            except (OSError, RuntimeError):
-                settings = {}
-        if not settings.get("speak"):
-            return
-        playback.start(reply, settings.get("persona"),
-                       language=settings.get("speech", {}).get("language"))
-
-    commands = CommandRouter(rpc, enabled, on_result)
+    # Replies are spoken by `watch_replies`, whoever asked: voice, the window or
+    # a shell. The router only has to run the commands.
+    commands = CommandRouter(rpc, enabled)
     stop_watch = threading.Event()
     threading.Thread(target=watch_waiting, args=(snapshot, playback, stop_watch),
                      daemon=True).start()
+    threading.Thread(target=watch_replies, args=(rpc, playback, stop_watch),
+                     daemon=True).start()
+
+    def warm_voice():
+        while snapshot.value is None and not stop_watch.wait(0.5):
+            pass
+        if (snapshot.value or {}).get("settings", {}).get("speak"):
+            tts.warm()
+
+    threading.Thread(target=warm_voice, daemon=True).start()
     try:
         listen(commands, playback, snapshot)
     finally:

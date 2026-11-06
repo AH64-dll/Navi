@@ -225,12 +225,14 @@ class HarnessTests(unittest.TestCase):
         self.assertTrue(result["running"])
         target = result["id"]
 
-        # Exact argv: --session-id <uuid> -n work --flag 'with space'
+        # Exact argv: the progress link's registration, then
+        # --session-id <uuid> -n work --flag 'with space'
         argv = json.loads((self.fx.out / "claude.argv").read_text())
-        self.assertEqual(argv[0], "--session-id")
-        uuid = argv[1]
+        self.assertEqual(argv[0], "--mcp-config")
+        start = argv.index("--session-id")
+        uuid = argv[start + 1]
         self.assertRegex(uuid, r"^[0-9a-f-]{36}$")
-        self.assertEqual(argv[2:], ["-n", "work", "--flag", "with space"])
+        self.assertEqual(argv[start + 2:], ["-n", "work", "--flag", "with space"])
         self.assertEqual(result["native_id"], uuid)
 
         # Exact env: env -i base + profile env; secrets present in pane but

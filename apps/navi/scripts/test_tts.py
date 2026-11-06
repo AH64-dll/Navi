@@ -27,6 +27,7 @@ ORIG_TIMEOUT = speech_config.timeout_seconds
 def reset():
     speech_config.reset_caches()
     tts._BREAKERS.clear()
+    tts._FAILURES.clear()
     tts.PROVIDERS.clear()
     tts.PROVIDERS.update(ORIG_PROVIDERS)
     tts.provider_available = ORIG_AVAILABLE
@@ -101,7 +102,7 @@ class TestChain(unittest.TestCase):
         self.assertEqual(calls, ["edge"])
         self.assertEqual(out, (b"FAKEMP3DATA", 24000, "mp3"))
 
-    def test_breaker_disables_after_failure(self):
+    def test_breaker_disables_after_failures_in_a_row(self):
         attempts = []
         def fail(*a):
             attempts.append(1)
@@ -109,11 +110,42 @@ class TestChain(unittest.TestCase):
         tts.PROVIDERS["edge"] = fail
         tts.provider_available = lambda n: not tts._breaker_open(n)
         self.assertIsNone(tts.synthesize("a", order=["edge"]))
+        self.assertFalse(tts._breaker_open("edge"))  # one failure may be a blip
         self.assertIsNone(tts.synthesize("a", order=["edge"]))
-        self.assertEqual(len(attempts), 1)  # second call skipped by breaker
+        self.assertTrue(tts._breaker_open("edge"))
+        self.assertIsNone(tts.synthesize("a", order=["edge"]))
+        self.assertEqual(len(attempts), 2)  # third call skipped by breaker
         tts._BREAKERS.clear()
         self.assertIsNone(tts.synthesize("a", order=["edge"]))
-        self.assertEqual(len(attempts), 2)
+        self.assertEqual(len(attempts), 3)
+
+    def test_success_forgets_earlier_failures(self):
+        results = [RuntimeError("boom"), (b"x", 24000, "mp3"), RuntimeError("boom")]
+        def provider(*a):
+            result = results.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        tts.PROVIDERS["edge"] = provider
+        tts.provider_available = lambda n: not tts._breaker_open(n)
+        for _ in range(3):
+            tts.synthesize("a", order=["edge"])
+        self.assertFalse(tts._breaker_open("edge"))
+
+    def test_long_sentences_get_longer_to_synthesize(self):
+        seen = []
+        def provider(text, voice, rate, timeout):
+            seen.append(timeout)
+            return b"x", 24000, "mp3"
+        tts.PROVIDERS["edge"] = provider
+        tts.provider_available = lambda n: True
+        tts.synthesize("short", order=["edge"])
+        tts.synthesize("a sentence " * 25, order=["edge"])
+        self.assertGreater(seen[1], 3.3)  # the measured time for 222 characters
+        self.assertLess(seen[0], seen[1])
+
+    def test_a_short_form_does_not_cut_the_sentence(self):
+        self.assertEqual(tts._sentences("It works, e.g. on npm. Done."), ["It works, e.g. on npm.", "Done."])
 
     def test_timeout_trips_breaker_falls_through(self):
         self.server.shutdown()
@@ -124,10 +156,11 @@ class TestChain(unittest.TestCase):
         speech_config.timeout_seconds = lambda: 0.4
         start = time.monotonic()
         out = tts.synthesize("hi", order=["gemini"])
+        tts.synthesize("hi", order=["gemini"])
         elapsed = time.monotonic() - start
         slow.shutdown()
         self.assertIsNone(out)
-        self.assertLess(elapsed, 1.5)
+        self.assertLess(elapsed, 3.0)
         self.assertTrue(tts._breaker_open("gemini"))
 
     def test_local_only_mode_skips_cloud(self):

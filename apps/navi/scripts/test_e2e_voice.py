@@ -94,6 +94,8 @@ def main():
     # The E2E check asserts the cloud/local STT fallbacks; the Hex engine has
     # its own live test (scripts/test_hex_asr.py --real) so it stays out here.
     os.environ.setdefault("NAVI_HEX_DISABLE", "1")
+    # An isolated station reaches the shared service only when it is named.
+    os.environ.setdefault("NAVI_OPENCODE_URL", "http://127.0.0.1:49374")
     fixture = ThreadingHTTPServer(("127.0.0.1", 0), DecisionFixture)
     fixture.daemon_threads = True
     threading.Thread(target=fixture.serve_forever, daemon=True).start()

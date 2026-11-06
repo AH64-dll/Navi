@@ -48,6 +48,12 @@ def main():
     )
     write(launcher, script, True)
     write(Path.home() / ".local/bin/navi", script, True)
+    # The assistant's prompt and the help text call `navid` by name from any shell.
+    on_path = Path.home() / ".local/bin/navid"
+    temporary_link = on_path.with_name("navid.new")
+    temporary_link.unlink(missing_ok=True)
+    temporary_link.symlink_to(binary)
+    temporary_link.replace(on_path)
     native = DATA / "bin/native-host"
     write(native, f"#!/bin/bash\nexec {shlex.quote(str(binary))} native \"$@\"\n", True)
     manifest = {"name":"dev.navi.station", "description":"Navi Rust orchestration station", "path":str(native), "type":"stdio", "allowed_extensions":["station@navi.local"]}
