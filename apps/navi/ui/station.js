@@ -3612,6 +3612,14 @@ function evidenceDrawer(signals,total) {
 
 const EVIDENCE_KINDS={git_commit:'commit',git_clean:'clean tree',git_dirty:'uncommitted changes',
   test_pass:'tests pass',test_fail:'tests fail'};
+/* Marks the panel while there is more below the fold (the fade in CSS). */
+function markGraphOverflow() {
+  const region=element('graph-region');
+  if (!region) return;
+  region.dataset.more=String(region.scrollHeight-region.scrollTop-region.clientHeight>8);
+}
+element('graph-region')?.addEventListener('scroll',markGraphOverflow,{passive:true});
+window.addEventListener('resize',markGraphOverflow);
 function renderGraph() {
   const region=element('graph-region');
   if (!region) return;
@@ -3632,6 +3640,7 @@ function renderGraph() {
       ?'Reading progress…'
       :project?'Progress is unavailable right now.':'No project selected. Register one in Settings; progress is kept per project.'));
     region.replaceChildren(panel);
+    markGraphOverflow();
     return;
   }
   const aspects=Array.isArray(graph.aspects)?graph.aspects:[];
@@ -3679,6 +3688,7 @@ function renderGraph() {
   foot.append(graphNode('span','graph-stamp','as of '+formatStamp(graph.as_of)));
   panel.append(foot);
   region.replaceChildren(panel);
+  markGraphOverflow();
   if (graphFocus) {
     const target=[...region.querySelectorAll('[data-focus]')].find(node=>node.dataset.focus===graphFocus);
     graphFocus=null;

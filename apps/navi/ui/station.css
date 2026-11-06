@@ -453,6 +453,8 @@ body[data-dock="closed"] .terminal-pane{display:none!important}
 #graph-region{grid-area:graph;z-index:8;margin-left:var(--gap);width:var(--graph);min-width:0;
   min-height:0;border-radius:12px;overflow:auto;padding:10px}
 .graph-panel{display:flex;flex-direction:column;gap:12px;min-width:0}
+/* A fade at the bottom edge while more of the panel lies below the fold. */
+#graph-region[data-more="true"]{-webkit-mask-image:linear-gradient(#000 calc(100% - 34px),transparent);mask-image:linear-gradient(#000 calc(100% - 34px),transparent)}
 .graph-head{display:flex;flex-direction:column;gap:6px}
 .graph-top{display:flex;align-items:baseline;gap:8px;min-width:0}
 .graph-top .graph-project{flex:1;min-width:0}
