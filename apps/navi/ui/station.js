@@ -2801,7 +2801,9 @@ function syncTerminalTitle(session) {
     const control=element(id);
     if (control) control.disabled=ended;
   }
-  element('terminal-prompt').placeholder=ended?'This session has ended':'Prompt this harness…';
+  const shell=session.profile==='terminal';
+  element('terminal-prompt').placeholder=ended?'This session has ended':shell?'Type a command and press Enter…':'Prompt this harness…';
+  element('terminal-prompt').setAttribute('aria-label',shell?'Run a command in this terminal':'Prompt this harness');
   /* Send turns into Reopen: the same restart a finished chip offers. */
   const send=element('terminal-send');
   send.textContent=ended?'Reopen':'Send';
