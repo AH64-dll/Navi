@@ -1,4 +1,5 @@
 """OpenCode gateway contract against a fake server (no live OpenCode needed)."""
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -533,6 +534,50 @@ class GatewayTests(unittest.TestCase):
             # A named server may be used, but still is never started.
             self.assertFalse(Gateway(base_url="http://127.0.0.1:1", password="pw", autospawn=True,
                                      session_file=self.session_file).autospawn)
+
+    # Navi and the stack's bridge each started their own kind of server, and whichever
+    # reached the port first decided how the other one's traffic left the machine.
+
+    def _spawn_with_systemctl(self, gateway, returncode=0):
+        finished = subprocess.CompletedProcess([], returncode)
+        with (mock.patch.object(gateway_module.shutil, "which", side_effect=lambda name: f"/bin/{name}"),
+              mock.patch.object(gateway_module.subprocess, "run", return_value=finished) as run,
+              mock.patch.object(gateway_module.subprocess, "Popen") as popen,
+              mock.patch.object(Gateway, "_wait_reachable") as waited):
+            gateway.spawn()
+        return run, popen, waited
+
+    def test_a_stopped_server_is_started_through_the_shared_unit(self):
+        gateway = Gateway(password="pw", autospawn=True, session_file=self.session_file)
+        run, popen, waited = self._spawn_with_systemctl(gateway)
+        self.assertEqual(run.call_args.args[0], ["systemctl", "--user", "start", gateway_module.SERVER_UNIT])
+        popen.assert_not_called()
+        waited.assert_called_once()
+
+    def test_without_the_unit_a_plain_server_is_the_fallback(self):
+        gateway = Gateway(password="pw", autospawn=True, session_file=self.session_file)
+        with mock.patch("builtins.open", mock.mock_open()):
+            _, popen, _ = self._spawn_with_systemctl(gateway, returncode=5)
+        self.assertEqual(popen.call_args.args[0][:2], ["opencode", "serve"])
+
+    def test_a_server_on_another_url_never_touches_the_shared_unit(self):
+        gateway = Gateway(base_url="http://127.0.0.1:1", password="pw", autospawn=True,
+                          session_file=self.session_file)
+        with mock.patch("builtins.open", mock.mock_open()):
+            run, popen, _ = self._spawn_with_systemctl(gateway)
+        run.assert_not_called()
+        popen.assert_called_once()
+
+    # Sending the server's traffic through a dead proxy pool left every turn silent.
+    def test_the_shared_unit_runs_the_server_directly_and_comes_back(self):
+        spec = importlib.util.spec_from_file_location("navi_install", Path(__file__).with_name("install.py"))
+        installer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(installer)
+        unit = installer.opencode_unit("/bin/opencode", "/bin")
+        self.assertIn("ExecStart=/bin/opencode serve --service --hostname 127.0.0.1 --port 49374\n", unit)
+        self.assertIn("Restart=always\n", unit)
+        self.assertNotIn("proxychains", unit)
+        self.assertEqual(f"{gateway_module.DEFAULT_URL.rsplit(':', 1)[-1]}", "49374")
 
     def test_catalog_recovers_after_restart(self):
         port = self.server.server_port

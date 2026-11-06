@@ -21,6 +21,19 @@ def write(path, text, executable=False):
     os.replace(temporary, path)
 
 
+def opencode_unit(opencode, path):
+    """The one OpenCode server on this machine. Navi's gateway and the DSH stack's bridge
+    both start this unit instead of a server of their own, and it restarts itself."""
+    return (
+        "[Unit]\nDescription=OpenCode server shared by Navi and the DSH stack\n"
+        "After=network-online.target\nWants=network-online.target\nStartLimitIntervalSec=0\n\n"
+        f"[Service]\nType=simple\nWorkingDirectory=%h\nEnvironment=PATH={path}\n"
+        f"ExecStart={opencode} serve --service --hostname 127.0.0.1 --port 49374\n"
+        "Restart=always\nRestartSec=2\nKillMode=control-group\n\n"
+        "[Install]\nWantedBy=default.target\n"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-start", action="store_true", help="Install files without starting background services")
@@ -64,11 +77,18 @@ def main():
     home_path = str(Path.home())
     login_dirs = [p for p in os.environ.get("PATH","").split(":") if p.startswith(home_path)]
     user_default = ":".join(dict.fromkeys(login_dirs + [f"{home_path}/.local/bin"]))
-    write(Path.home() / ".config/systemd/user/navi-station.service", f"[Unit]\nDescription=Navi orchestration station\nAfter=graphical-session.target navi-terminals.service\nWants=navi-terminals.service\n\n[Service]\nType=simple\nEnvironment=NAVI_APP_DIR={ROOT}\nEnvironment=NAVI_MANAGED_TERMINALS=1\nEnvironment=NAVI_SYSTEM_PATH=/usr/local/bin:/usr/bin:/bin\nEnvironment=NAVI_USER_PATH_DEFAULT={user_default}\nExecStart={binary} serve\nRestart=on-failure\nRestartSec=2\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n")
+    opencode = shutil.which("opencode") or str(Path.home() / ".opencode/bin/opencode")
+    services = ["navi-terminals.service", "navi-station.service"]
+    if Path(opencode).exists():
+        write(Path.home() / ".config/systemd/user/navi-opencode.service", opencode_unit(opencode, f"{user_default}:/usr/local/bin:/usr/bin:/bin"))
+        # Anything else that needs the server runs this to start it, so nothing starts a second one.
+        write(DATA / "bin/opencode-start", "#!/bin/sh\nexec systemctl --user start navi-opencode.service\n", True)
+        services.insert(0, "navi-opencode.service")
+    write(Path.home() / ".config/systemd/user/navi-station.service", f"[Unit]\nDescription=Navi orchestration station\nAfter=graphical-session.target navi-terminals.service navi-opencode.service\nWants=navi-terminals.service navi-opencode.service\n\n[Service]\nType=simple\nEnvironment=NAVI_APP_DIR={ROOT}\nEnvironment=NAVI_MANAGED_TERMINALS=1\nEnvironment=NAVI_SYSTEM_PATH=/usr/local/bin:/usr/bin:/bin\nEnvironment=NAVI_USER_PATH_DEFAULT={user_default}\nExecStart={binary} serve\nRestart=on-failure\nRestartSec=2\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n")
     write(Path.home() / ".local/share/applications/navi-station.desktop", f"[Desktop Entry]\nType=Application\nName=Navi Station\nComment=Local voice and terminal orchestration\nExec={launcher}\nTerminal=false\nCategories=Development;Utility;\nStartupWMClass=navi-station\n")
     subprocess.run(["systemctl","--user","daemon-reload"],check=True)
     if not args.no_start:
-        subprocess.run(["systemctl","--user","enable","--now","navi-terminals.service","navi-station.service"],check=True)
+        subprocess.run(["systemctl","--user","enable","--now",*services],check=True)
     print(f"Installed {launcher} and {Path.home() / '.local/bin/navi'}")
 
 

@@ -251,8 +251,16 @@ talks to the running `opencode serve` HTTP API and exposes:
   screen);
 - the model and agent catalog, used by the settings selectors;
 - session reuse (`~/.local/share/navi/opencode-session`), rotation, and interrupt;
-- automatic `opencode serve` startup when the service is unreachable, unless
+- automatic server startup when the service is unreachable, unless
   `NAVI_OPENCODE_AUTOSPAWN=0`.
+
+`install.py` installs one server for the whole machine, the `navi-opencode.service` user
+unit on `127.0.0.1:49374`. It restarts itself after a crash, and `navi-station.service`
+wants it. The gateway starts this unit instead of a server of its own, and falls back to a
+plain `opencode serve` only in a source checkout without it. Other programs that need the
+server should run `~/.local/share/navi/bin/opencode-start`, so they also share this one
+server. Check it with `systemctl --user status navi-opencode.service` and read its log with
+`journalctl --user -u navi-opencode.service`.
 
 The editable system prompt is the OpenCode agent file
 `~/.config/opencode/agents/navi.md`. Saving settings rewrites that file, and OpenCode

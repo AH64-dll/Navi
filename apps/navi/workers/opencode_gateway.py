@@ -60,8 +60,12 @@ Config via env:
   NAVI_OPENCODE_MODEL     "providerID/modelID" default
                           commandcode/deepseek/deepseek-v4.1-flash
   NAVI_OPENCODE_AGENT     session agent, default "navi" when present
-  NAVI_OPENCODE_AUTOSPAWN "0" disables auto-spawning `opencode serve`
+  NAVI_OPENCODE_AUTOSPAWN "0" disables starting a server
   NAVI_PROJECT_DIR        working directory for the session (--directory wins)
+
+One server: on the default URL a stopped server is started through the
+navi-opencode.service user unit, which everything else on the machine shares.
+A plain `opencode serve` is only the fallback for a source checkout without it.
 """
 import base64
 import http.client
@@ -82,6 +86,7 @@ DEFAULT_URL = "http://127.0.0.1:49374"
 DEFAULT_MODEL = "commandcode/deepseek/deepseek-v4.1-flash"
 DEFAULT_AGENT = "navi"
 SERVICE_FILE = os.path.expanduser("~/.config/opencode/service.json")
+SERVER_UNIT = "navi-opencode.service"
 SESSION_TITLE = "Navi"
 PROMPT_TIMEOUT_S = 180.0
 POLL_INTERVAL_S = 0.25
@@ -349,7 +354,31 @@ class Gateway:
         except GatewayError:
             return False
 
+    def _start_shared_server(self):
+        """Ask systemd for the one server everything shares. False when it isn't installed."""
+        if self.base_url != DEFAULT_URL or not shutil.which("systemctl"):
+            return False
+        try:
+            started = subprocess.run(["systemctl", "--user", "start", SERVER_UNIT], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=SPAWN_TIMEOUT_S)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return started.returncode == 0
+
+    def _wait_reachable(self, failure):
+        deadline = time.time() + SPAWN_TIMEOUT_S
+        while time.time() < deadline:
+            if self.reachable():
+                return
+            time.sleep(0.4)
+        raise GatewayError(failure)
+
     def spawn(self):
+        if self._start_shared_server():
+            _log(f"started {SERVER_UNIT}")
+            self._wait_reachable(f"{SERVER_UNIT} did not answer at {self.base_url} "
+                                 f"(its log: journalctl --user -u {SERVER_UNIT})")
+            return
         if not shutil.which("opencode"):
             raise GatewayError("OpenCode is not installed: there is no `opencode` on PATH to start its server")
         # Keep the password stable: a later Navi process reads the same
@@ -363,12 +392,7 @@ class Gateway:
             subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT,
                              stdin=subprocess.DEVNULL, start_new_session=True)
         _log(f"spawned opencode serve ({' '.join(command)})")
-        deadline = time.time() + SPAWN_TIMEOUT_S
-        while time.time() < deadline:
-            if self.reachable():
-                return
-            time.sleep(0.4)
-        raise GatewayError(f"OpenCode did not start at {self.base_url} (its log: /tmp/navi-opencode-serve.log)")
+        self._wait_reachable(f"OpenCode did not start at {self.base_url} (its log: /tmp/navi-opencode-serve.log)")
 
     def ensure_up(self):
         try:
