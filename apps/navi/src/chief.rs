@@ -2050,6 +2050,20 @@ impl App {
                         && mentioned(&lower, session["name"].as_str().unwrap_or(""))
                 })
                 .collect();
+            // "Switch to Codex #2": the numbered label picks one of several
+            // same-named sessions instead of asking which.
+            let labels = session_labels(&sessions);
+            let spoken = format!(" {} ", spoken_numbers(lower.trim_end_matches(['.', '!', '?'])));
+            let numbered: Vec<&Value> = matched
+                .iter()
+                .copied()
+                .filter(|session| {
+                    labels
+                        .get(session["id"].as_str().unwrap_or_default())
+                        .is_some_and(|label| label.contains('#') && spoken.contains(&format!(" {} ", spoken_numbers(label))))
+                })
+                .collect();
+            let matched = if numbered.is_empty() { matched } else { numbered };
             if matched.len() == 1 {
                 return Ok(Some(json!({"kind":"switch","id":matched[0]["id"],
                     "name":matched[0]["name"]})));
@@ -2151,7 +2165,11 @@ impl App {
         let lower = trimmed.to_ascii_lowercase();
         // "Say hello to Codex", "type ls in the terminal": the prompt comes
         // first and the session last.
-        for (verb, marker) in [("say ", " to "), ("send ", " to "), ("type ", " in "), ("type ", " into ")] {
+        // "Run ls in the terminal", "run the tests in Codex #2": the verb
+        // stays in the prompt, and a shell drops "run " when it types it.
+        for (verb, marker) in [("say ", " to "), ("send ", " to "), ("type ", " in "), ("type ", " into "),
+            ("run ", " in "), ("run ", " on "), ("execute ", " in ")]
+        {
             let Some(body) = trimmed.get(verb.len()..).filter(|_| lower.starts_with(verb)) else {
                 continue;
             };
@@ -2163,7 +2181,10 @@ impl App {
             if prompt.is_empty() || target.is_empty() {
                 continue;
             }
-            let reordered = format!("tell {target} to {prompt}");
+            let reordered = match verb {
+                "run " | "execute " => format!("tell {target} to run {prompt}"),
+                _ => format!("tell {target} to {prompt}"),
+            };
             // Only an open session: "send the error log to Claude" must not
             // start Claude with "the error log" as its prompt.
             if let Some(action) = self.harness_prompt_intent(&reordered)?.filter(|action| action["kind"] == "harness_prompt") {
@@ -3463,7 +3484,9 @@ impl App {
                     }
                 };
                 self.session_target(&json!({"id":target}))?;
-                let text = format!("Switched to {}.", action["name"].as_str().unwrap_or("the session"));
+                // "Switched to Codex #2", not a bare "Codex" that two sessions share.
+                let label = session_labels(&self.sessions()?).remove(&target);
+                let text = format!("Switched to {}.", label.as_deref().or(action["name"].as_str()).unwrap_or("the session"));
                 Ok(json!({"id":target,"reply":reply(None, text, json!({}))}))
             }
             "launch" if action["count"].as_u64().is_some_and(|count| count > 1) => {
