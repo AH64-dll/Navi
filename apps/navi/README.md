@@ -127,7 +127,10 @@ and an unreadable one can be removed from its chip. The last 200 messages for th
 and rehydrated (`messages`) on boot; scrolling to the top asks for the page before the
 oldest loaded cursor (`messages {limit,before}`) and stops when the store answers
 `has_more:false`, so a page can never repeat or skip a row even when timestamps
-collide. Only the rows around the viewport are mounted. The log autoscrolls only when
+collide. A command that arrives without a client request id (voice, `navid ask`)
+gets a `cmd-` id, and the daemon stores its question and answer itself, so they are
+in the chat when the window opens later; saving a row again updates it in place and
+keeps its position. Only the rows around the viewport are mounted. The log autoscrolls only when
 the reader is following it: following stops only when the reader scrolls away from
 the bottom (a toast or banner resizing the log does not count) and resumes when they
 scroll back, press the "jump to latest" pill, or send a message.
