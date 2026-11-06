@@ -2833,8 +2833,12 @@ impl App {
         state
             .db
             .execute(
-                "INSERT OR REPLACE INTO messages(id,project_id,session_id,turn,role,parts,time)
-                 VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                // An update keeps the row's place: REPLACE deleted and re-inserted
+                // it, so a re-saved question moved below its answer on reload.
+                "INSERT INTO messages(id,project_id,session_id,turn,role,parts,time)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7)
+                 ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,session_id=excluded.session_id,
+                 turn=excluded.turn,role=excluded.role,parts=excluded.parts",
                 params![
                     id,
                     p["project_id"].as_str(),

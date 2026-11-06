@@ -1415,7 +1415,15 @@ function commandEvent(event) {
 function handleEvent(event) {
   if (!event||typeof event!=='object') return;
   switch (event.kind) {
-    case 'working': beginTurn(event,false); break;
+    /* A voice or CLI command (`cmd-` id) has no row in this window yet: its
+     * question is drawn from the working event before the answer starts. */
+    case 'working':
+      if (String(requestOf(event)||'').startsWith('cmd-')&&typeof event.details?.text==='string') {
+        transcriptEvent({...event,details:{text:event.details.text,request_id:requestOf(event),
+          source:event.details.source||'voice'}});
+      }
+      beginTurn(event,false);
+      break;
     case 'thinking': beginTurn(event,true); break;
     case 'reasoning': reasoningDelta(event); break;
     case 'reply_delta': replyDelta(event); break;

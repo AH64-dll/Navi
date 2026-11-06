@@ -3647,12 +3647,22 @@ impl App {
             .and_then(|p| p["id"].as_str().map(str::to_string));
         // A dry run only previews decisions; it opens no turn in the chat.
         if !dry {
+            // Voice and CLI commands: the daemon stores the question too (see
+            // `command_request_id`), in the project the station shows.
+            if let Some(request) = params["request_id"].as_str().filter(|id| id.starts_with("cmd-")) {
+                let project = pid.clone().or_else(|| {
+                    let projects = self.projects().unwrap_or_default();
+                    self.station_project(&projects).and_then(|project| project["id"].as_str().map(str::to_string))
+                });
+                let _ = self.save_message(&json!({"id":request,"role":"user",
+                    "parts":[{"type":"text","text":text}],"project_id":project}));
+            }
             self.event_for(
                 pid.as_deref(),
                 None,
                 "working",
                 "Chief is working",
-                json!({"text":text}),
+                json!({"text":text,"source":params["source"]}),
             );
         }
         let (persona, _, _) = self.assistant_target();

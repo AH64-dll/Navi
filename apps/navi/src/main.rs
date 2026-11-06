@@ -146,7 +146,8 @@ pub fn with_request<T>(request: Option<&str>, body: impl FnOnce() -> T) -> T {
 }
 
 /// A client may name its own request id (it keys the row it already drew);
-/// anything else gets a fresh one.
+/// anything else gets a fresh `cmd-` one. No window drew rows for a `cmd-`
+/// command (voice, the CLI, a host), so the daemon stores them itself.
 fn command_request_id(value: &Value) -> String {
     value
         .as_str()
@@ -155,7 +156,7 @@ fn command_request_id(value: &Value) -> String {
                 && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         })
         .map(str::to_string)
-        .unwrap_or_else(|| format!("req-{}", id()))
+        .unwrap_or_else(|| format!("cmd-{}", id()))
 }
 
 /// Events that end a turn or report a failure. They are retained apart from the
@@ -484,6 +485,35 @@ impl App {
             state.turn_state["text"] = details["text"].clone();
             state.turn_state["done"] = json!(true);
             state.turn_state["finished"] = json!(timestamp);
+        }
+        // A command no window asked (voice, the CLI) has no client to store its
+        // answer: the daemon keeps the row, under the id the UI would use, so
+        // the chat shows it after the window opens (or replaces it if open).
+        if kind == "reply"
+            && let Some(request) = details["request_id"].as_str().filter(|id| id.starts_with("cmd-"))
+        {
+            let text = details["text"].as_str().unwrap_or(message);
+            // Beside its question first ("open Codex in acme-api" asked in Navi).
+            let project = state
+                .db
+                .query_row("SELECT project_id FROM messages WHERE id=?1", [request], |row| row.get::<_, Option<String>>(0))
+                .ok()
+                .flatten()
+                .or_else(|| project_id.map(str::to_string))
+                .or_else(|| details["project_id"].as_str().map(str::to_string));
+            if !text.trim().is_empty() {
+                let _ = state.db.execute(
+                    "INSERT INTO messages(id,project_id,session_id,turn,role,parts,time)
+                     VALUES(?1,?2,NULL,NULL,'assistant',?3,?4)
+                     ON CONFLICT(id) DO UPDATE SET parts=excluded.parts",
+                    rusqlite::params![
+                        format!("turn-{request}"),
+                        project,
+                        json!([{"type":"text","text":text}]).to_string(),
+                        timestamp as i64
+                    ],
+                );
+            }
         }
         if kind != "reply_delta" {
             let text = details.to_string();
