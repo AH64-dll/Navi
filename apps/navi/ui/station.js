@@ -3242,7 +3242,10 @@ function renderHud() {
     :graph?basisText(graph):(graphLoading?'Reading…':'No estimate yet');
   hud.dataset.state=scanning?'assessing':unknown?'unknown':'known';
   const stale=element('hud-stale');
-  stale.textContent=scanning?'':commitsSince(graph);
+  // "44 new commits", not "44 commits since": below 900px the basis line it
+  // would lead into is hidden.
+  const commits=scanning?0:Number(graph?.commits_since)||0;
+  stale.textContent=commits>0?`${commits} new commit${commits===1?'':'s'}`:'';
   stale.hidden=!stale.textContent;
   stale.title=stale.textContent?'Commits made after this estimate. Reassess to count them.':'';
   const assess=element('hud-assess');
