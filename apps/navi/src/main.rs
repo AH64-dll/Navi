@@ -1808,17 +1808,26 @@ fn main() {
         .map_err(|e| e.to_string())
         .and_then(rpc)
         .map(|value| println!("{value}")),
-        _ => {
-            println!(
-                "navid serve                   run the station daemon
+        Some("--version" | "-V" | "version") => {
+            println!("navid {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
+        other => {
+            let text = "navid serve                   run the station daemon
 navid native                  browser native-messaging host
 navid mcp                     MCP server a harness starts to report progress
 navid progress [report|task]  read or report progress from a shell (navid progress -h)
 navid link [harness]          print the setup for a harness started outside Navi
 navid ask \"<command>\"        say a command as if spoken (\"open codex\", \"how far along are we\")
-navid rpc '<JSON request>'    send one request to the daemon"
-            );
-            Ok(())
+navid rpc '<JSON request>'    send one request to the daemon
+navid --version               print the version";
+            match other {
+                None | Some("help" | "--help" | "-h") => {
+                    println!("{text}");
+                    Ok(())
+                }
+                Some(unknown) => Err(format!("Unknown command “{unknown}”\n{text}")),
+            }
         }
     };
     if let Err(error) = result {
