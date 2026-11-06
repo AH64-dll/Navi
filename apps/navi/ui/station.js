@@ -3847,8 +3847,39 @@ function sessionGroup(label,title) {
   chips.className='sessions-recent-chips';
   wrap.append(toggle,chips);
   const group={label,wrap,toggle,chips,open:false,list:[]};
-  toggle.onclick=()=>{ group.open=!group.open; renderSessions(snapshot?.sessions||[]); };
+  const close=()=>{ group.open=false; renderSessions(snapshot?.sessions||[]); };
+  toggle.onclick=event=>{
+    event.stopPropagation();
+    group.open=!group.open;
+    renderSessions(snapshot?.sessions||[]);
+  };
+  /* The open group is a dropdown over the stage, not more strip rows: 26
+   * finished sessions used to push the strip past the bottom of the window. */
+  document.addEventListener('click',event=>{
+    if (group.open&&!wrap.contains(event.target)) close();
+  });
+  wrap.addEventListener('keydown',event=>{
+    if (!group.open||event.key!=='Escape') return;
+    event.preventDefault();
+    close();
+    toggle.focus();
+  });
   return group;
+}
+/* "Clear all" in Recent: drop every finished session at once. */
+function clearFinished(ids) {
+  Promise.allSettled(ids.map(id=>rpc('session_remove',{id})))
+    .then(results=>{
+      const failed=results.filter(result=>result.status==='rejected');
+      for (const [index,result] of results.entries()) {
+        if (result.status!=='fulfilled') continue;
+        sessionNodes.get(ids[index])?.remove();
+        sessionNodes.delete(ids[index]);
+      }
+      recentGroup.open=false;
+      toast(failed.length?`Could not remove ${failed.length} of ${ids.length} sessions`:`Removed ${ids.length} finished session${ids.length===1?'':'s'}`);
+      renderSessions(snapshot?.sessions||[]);
+    });
 }
 function fillGroup(group,ids,attention) {
   if (!ids.length) {
@@ -3864,7 +3895,14 @@ function fillGroup(group,ids,attention) {
   group.toggle.setAttribute('aria-expanded',String(group.open));
   group.chips.hidden=!group.open;
   if (!sameList(group.list,ids)) {
-    orderNodes(group.chips,ids.map(id=>sessionNodes.get(id)).filter(Boolean));
+    const nodes=ids.map(id=>sessionNodes.get(id)).filter(Boolean);
+    if (group===recentGroup&&ids.length>1) {
+      group.clear??=Object.assign(document.createElement('button'),{type:'button',className:'recent-clear',textContent:'Clear all'});
+      group.clear.title='Remove every finished session from this list';
+      group.clear.onclick=event=>{ event.stopPropagation(); clearFinished(group.list.slice()); };
+      nodes.unshift(group.clear);
+    }
+    orderNodes(group.chips,nodes);
     group.list=ids.slice();
   }
   return group.wrap;
@@ -4227,6 +4265,9 @@ function renderSessions(list) {
   desired.push(fillGroup(moreGroup,moreIds,moreIds.some(id=>sessions.find(session=>session.id===id)?.state==='busy')?'working':''));
   const waiting=elsewhereIds.some(id=>sessions.find(session=>session.id===id)?.state==='needs_input');
   desired.push(fillGroup(elsewhereGroup,elsewhereIds,waiting?'needs input':''));
+  // Newest first: the session just closed is the one to reopen.
+  const ended=id=>{ const session=sessions.find(item=>item.id===id); return Number(session?.exited||session?.last_active)||0; };
+  deadIds.sort((a,b)=>ended(b)-ended(a));
   desired.push(fillGroup(recentGroup,deadIds,''));
   desired.push(launchWrap);
   orderNodes(bar,desired.filter(Boolean));

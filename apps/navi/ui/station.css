@@ -332,8 +332,15 @@ body.still .session-dot{animation:none}
 .session-chip.new{border-style:dashed;color:#9fe6ff}
 .session-drop{padding:0 3px;font-size:12px;line-height:1;background:none;border:1px solid transparent;color:#ff9a9a}
 .session-drop:hover{border-color:#ff9a9a66}
-.sessions-recent{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.sessions-recent-chips{display:flex;flex-wrap:wrap;gap:8px}
+.sessions-recent{position:relative;display:flex;align-items:center}
+.sessions-recent-chips{position:absolute;top:calc(100% + 6px);left:0;z-index:30;display:flex;flex-wrap:wrap;
+  align-content:flex-start;gap:6px;width:max-content;max-width:min(460px,calc(100vw - 48px));
+  max-height:min(320px,55vh);overflow:auto;padding:8px;border-radius:8px;
+  border:1px solid #8eaff355;background:linear-gradient(150deg,#0d1a52f7,#040b36fa);box-shadow:0 14px 32px #01032199}
+.sessions-recent-chips[hidden]{display:none}
+.recent-clear{flex-basis:100%;align-self:flex-start;padding:2px 4px;border:0;background:none;text-align:left;
+  cursor:pointer;color:#ff9a9a;font-size:9.5px;letter-spacing:1px;text-transform:uppercase}
+.recent-clear:hover,.recent-clear:focus-visible{color:#ffc0c0;text-decoration:underline;outline:none}
 .recent-toggle{border-style:dashed;color:#9fb6d4;font-size:10px}
 .recent-toggle.attention{border-color:#9fe6ffaa;color:#9fe6ff;box-shadow:0 0 10px #9fe6ff33}
 /* Crowded strip: chips drop the state word before the strip wraps onto a second
