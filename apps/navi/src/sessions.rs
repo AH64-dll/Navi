@@ -1508,6 +1508,38 @@ impl App {
         Ok(json!({"id":target,"killed":alive,"state":"exited"}))
     }
 
+    /// `session_rename`: "reviewer" instead of "Codex #2". The profile and
+    /// harness stay, so "Codex" still finds the session by voice.
+    pub fn session_rename(&self, p: &Value) -> Result<Value> {
+        let target = p["id"].as_str().ok_or("Missing session")?;
+        let name: String = p["name"].as_str().unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ");
+        let name = name.trim_matches(['"', '“', '”', '.']).trim().to_string();
+        if name.is_empty() || name.chars().count() > 40 || name.chars().any(char::is_control) {
+            return Err("A session name must be 1 to 40 characters".into());
+        }
+        let row = self
+            .rows(false)?
+            .into_iter()
+            .find(|row| row.id == target)
+            .ok_or("Unknown session")?;
+        {
+            let state = self.state.lock().unwrap();
+            state
+                .db
+                .execute("UPDATE sessions SET name=?1 WHERE id=?2", params![name, target])
+                .map_err(|e| e.to_string())?;
+        }
+        self.log_event(target, "renamed", json!({"name":name}));
+        self.event_for(
+            row.project_id.as_deref(),
+            Some(target),
+            "session_state",
+            "Harness session renamed",
+            json!({"id":target,"name":name}),
+        );
+        Ok(json!({"id":target,"name":name}))
+    }
+
     /// `session_remove`: soft delete — the row and log survive; the chip goes.
     pub fn session_remove(&self, p: &Value) -> Result<Value> {
         let target = p["id"].as_str().ok_or("Missing session")?;

@@ -1423,6 +1423,7 @@ impl App {
             "session_resume" => self.session_resume(p),
             "session_kill" => self.session_kill(p),
             "session_remove" => self.session_remove(p),
+            "session_rename" => self.session_rename(p),
             "session_restart" => self.session_restart(p),
             "session_interrupt" => self.session_interrupt(p),
             "session_target" => self.session_target(p),

@@ -330,6 +330,8 @@ body.still .session-dot{animation:none}
 .session-chip.active{border-color:#9fe6ffaa}
 .session-chip.active .session-state{color:#9fe6ff}
 .session-chip.new{border-style:dashed;color:#9fe6ff}
+.session-rename{width:auto;min-width:0;padding:1px 4px;font:inherit;color:var(--ice);
+  background:#040b36;border:1px solid #8dffe0aa;border-radius:3px;outline:none}
 .session-drop{padding:0 3px;font-size:12px;line-height:1;background:none;border:1px solid transparent;color:#ff9a9a}
 .session-drop:hover{border-color:#ff9a9a66}
 .sessions-recent{position:relative;display:flex;align-items:center}

@@ -3951,7 +3951,7 @@ function updateSessionChip(node,session,label) {
   node.classList.toggle('attached',live&&session.id===termSession);
   node.classList.toggle('active',session.active===true);
   if (session.active===true) node.setAttribute('aria-current','true'); else node.removeAttribute('aria-current');
-  node.querySelector('.session-name').textContent=label;
+  if (node.dataset.renaming!=='true') node.querySelector('.session-name').textContent=label;
   const stateText=node.querySelector('.session-state');
   stateText.textContent=live?(SESSION_WORDS[session.state]||String(session.state||'running')):'exited';
   node.dataset.harness=String(session.harness||'');
@@ -3969,6 +3969,9 @@ function updateSessionChip(node,session,label) {
     event.preventDefault();
     activate();
   };
+  /* Double-click names a live session ("reviewer" instead of "Codex #2"). */
+  node.ondblclick=live?event=>{ event.preventDefault(); renameChip(node,session,label); }:null;
+  if (live) node.title+=' · Double-click to rename';
   /* Dead rows can be pruned on request; a live row keeps its terminal. */
   const drop=node.querySelector('.session-drop');
   if (live) { if (drop) drop.remove(); return; }
@@ -3987,6 +3990,43 @@ function updateSessionChip(node,session,label) {
   }
   button.title='Remove this finished session';
   button.setAttribute('aria-label','Remove session '+label);
+}
+function renameChip(node,session,label) {
+  if (node.dataset.renaming==='true') return;
+  node.dataset.renaming='true';
+  const name=node.querySelector('.session-name');
+  const input=document.createElement('input');
+  input.className='session-rename';
+  input.value=String(session.name||label);
+  input.maxLength=40;
+  input.setAttribute('aria-label','New name for '+label);
+  input.size=Math.max(6,Math.min(24,input.value.length+1));
+  name.replaceChildren(input);
+  input.focus();
+  input.select();
+  let done=false;
+  const finish=save=>{
+    if (done) return;
+    done=true;
+    const value=input.value.trim();
+    delete node.dataset.renaming;
+    name.textContent=label;
+    if (!save||!value||value===session.name) return;
+    name.textContent=value;
+    rpc('session_rename',{id:session.id,name:value})
+      .then(result=>{ toast(`Renamed ${label} to ${result?.name||value}`); poll(); })
+      .catch(error=>{ name.textContent=label; surfaceFailure(error.message); });
+  };
+  /* Keys and clicks stay in the field: the chip's own Enter and click open the terminal. */
+  input.addEventListener('keydown',event=>{
+    event.stopPropagation();
+    if (event.key==='Enter') { event.preventDefault(); finish(true); }
+    else if (event.key==='Escape') { event.preventDefault(); finish(false); node.focus(); }
+  });
+  input.addEventListener('input',()=>{ input.size=Math.max(6,Math.min(24,input.value.length+1)); });
+  input.addEventListener('click',event=>event.stopPropagation());
+  input.addEventListener('dblclick',event=>event.stopPropagation());
+  input.addEventListener('blur',()=>finish(true));
 }
 const reopening=new Set();
 function reopenSession(session,label) {

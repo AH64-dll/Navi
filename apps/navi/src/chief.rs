@@ -1816,6 +1816,10 @@ impl App {
         if let Some(screen) = self.screen_intent(&lower)? {
             return Ok(Some(screen));
         }
+        // "Rename Codex #2 to reviewer": the chip and voice use the new name.
+        if let Some(rename) = self.rename_intent(&text)? {
+            return Ok(Some(rename));
+        }
         // "Tell Codex to run the tests": typed into that session, as voice does.
         if let Some(prompt) = self.harness_prompt_intent(&text)? {
             return Ok(Some(prompt));
@@ -2303,6 +2307,33 @@ impl App {
             }
         }
         Ok(None)
+    }
+
+    /// "Rename Codex #2 to reviewer", "rename this session to build": one open
+    /// session and the name it gets (its original casing).
+    fn rename_intent(&self, text: &str) -> Result<Option<Value>> {
+        let trimmed = text.trim().trim_end_matches(['.', '!']);
+        let lower = trimmed.to_ascii_lowercase();
+        let Some(rest) = trimmed.get(7..).filter(|_| lower.starts_with("rename ")) else {
+            return Ok(None);
+        };
+        let Some(at) = rest.to_ascii_lowercase().rfind(" to ") else {
+            return Ok(None);
+        };
+        let target = rest[..at].trim();
+        let target = target.strip_suffix(" session").unwrap_or(target);
+        let name = rest[at + 4..].trim().trim_matches(['"', '“', '”']).trim();
+        if name.is_empty() || name.chars().count() > 40 {
+            return Ok(None);
+        }
+        let sessions = self.sessions()?;
+        let labels = session_labels(&sessions);
+        let active = self.pronoun_session();
+        let ids = named_sessions(&sessions, &labels, active.as_deref(), target);
+        Ok(match ids.as_slice() {
+            [id] => Some(json!({"kind":"session_rename","id":id,"name":name})),
+            _ => None,
+        })
     }
 
     /// "What did Codex say?", "what's on the terminal's screen", "read me the
@@ -2953,6 +2984,13 @@ impl App {
                     many => self.ask_which(action, many, &labels)?,
                 };
                 Ok(json!({"reply": reply(here.as_deref(), text, self.choice_extra())}))
+            }
+            "session_rename" => {
+                let id = action["id"].as_str().unwrap_or_default();
+                let before = session_labels(&self.sessions()?).remove(id).unwrap_or_else(|| "the session".into());
+                let renamed = self.session_rename(&json!({"id":id,"name":action["name"]}))?;
+                let text = format!("Renamed {before} to {}.", renamed["name"].as_str().unwrap_or_default());
+                Ok(json!({"reply":reply(None, text, json!({}))}))
             }
             "session_screen" => {
                 let sessions = self.sessions()?;
