@@ -3824,7 +3824,7 @@ addEventListener('resize',()=>{ reconcileDock(); syncFrame(); scheduleFit(); fit
  * 700 ms poll never rebuilds the row under the pointer (BUG-043). */
 const sessionsBar=()=>element('sessions');
 const sessionNodes=new Map(), sessionLabels=new Map();
-let recentGroup=null, elsewhereGroup=null, addChip=null;
+let recentGroup=null, elsewhereGroup=null, moreGroup=null, addChip=null;
 let launchWrap=null, launchMenu=null, launchOpen=false;
 const SESSION_WORDS={starting:'starting',running:'running',idle:'ready',busy:'working',
   needs_input:'needs input',interrupted:'interrupted',exited:'exited'};
@@ -3970,6 +3970,7 @@ function orderNodes(parent,desired) {
 function ensureSessionShell(bar) {
   if (!recentGroup) {
     elsewhereGroup=sessionGroup('Elsewhere','Live sessions in other projects');
+    moreGroup=sessionGroup('More','More live sessions in this project');
     recentGroup=sessionGroup('Recent','Finished sessions');
   }
   if (!addChip) {
@@ -4200,7 +4201,25 @@ function renderSessions(list) {
   }
   /* The switcher is the strip's first control: `orderNodes` removes every child
    * it is not given, so it must be part of the desired list (BUG-090). */
+  /* Past five live chips the strip would wrap into rows that eat the stage:
+   * the extras fold into "More", but the active, attached and waiting ones stay. */
+  const MAX_LIVE=5;
+  const mustShow=id=>{
+    const session=sessions.find(item=>item.id===id);
+    return session?.active===true||id===termSession||session?.state==='needs_input';
+  };
+  const moreIds=[];
+  if (liveIds.length>MAX_LIVE) {
+    let room=Math.max(0,MAX_LIVE-liveIds.filter(mustShow).length);
+    for (const id of [...liveIds]) {
+      if (mustShow(id)) continue;
+      if (room>0) { room--; continue; }
+      moreIds.push(id);
+      liveIds.splice(liveIds.indexOf(id),1);
+    }
+  }
   const desired=[element('project-switcher'),...liveIds.map(id=>sessionNodes.get(id))];
+  desired.push(fillGroup(moreGroup,moreIds,moreIds.some(id=>sessions.find(session=>session.id===id)?.state==='busy')?'working':''));
   const waiting=elsewhereIds.some(id=>sessions.find(session=>session.id===id)?.state==='needs_input');
   desired.push(fillGroup(elsewhereGroup,elsewhereIds,waiting?'needs input':''));
   desired.push(fillGroup(recentGroup,deadIds,''));
