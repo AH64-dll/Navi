@@ -382,6 +382,7 @@ function metaLine(message) {
    * that the row's own text already states; only a spoken request says
    * something the row does not. */
   if (meta.source==='voice') bits.push('spoken');
+  else if (meta.source==='cli') bits.push('from navid ask');
   return bits.filter(Boolean).join(' · ');
 }
 
