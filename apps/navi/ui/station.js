@@ -29,7 +29,7 @@ const PAGE_START=Date.now();
  * a message can be malformed. Every request carries a delivery budget and is
  * rejected by one sweeper instead of parking its promise forever. */
 const budgets={status:15000,ping:10000,window_state:10000,settings:20000,create:20000,
-  command:200000,prompt:20000,cancel:10000,select:10000,attach:10000,
+  command:1830000,prompt:20000,cancel:10000,select:10000,attach:10000,
   voice_start:20000,voice_stop:20000,desktop_start:20000,desktop_stop:20000,
   oc_models:30000,oc_agents:30000,oc_commands:30000,oc_new:30000,
   mail_connect:45000,mail_disconnect:10000,mail_status:10000,desk:45000};
@@ -127,6 +127,7 @@ async function copyText(value) {
  * diff, error. Nothing here reads or writes innerHTML. */
 
 const RENDER_WINDOW=50;        // rows mounted either side of the viewport (±50)
+const WINDOW_MARGIN=20;        // rows left before the edge of that window moves it
 const ROW_ESTIMATE=44;         // px for a row that has never been measured
 const TOOL_TEXT_LIMIT=4000;    // a longer tool output is truncated in the row
 const STORE_TEXT_LIMIT=8000;   // a longer tool output is truncated in the database
@@ -303,6 +304,16 @@ function bump(message) {
   message.version+=1;
   chatChanged();
 }
+/* The daemon's turn text is everything the turn has said so far. Text from before a
+ * tool already has its own part: showing it again read "Checking." then a tool then
+ * "Checking.Done.". A blank turn text has nothing to show and must not open a part:
+ * one per poll split the reasoning into a section per chunk. */
+function showTurnText(message,text) {
+  const tail=lastTextPart(message,false);
+  const earlier=message.parts.filter(part=>part.type==='text'&&part!==tail).map(part=>part.text||'').join('');
+  const rest=text.startsWith(earlier)?text.slice(earlier.length):text;
+  if (rest||tail) lastTextPart(message,true).text=rest;
+}
 function lastTextPart(message,create) {
   const tail=message.parts.at(-1);
   if (tail&&tail.type==='text') return tail;
@@ -401,7 +412,7 @@ function renderRow(node,message) {
   time.textContent=clock(message.time);
   time.title=new Date(message.time).toLocaleString();
   const body=node.querySelector('.msg-body');
-  body.replaceChildren(...message.parts.map(part=>renderPart(message,part)));
+  body.replaceChildren(...renderParts(message));
   if (choiceOffer&&choiceOffer.message===message) body.append(choiceButtons(choiceOffer.choices));
   const meta=node.querySelector('.msg-meta');
   const line=metaLine(message);
@@ -685,12 +696,14 @@ function reasoningPart(part) {
   box.className='part reasoning';
   /* A row repaints with each chunk: what the reader opened stays open. */
   box.open=part.open===true;
-  box.ontoggle=()=>{ part.open=box.open; };
   const summary=document.createElement('summary');
   summary.textContent='Reasoning';
   const body=document.createElement('div');
   body.className='reasoning-body';
-  renderMarkdown(body,part.text||'');
+  /* A closed section costs nothing: this row repaints with every chunk of the turn. */
+  const fill=()=>{ if (box.open&&!body.childNodes.length) renderMarkdown(body,part.text||''); };
+  box.ontoggle=()=>{ part.open=box.open; fill(); };
+  fill();
   box.append(summary,body);
   return box;
 }
@@ -707,12 +720,15 @@ function mergeReasoning(parts) {
   return merged;
 }
 
-function toolState(part) {
+function toolState(part,message) {
   if (part.approval&&!part.approval.decision) return 'needs approval';
   if (part.approval&&part.approval.decision) return 'approved: '+part.approval.decision;
   const exit=part.exit;
   const suffix=exit===null||exit===undefined||exit===''?'':' · exit '+exit;
-  return (part.status||'running')+suffix;
+  /* A turn that ended took its unfinished tools with it. */
+  const ended=message&&(message.status==='failed'||message.status==='stopped'||message.status==='complete');
+  const status=part.status||'running';
+  return (status==='running'&&ended?'stopped':status)+suffix;
 }
 function toolBlock(label,value) {
   const block=document.createElement('div');
@@ -779,12 +795,14 @@ function answerApproval(message,part,decision) {
 function toolPart(message,part) {
   const box=document.createElement('details');
   box.className='part tool';
+  box.open=part.open===true;
+  box.ontoggle=()=>{ part.open=box.open; };
   box.dataset.tool=part.id||'';
   box.dataset.status=part.approval&&!part.approval.decision?'approval':(part.status||'running');
   if (part.final) box.dataset.final='true';
   const summary=document.createElement('summary');
   const name=document.createElement('span'); name.className='tool-name'; name.textContent=part.name||'tool';
-  const state=document.createElement('span'); state.className='tool-state'; state.textContent=toolState(part);
+  const state=document.createElement('span'); state.className='tool-state'; state.textContent=toolState(part,message);
   summary.append(name,state);
   box.append(summary);
   const body=document.createElement('div');
@@ -834,6 +852,58 @@ function errorPart(message,part) {
   }
   return box;
 }
+/* A turn of many steps is one line above the answer it leads to: "Reasoning and 13
+ * tools". What is happening now shows in that line, and opening it shows every step,
+ * with the short sentences the model says between them ("Got it. Next one.").
+ * A tool waiting for approval stays outside: its buttons must not be hidden. A long
+ * text stays outside too: it can be the answer, with a last tool after it. */
+const NARRATION_LIMIT=300;
+const isStep=part=>part.type==='reasoning'||part.type==='tool';
+function activityLabel(message,parts) {
+  const steps=parts.filter(isStep);
+  if (message.status==='streaming') {
+    const tail=steps.at(-1);
+    return tail.type==='tool'&&(tail.status||'running')==='running'?'Running '+(tail.name||'a tool'):'Thinking';
+  }
+  const tools=steps.filter(part=>part.type==='tool').length;
+  const count=tools+(tools===1?' tool':' tools');
+  if (!tools) return 'Reasoning';
+  return steps.length>tools?'Reasoning and '+count:count;
+}
+function activityGroup(message,parts) {
+  const box=document.createElement('details');
+  box.className='part activity';
+  /* The first step is the group's stable identity across repaints. */
+  box.open=parts[0].groupOpen===true;
+  box.ontoggle=()=>{ parts[0].groupOpen=box.open; };
+  const summary=document.createElement('summary');
+  summary.textContent=activityLabel(message,parts);
+  const body=document.createElement('div');
+  body.className='activity-body';
+  body.append(...parts.map(part=>renderPart(message,part)));
+  box.append(summary,body);
+  return box;
+}
+function renderParts(message) {
+  const nodes=[];
+  let run=[];
+  const flush=()=>{
+    if (run.length>1&&run.some(isStep)) nodes.push(activityGroup(message,run));
+    else for (const part of run) nodes.push(renderPart(message,part));
+    run=[];
+  };
+  const lastStep=message.parts.findLastIndex(isStep);
+  for (const [index,part] of message.parts.entries()) {
+    const waiting=part.type==='tool'&&part.approval&&!part.approval.decision;
+    if (isStep(part)&&!waiting) { run.push(part); continue; }
+    if (part.type==='text'&&!String(part.text||'').trim()) continue;
+    if (part.type==='text'&&index<lastStep&&String(part.text).length<=NARRATION_LIMIT) { run.push(part); continue; }
+    flush();
+    nodes.push(renderPart(message,part));
+  }
+  flush();
+  return nodes;
+}
 function renderPart(message,part) {
   switch (part.type) {
     case 'reasoning': return reasoningPart(part);
@@ -877,29 +947,48 @@ function atBottom(log) {
  * without a scroll, and the `scroll` event of Navi's own pin arrives a frame
  * later, measured against the shrunken log (42 px off the bottom), so it read
  * as the reader leaving. Only a position Navi did not set counts as the reader. */
-let followLog=true, ownScrollTop=-1;
+let followLog=true, ownScrollTop=-1, lastScrollTop=0, readerInputAt=-Infinity, wheelTarget=null;
 function pinLog(log) {
   log.scrollTop=log.scrollHeight;
-  /* A newest row taller than the log would lose its heading ("Assistant
-   * unavailable", the sender) off the top: start it at the top instead. */
-  const rows=log.querySelectorAll('.msg'), last=rows[rows.length-1];
-  if (last&&last.offsetHeight>log.clientHeight-8) log.scrollTop=Math.max(0,last.offsetTop-log.offsetTop-4);
+  /* An error taller than the log would lose its heading off the top. Any other tall
+   * row stays at its end: that is the latest, and starting it at its top moved the
+   * reader away from the bottom on every paint. */
+  const rows=log.querySelectorAll('.msg'), failure=rows[rows.length-1]?.querySelector(':scope .part.error');
+  if (failure&&failure.offsetHeight>log.clientHeight-8) log.scrollTop=Math.max(0,failure.offsetTop-log.offsetTop-4);
   ownScrollTop=log.scrollTop;
+  lastScrollTop=log.scrollTop;
+  wheelTarget=null;
   followLog=true;
 }
 function rememberHeight(id,node) {
   const height=node?.getBoundingClientRect().height;
   if (height&&height>0) rowHeights.set(id,height);
 }
+/* Rows already in place stay in place: re-attaching all of them made every shift of
+ * the window a full layout, and dropped what a reader had scrolled inside a row. */
 function rebuildLog(log,ids,top,bottom) {
-  const above=document.createElement('div');
-  above.className='chat-spacer'; above.style.height=top+'px';
-  const below=document.createElement('div');
-  below.className='chat-spacer'; below.style.height=bottom+'px';
-  const children=[above];
-  for (const id of ids) { const entry=mountedRows.get(id); if (entry) children.push(entry.row); }
-  children.push(below);
-  log.replaceChildren(...children);
+  let above=log.firstElementChild, below=log.lastElementChild;
+  if (!above?.classList.contains('chat-spacer')||!below?.classList.contains('chat-spacer')||above===below) {
+    above=document.createElement('div'); above.className='chat-spacer';
+    below=document.createElement('div'); below.className='chat-spacer';
+    log.replaceChildren(above,below);
+  }
+  if (top!==spacerTop) above.style.height=top+'px';
+  if (bottom!==spacerBottom) below.style.height=bottom+'px';
+  const keep=new Set();
+  for (const id of ids) { const row=mountedRows.get(id)?.row; if (row) keep.add(row); }
+  for (let node=above.nextElementSibling;node&&node!==below;) {
+    const next=node.nextElementSibling;
+    if (!keep.has(node)) node.remove();
+    node=next;
+  }
+  let cursor=above.nextElementSibling;
+  for (const id of ids) {
+    const row=mountedRows.get(id)?.row;
+    if (!row) continue;
+    if (row===cursor) cursor=cursor.nextElementSibling;
+    else log.insertBefore(row,cursor);
+  }
   mountedOrder=ids.slice(); spacerTop=top; spacerBottom=bottom;
 }
 function updatePill(log) {
@@ -913,15 +1002,28 @@ function paintChat() {
   const log=chatLog();
   if (!log) return;
   const total=messages.length;
-  const pinned=followLog||atBottom(log);
+  /* Only the reader's own scrolling changes this. Being merely near the bottom is not
+   * following: a wheel step is smaller than that margin, so it was pulled back. */
+  const pinned=followLog;
+  /* WebKit has no scroll anchoring: rows measured or repainted above the view would
+   * push what the reader is looking at. Remember it, then put it back. */
+  const anchor=pinned?null:visibleRow(log);
+  const anchorTop=anchor?anchor.getBoundingClientRect().top:0;
   let start=0, end=total;
   if (total>RENDER_WINDOW*2+1) {
     if (pinned) {
       start=Math.max(0,total-(RENDER_WINDOW*2+1));
     } else {
-      const anchor=indexAtOffset(log.scrollTop+log.clientHeight*0.4);
-      start=Math.max(0,anchor-RENDER_WINDOW);
-      end=Math.min(total,Math.max(start+RENDER_WINDOW*2+1,anchor+RENDER_WINDOW+1));
+      const middle=indexAtOffset(log.scrollTop+log.clientHeight*0.4);
+      const first=messages.findIndex(message=>message.id===mountedOrder[0]);
+      const last=first<0?-1:first+mountedOrder.length;
+      /* Moving it for every row crossed was most of the cost of scrolling a long chat. */
+      const inside=first>=0&&(first===0||middle-first>=WINDOW_MARGIN)&&(last>=total||last-middle>WINDOW_MARGIN);
+      if (inside) { start=first; end=last; }
+      else {
+        start=Math.max(0,middle-RENDER_WINDOW);
+        end=Math.min(total,Math.max(start+RENDER_WINDOW*2+1,middle+RENDER_WINDOW+1));
+      }
     }
   }
   const nextIds=[];
@@ -941,7 +1043,24 @@ function paintChat() {
   const top=sumHeights(0,start), bottom=sumHeights(end,total);
   if (!sameList(nextIds,mountedOrder)||top!==spacerTop||bottom!==spacerBottom) rebuildLog(log,nextIds,top,bottom);
   if (pinned) pinLog(log);
+  else if (anchor?.isConnected) {
+    const shift=anchor.getBoundingClientRect().top-anchorTop;
+    if (Math.abs(shift)>=1) {
+      log.scrollTop+=shift;
+      if (wheelTarget!==null) wheelTarget+=shift;
+      ownScrollTop=log.scrollTop;
+      lastScrollTop=log.scrollTop;
+    }
+  }
   updatePill(log);
+}
+function visibleRow(log) {
+  const top=log.getBoundingClientRect().top;
+  for (const id of mountedOrder) {
+    const node=mountedRows.get(id)?.row;
+    if (node&&node.getBoundingClientRect().bottom>top) return node;
+  }
+  return null;
 }
 /* Paint now instead of on the next frame: paging has to measure the height it
  * added before the browser can show the jump. */
@@ -1110,6 +1229,7 @@ function reasoningDelta(event) {
   const text=typeof details.text==='string'?details.text:(event.message||'');
   if (!text) return;
   const message=assistantMessage(event);
+  while (message.parts.at(-1)?.type==='text'&&!String(message.parts.at(-1).text||'').trim()) message.parts.pop();
   let part=message.parts.at(-1);
   if (!part||part.type!=='reasoning') { part={type:'reasoning',text:''}; message.parts.push(part); }
   part.text+=text;
@@ -1122,15 +1242,12 @@ function replyDelta(event) {
   const details=event.details||{};
   const text=typeof details.text==='string'?details.text:(event.message||'');
   const message=assistantMessage(event);
-  /* The daemon flushes an empty turn while the model reasons. A blank text part
-   * from that would split the reasoning into one section per chunk. */
-  if (!text&&!lastTextPart(message,false)) return;
-  const part=lastTextPart(message,true);
   /* A per-chunk delta appends; a cumulative payload (``turn``/``done``) replaces.
    * Both shapes are accepted so the producer can coalesce without a UI change. */
   const replace=details.cumulative===true||details.done===true||
     details.replace===true||typeof details.turn==='string';
-  part.text=replace?text:(part.text||'')+text;
+  if (replace) showTurnText(message,text);
+  else if (text) { const part=lastTextPart(message,true); part.text=(part.text||'')+text; }
   if (replace&&typeof details.turn==='string') message.turn=details.turn;   // bind the turn
   message.status='streaming';
   setTurnLabel('Replying');
@@ -1162,8 +1279,10 @@ function replyDone(event) {
     return;
   }
   const message=finalMessage(event);
-  const part=lastTextPart(message,true);
-  part.text=text;                     // the finished answer owns the row
+  /* The finished answer owns the row. When it is the sentence said before the last
+   * tool, that sentence is already there. */
+  const said=!lastTextPart(message,false)&&message.parts.some(part=>part.type==='text'&&String(part.text||'').trim()===text.trim());
+  if (!said) lastTextPart(message,true).text=text;
   const source=typeof details.source==='string'?details.source:'';
   const stopped=details.stopped===true||source==='stopped';
   message.status=stopped?'stopped':'complete';
@@ -2081,7 +2200,10 @@ function failTurn(reason,requestId) {
   lastFailure=text;
   const own=requestId?messageById.get(turnRowId(requestId)):null;
   if (own?.status==='failed') { finishRequest(requestId); return; }
-  const open=own||turn?.message;
+  /* A failure belongs to its own request. Another turn may be running by now (a voice
+   * command, a queued one), and it did not fail. */
+  const mine=!requestId||turn?.request===requestId;
+  const open=own||(mine?turn?.message:null);
   let message=open;
   if (!open) {
     message=addMessage({
@@ -2089,7 +2211,7 @@ function failTurn(reason,requestId) {
       role:'assistant', time:Date.now(), status:'failed', parts:[],
       meta:{project_id:activeProjectId()||undefined},
     });
-    if (turn) turn.message=message;
+    if (turn&&mine) turn.message=message;
   }
   markFailed(message,text);
   finishRequest(requestId);
@@ -2536,8 +2658,7 @@ function applyTurnState(state) {
   const adopt=!known&&!!turnId&&state.done!==true;
   const matches=known?(!turnId||known===turnId):adopt;
   if (message&&text!==null&&matches) {
-    const part=lastTextPart(message,true);
-    part.text=text;
+    showTurnText(message,text);
     if (!message.turn&&turnId) message.turn=turnId;
     message.status=state.done===true?'complete':'streaming';
     bump(message);
@@ -2759,9 +2880,67 @@ element('empty-settings').onclick=()=>openSettings();
 
 /* The reader owns the log: nothing auto-scrolls unless the view is already at the
  * bottom, and a pill offers to jump when content lands below it (BUG-047). */
+const READER_INPUT_MS=800;
+/* WebKit moves about 90 px per wheel notch, more than half of this short log, so text
+ * jumped out of view. A notch here is a third of the log, eased over a few frames.
+ * A touchpad sends its own small steps and stays native. */
+const NOTCH_DELTA=120, NOTCH_MIN_PX=48, NOTCH_MAX_PX=96, GLIDE_MS=70;
+function innerScroller(node,log,delta) {
+  for (;node&&node!==log;node=node.parentElement) {
+    if (node.scrollHeight<=node.clientHeight+1) continue;
+    const overflow=getComputedStyle(node).overflowY;
+    if (overflow!=='auto'&&overflow!=='scroll') continue;
+    if (delta<0?node.scrollTop>0:node.scrollTop+node.clientHeight<node.scrollHeight-1) return true;
+  }
+  return false;
+}
+function glide(log,previous) {
+  if (wheelTarget===null) return;
+  const now=performance.now(), gap=wheelTarget-log.scrollTop;
+  const step=gap*(1-Math.exp(-(now-previous)/GLIDE_MS));
+  if (Math.abs(gap)<=1) { log.scrollTop=wheelTarget; wheelTarget=null; return; }
+  const before=log.scrollTop;
+  log.scrollTop=before+(Math.sign(gap)*Math.max(1,Math.abs(step)));
+  /* Stopped short by the end of the log, or by a reader dragging the scrollbar. */
+  if (log.scrollTop===before) { wheelTarget=null; return; }
+  requestAnimationFrame(()=>glide(log,now));
+}
+chatLog().addEventListener('wheel',event=>{
+  const log=chatLog();
+  readerInputAt=performance.now();
+  if (event.deltaY<0) followLog=false;
+  if (event.ctrlKey||!event.deltaY) return;
+  const ticks=event.wheelDeltaY/NOTCH_DELTA;
+  if (!Number.isInteger(ticks)||!ticks||innerScroller(event.target,log,event.deltaY)) return;
+  event.preventDefault();
+  const notch=Math.min(NOTCH_MAX_PX,Math.max(NOTCH_MIN_PX,log.clientHeight/3));
+  const running=wheelTarget!==null;
+  const from=running?wheelTarget:log.scrollTop;
+  const end=log.scrollHeight-log.clientHeight;
+  wheelTarget=Math.min(end,Math.max(0,from-ticks*notch));
+  if (!running) requestAnimationFrame(()=>glide(log,performance.now()-16));
+},{passive:false});
+chatLog().addEventListener('touchmove',()=>{ readerInputAt=performance.now(); },{passive:true});
+/* The scrollbar has no wheel event; pressing it is the reader taking over. */
+chatLog().addEventListener('pointerdown',event=>{
+  const log=chatLog();
+  if (event.target===log&&event.offsetX>=log.clientWidth) { readerInputAt=Infinity; wheelTarget=null; }
+});
+window.addEventListener('pointerup',()=>{ if (readerInputAt===Infinity) readerInputAt=performance.now(); });
+chatLog().addEventListener('keydown',event=>{
+  if (!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key)) return;
+  readerInputAt=performance.now();
+  if (event.key==='ArrowUp'||event.key==='PageUp'||event.key==='Home') followLog=false;
+});
 chatLog().addEventListener('scroll',()=>{
   const log=chatLog();
-  if (Math.abs(log.scrollTop-ownScrollTop)>1) followLog=atBottom(log);
+  const moved=log.scrollTop-lastScrollTop;
+  lastScrollTop=log.scrollTop;
+  if (Math.abs(log.scrollTop-ownScrollTop)>1) {
+    const reader=performance.now()-readerInputAt<READER_INPUT_MS;
+    /* Up, by hand, is leaving however close to the end it still is. */
+    followLog=!(reader&&moved<0)&&atBottom(log);
+  }
   updatePill(log);
   if (log.scrollTop<200) loadOlder();
   if (messages.length>RENDER_WINDOW*2+1) chatChanged();
@@ -5170,6 +5349,10 @@ if (host.isolated===true) {
     push:value=>{ try { update(value); } catch (error) { record('warn','push failed: '+error.message); } },
     resetChat:()=>resetChat(),
     mergeReasoning,
+    follow:()=>followLog,
+    requestPending:()=>!!request,
+    messages:()=>messages,
+    pinLog:()=>pinLog(chatLog()),
     pausePoll:value=>{
       pollPaused=!!value;
       if (!pollPaused) poll();

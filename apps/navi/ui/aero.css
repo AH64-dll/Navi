@@ -223,7 +223,7 @@ input[type=checkbox]:focus-visible{outline:1px dotted #fff;outline-offset:2px}
 .attachment-size{color:#c9dcf2}
 .attachment-remove{color:#fff}
 .attachment-remove:hover{color:var(--bad)}
-.code-head,.tool-label,.code-lang,.part.reasoning summary{letter-spacing:0;text-transform:none}
+.code-head,.tool-label,.code-lang,.part.reasoning summary,.part.activity>summary{letter-spacing:0;text-transform:none}
 
 /* Scrollbars: dark track, glossy blue thumb. */
 #shell ::-webkit-scrollbar,dialog ::-webkit-scrollbar,dialog::-webkit-scrollbar{width:15px;height:15px}

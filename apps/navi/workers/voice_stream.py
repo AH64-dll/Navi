@@ -534,6 +534,10 @@ class StatusSnapshot:
         self._thread.join(timeout=2)
 
 
+# A command runs a whole assistant turn; the daemon ends it at 30 minutes.
+COMMAND_TIMEOUT = 1830
+
+
 class CommandRouter:
     """One in-flight chief request plus a bounded follow-up queue (BUG-062).
 
@@ -569,7 +573,7 @@ class CommandRouter:
                 self.on_result(result)
         if self.pending is None and self.queued:
             transcript = self.queued.popleft()
-            self.pending = self.pool.submit(self.rpc, "command", {"text": transcript})
+            self.pending = self.pool.submit(self.rpc, "command", {"text": transcript}, timeout=COMMAND_TIMEOUT)
             return "queued->deciding"
         return None
 
@@ -589,7 +593,7 @@ class CommandRouter:
                 self.dropped += 1
             self.queued.append(transcript)
             return "queued"
-        self.pending = self.pool.submit(self.rpc, "command", {"text": transcript})
+        self.pending = self.pool.submit(self.rpc, "command", {"text": transcript}, timeout=COMMAND_TIMEOUT)
         return "deciding"
 
     def close(self):

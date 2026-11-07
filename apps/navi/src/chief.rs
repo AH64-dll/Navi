@@ -1034,7 +1034,9 @@ impl App {
                 }
             }
         });
-        let deadline = now() + 190_000;
+        // A backstop only: the gateway fails a turn that goes silent, and a turn
+        // that keeps working is not a failure however long it takes.
+        let deadline = now() + 1_810_000;
         let turn_id = self.begin_turn();
         let mut turn = GatewayTurn::default();
         let mut done: Option<Value> = None;

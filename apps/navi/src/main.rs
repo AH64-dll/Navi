@@ -1773,6 +1773,11 @@ fn serve() -> Result<()> {
 }
 
 fn rpc(request: Value) -> Result<Value> {
+    rpc_within(request, 90)
+}
+
+/// `seconds`: how long to wait for the answer. A command runs a whole assistant turn.
+fn rpc_within(request: Value, seconds: u64) -> Result<Value> {
     let (_, runtime) = paths();
     let mut socket = UnixStream::connect(runtime.join("station.sock")).map_err(|error| {
         match error.kind() {
@@ -1783,7 +1788,7 @@ fn rpc(request: Value) -> Result<Value> {
         }
     })?;
     socket
-        .set_read_timeout(Some(Duration::from_secs(90)))
+        .set_read_timeout(Some(Duration::from_secs(seconds)))
         .map_err(|e| e.to_string())?;
     writeln!(socket, "{request}").map_err(|e| e.to_string())?;
     let mut line = String::new();
@@ -1804,7 +1809,7 @@ fn ask(text: &str) -> Result<()> {
     // "cli": the shell's project scopes this command only; the station's
     // remembered project (voice's default) stays as it is.
     let project = shell_project();
-    let reply = rpc(json!({"op":"command","params":{"text":text,"project_id":project,"source":"cli"}}))?;
+    let reply = rpc_within(json!({"op":"command","params":{"text":text,"project_id":project,"source":"cli"}}), 1830)?;
     if reply["ok"] != true {
         return Err(reply["error"].as_str().unwrap_or("Navi rejected the command").to_string());
     }

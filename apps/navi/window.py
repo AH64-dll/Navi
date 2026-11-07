@@ -25,7 +25,7 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 gi.require_version("GLibUnix", "2.0")
 from gi.repository import Gdk, GLib, GLibUnix, Gtk, WebKit2
-from workers.ipc import DATA, rpc
+from workers.ipc import COMMAND_TIMEOUT, DATA, rpc
 
 ROOT = Path(__file__).resolve().parent
 ISOLATED = os.environ.get("NAVI_ISOLATED") == "1"
@@ -346,7 +346,8 @@ class Station(Gtk.Window):
         error = None
         try:
             op = request["op"]
-            result = {"ok": True, "result": rpc(op, request.get("params"))}
+            timeout = COMMAND_TIMEOUT if op == "command" else 90
+            result = {"ok": True, "result": rpc(op, request.get("params"), timeout=timeout)}
             ok = True
         except (FileNotFoundError, ConnectionRefusedError):
             # No socket, or nothing listening on it: the daemon is down, which a

@@ -651,7 +651,7 @@
        one surface: the rejection and the matching error event never both render. */
     await feed('reasoning', {text: 'Checking the fixture before answering'}, 'Assistant reasoning');
     await waitFor(() => document.querySelector('#chat-log .part.reasoning') !== null, 'Reasoning did not render');
-    const reasoning = document.querySelector('#chat-log .part.reasoning');
+    const reasoning = [...document.querySelectorAll('#chat-log .part.reasoning')].at(-1);
     assert(reasoning.tagName === 'DETAILS' && reasoning.open === false, 'Reasoning is not collapsed');
     await feed('approval', {id: 'permission-1', tool: 'shell', input: 'rm -rf build'}, 'shell needs approval');
     const approval = document.querySelector('#chat-log .part.tool[data-status="approval"]');
@@ -813,6 +813,114 @@
     report.chat.count = inspect().chat.count;
     report.chat.empty_final = inspect().chat.empty;
     report.chat.label = chip();
+    /* The same turn on the path the daemon really uses: its poll reports the turn with
+       empty text between reasoning chunks, and that text accumulates across steps. */
+    const poll = async (turn, text, extra = {}, done = false) => {
+      fake += 1;
+      update({...snapshot, busy: !done, events: extra.kind ? [{seq: -fake, time: Date.now(), kind: extra.kind, message: extra.message || '', details: extra.details || {}}] : [],
+        turn_state: {turn, text, done}});
+      await painted();
+    };
+    await waitFor(() => !window.navi.hooks.requestPending(), 'The attachment request never ended');
+    await feed('thinking', {}, 'thinking');
+    for (const word of ['One. ', 'Two. ', 'Three. ', 'Four.']) {
+      await poll('real-1', '', {kind: 'reasoning', details: {text: word}});
+      await poll('real-1', '');
+    }
+    const realRow = () => rows('navi').at(-1);
+    const realParts = () => window.navi.hooks.messages().at(-1).parts;
+    assert(realRow().querySelectorAll('.part.reasoning').length === 1, 'The poll split the reasoning into ' + realRow().querySelectorAll('.part.reasoning').length + ' sections');
+    assert(realParts().filter(part => part.type === 'text').length === 0, 'The poll left blank text parts: ' + JSON.stringify(realParts().map(part => part.type)));
+    assert(realParts()[0].text === 'One. Two. Three. Four.', 'The poll lost reasoning: ' + JSON.stringify(window.navi.hooks.messages().slice(-3).map(m => [m.id, m.role, m.status, m.turn, m.parts.map(p => p.type + ':' + String(p.text).slice(0, 30))])));
+
+    /* Text, then a tool, then more text: each sentence once. */
+    await poll('real-1', 'Checking.');
+    await poll('real-1', 'Checking.', {kind: 'tool_use', message: 'shell', details: {id: 'real-tool-1', name: 'shell', status: 'running', input: {command: 'ls'}}});
+    await poll('real-1', 'Checking.');
+    await poll('real-1', 'Checking.', {kind: 'reasoning', details: {text: 'Thinking more.'}});
+    await poll('real-1', 'Checking.', {kind: 'tool_use', message: 'shell', details: {id: 'real-tool-2', name: 'shell', status: 'running', input: {command: 'ls -l'}}});
+    await poll('real-1', 'Checking.Almost there.');
+    const shown = () => realParts().filter(part => part.type === 'text').map(part => part.text);
+    assert(JSON.stringify(shown()) === JSON.stringify(['Checking.', 'Almost there.']), 'The turn text repeated: ' + JSON.stringify(shown()));
+    const loose = () => [...realRow().querySelector('.msg-body').children].map(node => node.className);
+    assert(realRow().querySelectorAll('.part.activity').length === 1 && realRow().querySelector('.part.activity').textContent.includes('Checking.'),
+      'The sentence between tools is not inside the section: ' + JSON.stringify(loose()));
+    assert(realRow().querySelector('.msg-body').lastElementChild.textContent.includes('Almost there.') && !realRow().querySelector('.part.activity').textContent.includes('Almost there.'),
+      'The latest text is not outside the section: ' + JSON.stringify(loose()));
+    const longText = 'A real answer. '.repeat(30);
+    await poll('real-1', 'Checking.Almost there.' + longText);
+    await poll('real-1', 'Checking.Almost there.' + longText, {kind: 'tool_use', message: 'shell', details: {id: 'real-tool-long', name: 'shell', status: 'running', input: {command: 'true'}}});
+    assert(realRow().querySelectorAll('.part.activity').length === 1 && [...realRow().querySelector('.msg-body').children].some(node => !node.matches('.part.activity') && node.textContent.includes('A real answer.')),
+      'A long text was folded away: ' + JSON.stringify(loose()));
+
+    /* A run of steps is one closed line, and it says what is happening now. */
+    await poll('real-2', '');
+    await feed('reply', {text: 'Almost there.'}, 'Almost there.');
+    await waitFor(() => realRow().dataset.status === 'complete', 'The polled turn never finalised');
+    await feed('thinking', {request_id: 'real-3'}, 'thinking');
+    await poll('real-3', '', {kind: 'reasoning', details: {request_id: 'real-3', text: 'A thought.'}});
+    await poll('real-3', '', {kind: 'tool_use', message: 'shell', details: {request_id: 'real-3', id: 'real-tool-3', name: 'shell', status: 'running', input: {command: 'sleep 1'}}});
+    const group = () => realRow().querySelector('.part.activity');
+    assert(group() && !group().open, 'A run of steps is not one closed section');
+    assert(group().querySelector('summary').textContent === 'Running shell', 'The live label: ' + group().querySelector('summary').textContent);
+    assert(!realRow().querySelector(':scope .msg-body > .part.tool, :scope .msg-body > .part.reasoning'), 'A step sits outside the section');
+    group().open = true;
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await poll('real-3', '', {kind: 'reasoning', details: {request_id: 'real-3', text: 'Another.'}});
+    assert(group().open, 'A repaint closed the section the reader opened');
+    assert(group().querySelector('summary').textContent === 'Thinking', 'The live label: ' + group().querySelector('summary').textContent);
+    await feed('error', {request_id: 'real-3', text: 'timed out'}, 'timed out');
+    await waitFor(() => realRow().dataset.status === 'failed', 'The failed turn did not fail: ' + realRow().dataset.status);
+    assert(!group().querySelector('.tool-state').textContent.includes('running'), 'A failed turn still claims a running tool: ' + group().querySelector('.tool-state').textContent);
+    assert(/1 tool/.test(group().querySelector('summary').textContent), 'The finished label: ' + group().querySelector('summary').textContent);
+
+    /* The reader decides: an upward wheel leaves the end at once, however small, and
+       stays left while more arrives. The end is the end, also inside a tall row. */
+    const chat = document.getElementById('chat-log');
+    const pill = document.getElementById('chat-pill');
+    const fromEnd = () => chat.scrollHeight - chat.scrollTop - chat.clientHeight;
+    const tall = Array.from({length: 40}, (unused, index) => 'Line ' + index).join('\n\n');
+    await feed('thinking', {}, 'thinking');
+    await poll('real-4', tall);
+    await painted();
+    assert(realRow().offsetHeight > chat.clientHeight, 'The test row is not taller than the log');
+    assert(fromEnd() < 2, 'Following stopped short of the end: ' + fromEnd());
+    assert(pill.hidden, 'Jump to latest showed at the end');
+    await poll('real-4', tall + '\n\nMore.');
+    await painted();
+    assert(fromEnd() < 2, 'Following a tall row did not reach the end: ' + fromEnd());
+    chat.dispatchEvent(new WheelEvent('wheel', {deltaY: -10, bubbles: true, cancelable: true}));
+    chat.scrollTop -= 10;
+    await painted();
+    const held = chat.scrollTop;
+    assert(window.navi.hooks.follow() === false, 'A small upward scroll did not leave the end');
+    for (let index = 0; index < 5; index += 1) await poll('real-4', tall + '\n\nMore ' + index + '.');
+    await painted();
+    assert(Math.abs(chat.scrollTop - held) <= 1, `A streaming paint pulled the reader back: ${held} -> ${chat.scrollTop}`);
+    chat.scrollTop = Math.max(0, chat.scrollTop - 120);
+    await poll('real-4', tall + '\n\nStill more.');
+    await painted();
+    assert(!pill.hidden, 'Jump to latest did not show away from the end');
+    pill.click();
+    await painted();
+    assert(fromEnd() < 2, 'Jump to latest stopped short of the latest: ' + fromEnd());
+    assert(window.navi.hooks.follow() === true && pill.hidden, 'Jump to latest did not resume following');
+    await feed('reply', {text: 'Finished.'}, 'Finished.');
+    await waitFor(() => realRow().dataset.status === 'complete', 'The tall turn never finalised');
+
+    /* A request that fails does not take down another turn already running. */
+    await feed('thinking', {}, 'thinking');
+    await poll('real-5', 'Still going');
+    const runningRow = window.navi.hooks.messages().at(-1);
+    const sentBefore = commands();
+    input().value = 'this one fails';
+    document.getElementById('chat-form').requestSubmit();
+    await waitFor(() => commands() === sentBefore + 1, 'The second request never reached the daemon');
+    await waitFor(() => !window.navi.hooks.requestPending(), 'The second request never ended');
+    await painted();
+    assert(runningRow.status === 'streaming', 'A failed request failed another running turn: ' + runningRow.status);
+    await feed('reply', {text: 'Done.'}, 'Done.');
+
     window.navi.hooks.pausePoll(false);   // the live feed takes over again
     report.steps.push('Status derived Ready → Working → Ready without a "starting" placeholder');
     report.steps.push(`Streaming row grew ${firstSample}→${secondSample} chars and finalised in place`);
@@ -824,6 +932,8 @@
     report.steps.push('Older history paged by cursor: 3 saved rows in two pages, one request, has_more false');
     report.steps.push('Voice confirm claimed the hold before dispatch; a lost claim sent nothing and said so; Escape cancelled');
     report.steps.push('A refused permission decision stayed undecided and showed the daemon text once');
+    report.steps.push('The real poll shape keeps one reasoning section, one activity section and each sentence once');
+    report.steps.push('An upward wheel leaves the end, streaming does not pull back, Jump to latest reaches the latest');
     report.steps.push('A text attachment was read and sent with the prompt; a 3 MiB file was refused visibly');
     report.ok = true;
   }

@@ -94,6 +94,7 @@ PROMPT_TIMEOUT_S = 180.0
 # The backstop for a tool that runs but never ends.
 TURN_LIMIT_S = 1800.0
 POLL_INTERVAL_S = 0.25
+EVENT_RECONNECT_S = 1.0
 SPAWN_TIMEOUT_S = 15.0
 WAIT_IDLE_TIMEOUT_S = 15.0
 REPLY_SETTLE_S = 5.0
@@ -667,7 +668,10 @@ class Gateway:
         # (some shell.* payloads) are accepted — this gateway owns one session.
         if sid and self.session_id and sid != self.session_id:
             return
-        self._last_activity = time.time()
+        # The server also announces its own housekeeping (mcp.status.changed,
+        # model.updated) on this stream. That says nothing about this turn.
+        if kind.startswith(("session.", "shell.")):
+            self._last_activity = time.time()
 
         if kind == "session.step.started":
             self._busy = True
@@ -702,6 +706,9 @@ class Gateway:
             return
         if kind.startswith("session.execution."):
             name = kind[len("session.execution."):]
+            if name == "started":
+                self._busy = True
+                return
             self._busy = False
             self._terminal = name
             if kind == "session.execution.failed" or "fail" in name or "error" in name:
@@ -845,6 +852,13 @@ class Gateway:
             return
 
     def _read_events(self):
+        """Stay on the stream for the life of the turn: without it, nothing shows
+        that a long tool is still running."""
+        while True:
+            self._read_event_stream()
+            time.sleep(EVENT_RECONNECT_S)
+
+    def _read_event_stream(self):
         parsed = urllib.parse.urlsplit(self.base_url)
         connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=90)
         try:
@@ -904,6 +918,10 @@ class Gateway:
                 continue
             if not (message.get("time") or {}).get("completed"):
                 continue
+            # Each step of a turn is its own message. "Let me check." followed by a
+            # tool call is a completed message, and the turn is nowhere near over.
+            if message.get("finish") in ("tool-calls", "tool_calls"):
+                continue
             text = self._text(message)
             if text:
                 return text
@@ -920,6 +938,8 @@ class Gateway:
             if emit is not None:
                 for record in self._drain_records():
                     emit(record)
+            if self._terminal == "interrupted":
+                raise GatewayError("The turn was interrupted before it finished")
             # Preferred terminator (plan BUG-001 step 6): once the turn is
             # terminal, the last session.text.ended carries the full text.
             if not self._busy and not self._text_open and self._ended_texts:
@@ -940,11 +960,18 @@ class Gateway:
                         self._warn("SSE terminal event missing; "
                                    "reply read from the message store")
                         return reply
+            # The turn is over and has nothing to say: report that now, not after
+            # the whole silence limit.
+            if self._terminal and not self._text_open and silent > REPLY_SETTLE_S:
+                raise GatewayError("The assistant ended its turn without a reply")
             time.sleep(POLL_INTERVAL_S)
         # Each message is its own process: a turn left running here would hold the
         # session, and the next message (Retry too) would only queue behind it.
+        over_limit = time.time() - started >= TURN_LIMIT_S
         stopped = self.interrupt()
-        raise GatewayError(f"no assistant reply: nothing happened for {timeout:.0f}s"
+        raise GatewayError("no assistant reply: "
+                           + (f"still running after {TURN_LIMIT_S / 60:.0f} minutes" if over_limit
+                              else f"nothing happened for {timeout:.0f}s")
                            + (", so the turn was stopped" if stopped else ""))
 
     def _tool_running(self):

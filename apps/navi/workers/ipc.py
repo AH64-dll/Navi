@@ -8,6 +8,11 @@ DATA = Path(os.environ.get("NAVI_DATA_DIR", Path.home() / ".local/share/navi"))
 RUNTIME = Path(os.environ.get("NAVI_RUNTIME_DIR", Path(os.environ.get("XDG_RUNTIME_DIR", f"/tmp/navi-{os.getuid()}")) / "navi-station"))
 
 
+# A command runs a whole assistant turn. The daemon ends it at 30 minutes, so a caller
+# that gives up sooner reports a failure while the assistant is still working.
+COMMAND_TIMEOUT = 1830
+
+
 def rpc(op, params=None, timeout=90):
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(timeout)

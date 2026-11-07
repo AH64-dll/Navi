@@ -307,6 +307,54 @@ class GatewayTests(unittest.TestCase):
             thread.join()
             timer.join()
 
+    def test_a_sentence_before_a_tool_is_not_the_reply(self):
+        """A real turn ended on "Starting the wait now." while its tool still ran."""
+        step = {"id": "a", "time": {"completed": 1}, "finish": "tool-calls",
+                "content": [{"type": "text", "text": "Starting the wait now."}]}
+        self.gateway._assistant_messages = lambda limit=5: [step]
+        self.assertIsNone(self.gateway._latest_reply(set()))
+        final = {**step, "id": "b", "finish": "stop",
+                 "content": [{"type": "text", "text": "all done"}]}
+        self.gateway._assistant_messages = lambda limit=5: [final, step]
+        self.assertEqual(self.gateway._latest_reply(set()), "all done")
+
+    def test_execution_started_does_not_end_the_turn(self):
+        self.gateway._busy = True
+        self.gateway._handle_event("session.execution.started", {})
+        self.assertTrue(self.gateway._busy)
+        self.assertIsNone(self.gateway._terminal)
+        self.gateway._handle_event("session.execution.succeeded", {})
+        self.assertFalse(self.gateway._busy)
+
+    def test_server_housekeeping_is_not_activity_in_the_turn(self):
+        self.gateway._last_activity = 0
+        self.gateway._handle_event("mcp.status.changed", {})
+        self.gateway._handle_event("model.updated", {})
+        self.assertEqual(self.gateway._last_activity, 0)
+        self.gateway._handle_event("session.step.started", {})
+        self.assertGreater(self.gateway._last_activity, 0)
+
+    def test_an_interrupted_turn_says_so_at_once(self):
+        self.gateway._terminal = "interrupted"
+        self.gateway._busy = False
+        self.gateway._last_activity = time.time()
+        self.gateway._ended_texts = ["Starting the wait now."]
+        started = time.time()
+        with self.assertRaisesRegex(gateway_module.GatewayError, "interrupted"):
+            self.gateway._wait_reply(set(), timeout=30)
+        self.assertLess(time.time() - started, 2)
+
+    def test_a_turn_that_ends_with_no_text_says_so_without_the_full_wait(self):
+        self.gateway._terminal = "succeeded"
+        self.gateway._busy = False
+        self.gateway._events_alive = True
+        self.gateway._last_activity = time.time() - gateway_module.REPLY_SETTLE_S - 1
+        self.gateway._latest_reply = lambda previous: None
+        started = time.time()
+        with self.assertRaisesRegex(gateway_module.GatewayError, "without a reply"):
+            self.gateway._wait_reply(set(), timeout=30)
+        self.assertLess(time.time() - started, gateway_module.REPLY_SETTLE_S + 2)
+
     def test_a_running_tool_is_not_silence_but_a_question_is(self):
         tool = {"finished": False, "name": "shell"}
         self.gateway._tools = {"a": tool}

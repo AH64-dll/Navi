@@ -115,7 +115,10 @@
 .tool-diff .diff{border:0;background:none}
 
 /* Reasoning is collapsed by default: it is available, never in the way. */
-.part.reasoning{border-left:2px solid #8eaff344;padding-left:8px}
+.part.reasoning,.part.activity{border-left:2px solid #8eaff344;padding-left:8px}
+.part.activity>summary{cursor:pointer;font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;color:#93b2d6}
+.part.activity>summary:hover{color:#bfe0ff}
+.activity-body{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 .part.reasoning summary{cursor:pointer;font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;color:#93b2d6}
 .part.reasoning summary:hover{color:#bfe0ff}
 .reasoning-body{margin-top:6px;font-size:12px;line-height:1.55;color:#adc8e4}
