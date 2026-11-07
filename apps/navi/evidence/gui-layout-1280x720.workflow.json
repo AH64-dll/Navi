@@ -11,23 +11,23 @@
     "restored": 588
   },
   "switcher": {
-    "first": "prj-bdf1db86",
-    "alpha": "prj-7989f409",
+    "first": "prj-c30d8e2e",
+    "alpha": "prj-8f40d054",
     "label": "100%",
-    "scope": "prj-7989f409"
+    "scope": "prj-8f40d054"
   },
   "layout": {
     "boot": {
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 1256,
         "height": 423,
         "visible": true
       },
       "chat": {
         "x": 180,
-        "y": 447,
+        "y": 494,
         "width": 920,
         "height": 214,
         "visible": true
@@ -41,7 +41,7 @@
       },
       "sessions": {
         "x": 0,
-        "y": 674,
+        "y": 0,
         "width": 1045,
         "height": 46,
         "visible": true
@@ -49,7 +49,7 @@
       "graph": {
         "open": false,
         "loading": false,
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -71,7 +71,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:20 AM"
+        "as_of": "as of Nov 7, 06:41 AM"
       },
       "overlaps": [],
       "label": "boot",
@@ -84,15 +84,15 @@
       "phase": "idle",
       "terminalDisplay": "none",
       "art": {
-        "x": 430.9,
-        "y": 43,
-        "w": 418.3,
-        "h": 375.7,
-        "scale": 0.431,
+        "x": 431.6,
+        "y": 91.7,
+        "w": 416.9,
+        "h": 374,
+        "scale": 0.469,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 1256,
           "h": 423
         }
@@ -110,7 +110,7 @@
         "visible": false
       },
       "project": {
-        "id": "prj-bdf1db86",
+        "id": "prj-c30d8e2e",
         "name": "Navi",
         "path": "/home/amrhares/Documents/navi",
         "path_state": "ok",
@@ -119,7 +119,7 @@
         "options": 3,
         "scope": {
           "directory": "/home/amrhares/Documents/navi",
-          "project_id": "prj-bdf1db86",
+          "project_id": "prj-c30d8e2e",
           "session": null
         }
       }
@@ -127,28 +127,28 @@
     "open": {
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 264,
         "height": 423,
         "visible": true
       },
       "chat": {
         "x": 180,
-        "y": 447,
+        "y": 494,
         "width": 920,
         "height": 214,
         "visible": true
       },
       "terminal": {
         "x": 288,
-        "y": 12,
+        "y": 59,
         "width": 588,
         "height": 423,
         "visible": true
       },
       "sessions": {
         "x": 0,
-        "y": 674,
+        "y": 0,
         "width": 1045,
         "height": 46,
         "visible": true
@@ -156,7 +156,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -178,7 +178,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:20 AM"
+        "as_of": "as of Nov 7, 06:41 AM"
       },
       "overlaps": [],
       "label": "open",
@@ -191,15 +191,15 @@
       "phase": "idle",
       "terminalDisplay": "flex",
       "art": {
-        "x": 31.4,
-        "y": 113.7,
-        "w": 228.6,
-        "h": 210.8,
-        "scale": 0.249,
+        "x": 30.9,
+        "y": 162.7,
+        "w": 229,
+        "h": 209.7,
+        "scale": 0.274,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 264,
           "h": 423
         }
@@ -211,13 +211,13 @@
       },
       "graphRect": {
         "x": 888,
-        "y": 12,
+        "y": 59,
         "width": 380,
         "height": 423,
         "visible": true
       },
       "project": {
-        "id": "prj-bdf1db86",
+        "id": "prj-c30d8e2e",
         "name": "Navi",
         "path": "/home/amrhares/Documents/navi",
         "path_state": "ok",
@@ -226,7 +226,7 @@
         "options": 3,
         "scope": {
           "directory": "/home/amrhares/Documents/navi",
-          "project_id": "prj-bdf1db86",
+          "project_id": "prj-c30d8e2e",
           "session": null
         }
       }
@@ -234,14 +234,14 @@
     "closed": {
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 864,
         "height": 423,
         "visible": true
       },
       "chat": {
         "x": 180,
-        "y": 447,
+        "y": 494,
         "width": 920,
         "height": 214,
         "visible": true
@@ -255,7 +255,7 @@
       },
       "sessions": {
         "x": 0,
-        "y": 674,
+        "y": 0,
         "width": 1045,
         "height": 46,
         "visible": true
@@ -263,7 +263,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -285,7 +285,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:20 AM"
+        "as_of": "as of Nov 7, 06:41 AM"
       },
       "overlaps": [],
       "label": "closed",
@@ -298,15 +298,15 @@
       "phase": "idle",
       "terminalDisplay": "none",
       "art": {
-        "x": 232.7,
-        "y": 41.6,
-        "w": 420,
-        "h": 377.3,
-        "scale": 0.432,
+        "x": 232.8,
+        "y": 89.8,
+        "w": 419,
+        "h": 375.9,
+        "scale": 0.47,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 864,
           "h": 423
         }
@@ -318,13 +318,13 @@
       },
       "graphRect": {
         "x": 888,
-        "y": 12,
+        "y": 59,
         "width": 380,
         "height": 423,
         "visible": true
       },
       "project": {
-        "id": "prj-bdf1db86",
+        "id": "prj-c30d8e2e",
         "name": "Navi",
         "path": "/home/amrhares/Documents/navi",
         "path_state": "ok",
@@ -333,7 +333,7 @@
         "options": 3,
         "scope": {
           "directory": "/home/amrhares/Documents/navi",
-          "project_id": "prj-bdf1db86",
+          "project_id": "prj-c30d8e2e",
           "session": null
         }
       }
@@ -341,28 +341,28 @@
     "reopened": {
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 264,
         "height": 423,
         "visible": true
       },
       "chat": {
         "x": 180,
-        "y": 447,
+        "y": 494,
         "width": 920,
         "height": 214,
         "visible": true
       },
       "terminal": {
         "x": 288,
-        "y": 12,
+        "y": 59,
         "width": 588,
         "height": 423,
         "visible": true
       },
       "sessions": {
         "x": 0,
-        "y": 674,
+        "y": 0,
         "width": 1045,
         "height": 46,
         "visible": true
@@ -370,7 +370,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -392,7 +392,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:20 AM"
+        "as_of": "as of Nov 7, 06:41 AM"
       },
       "overlaps": [],
       "label": "reopened",
@@ -406,14 +406,14 @@
       "terminalDisplay": "flex",
       "art": {
         "x": 30.7,
-        "y": 116.5,
+        "y": 165.5,
         "w": 229.2,
-        "h": 211.7,
-        "scale": 0.25,
+        "h": 210.3,
+        "scale": 0.274,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 264,
           "h": 423
         }
@@ -425,13 +425,13 @@
       },
       "graphRect": {
         "x": 888,
-        "y": 12,
+        "y": 59,
         "width": 380,
         "height": 423,
         "visible": true
       },
       "project": {
-        "id": "prj-bdf1db86",
+        "id": "prj-c30d8e2e",
         "name": "Navi",
         "path": "/home/amrhares/Documents/navi",
         "path_state": "ok",
@@ -440,7 +440,7 @@
         "options": 3,
         "scope": {
           "directory": "/home/amrhares/Documents/navi",
-          "project_id": "prj-bdf1db86",
+          "project_id": "prj-c30d8e2e",
           "session": null
         }
       }

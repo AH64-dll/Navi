@@ -13,7 +13,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workers"))
 from voice import enabled
-from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, MicWatchdog,
+from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, MicWatchdog, SpeechVad,
                           SilenceWatch, StatusSnapshot, SttQueue, agc, trim_span)
 
 
@@ -318,7 +318,40 @@ class VadTests(unittest.TestCase):
             vad.feed([0.001] * 1600)
         state = vad.state()
         self.assertTrue(state["calibrated"])
-        self.assertGreaterEqual(state["floor"], 0.002)
+        self.assertGreaterEqual(state["floor"], 0.001)
+
+    def test_threshold_stays_three_times_a_very_quiet_room(self):
+        """A laptop mic: room at 0.0008. A clamp held the threshold at 0.006, above a
+        voice at 0.004, which ended commands after the first words."""
+        vad = AdaptiveVad()
+        for _ in range(30):
+            vad.feed([0.0008] * 1600)
+        self.assertTrue(vad.feed([0.004] * 1600))
+        self.assertFalse(vad.feed([0.0008] * 1600))
+
+
+class SpeechVadTests(unittest.TestCase):
+    """The live gate on a real speech model, not on a loudness rule."""
+
+    MODEL = Path.home() / ".local/share/navi/models/vad/silero_vad.onnx"
+
+    def setUp(self):
+        if not self.MODEL.exists():
+            self.skipTest("Silero model not installed")
+
+    def test_noise_is_not_speech(self):
+        import numpy as np
+        vad = SpeechVad(self.MODEL)
+        rng = np.random.default_rng(1)
+        heard = [vad.feed(rng.normal(0, .01, 1600).astype(np.float32)) for _ in range(50)]
+        self.assertFalse(any(heard))
+
+    def test_long_noise_does_not_grow_or_fail(self):
+        import numpy as np
+        vad = SpeechVad(self.MODEL)
+        for _ in range(700):
+            self.assertIs(vad.feed(np.zeros(1600, dtype=np.float32)), False)
+        self.assertEqual(vad.state(), {"kind": "silero"})
 
     def test_agc_lifts_quiet_audio_and_caps_gain(self):
         quiet = [[0.001] * 100]

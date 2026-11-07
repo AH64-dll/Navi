@@ -83,7 +83,7 @@ class AdaptiveVad:
     hardware minimum so a silent room cannot drive the threshold to zero.
     """
 
-    def __init__(self, floor=0.004, minimum=0.002, factor=3.0,
+    def __init__(self, floor=0.004, minimum=0.001, factor=3.0,
                  calibrate_blocks=10, window_blocks=300, percentile=0.1, ceiling=0.05):
         self.floor = floor
         self.minimum = minimum
@@ -111,6 +111,44 @@ class AdaptiveVad:
 
     def state(self):
         return {"floor": round(self.floor, 5), "calibrated": self.calibrated}
+
+
+class SpeechVad:
+    """Neural speech detection (Silero), the live gate when its model is installed.
+
+    An energy gate needs speech to be several times louder than the room. A laptop's
+    digital microphone can have a room at RMS 0.001 and a voice at 0.004, where the
+    gate closes on soft syllables and ends a 24 s sentence at 1.5 s. Silero recognises
+    speech rather than loudness, and held that sentence at every level from 0.002 to
+    0.05 while staying quiet on fan noise and mains hum.
+
+    The threshold is low on purpose: a false "speech" costs a slightly later endpoint,
+    and a false "quiet" cuts the user off. sherpa keeps speech in its own buffer until
+    a segment closes, so segments are discarded and the longest one is bounded just
+    above the 60 s capture cap.
+    """
+
+    def __init__(self, model, threshold=0.3):
+        import sherpa_onnx
+        config = sherpa_onnx.VadModelConfig()
+        config.silero_vad.model = str(model)
+        config.silero_vad.threshold = threshold
+        config.silero_vad.min_silence_duration = 0.25
+        config.silero_vad.min_speech_duration = 0.1
+        config.silero_vad.max_speech_duration = 62
+        config.silero_vad.window_size = 512
+        config.sample_rate = 16000
+        config.num_threads = 1
+        self.detector = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=65)
+
+    def feed(self, samples):
+        self.detector.accept_waveform(samples)
+        while not self.detector.empty():
+            self.detector.pop()
+        return bool(self.detector.is_speech_detected())
+
+    def state(self):
+        return {"kind": "silero"}
 
 
 def agc(blocks, target=0.1, max_gain=12.0):
@@ -155,13 +193,14 @@ class CaptureBuffer:
     pre_roll_blocks = 30
     minimum_blocks = 15        # wake path: >=1.5 s captured before endpointing
     maximum_blocks = 600       # 60 s dictation cap (BUG-053)
-    quiet_blocks = 18          # 1.8 s of quiet commits a longer utterance
+    quiet_blocks = 20          # 2 s of quiet commits an utterance
     segment_blocks = 100       # stream a "segment" every ~10 s of speech
     segment_overlap = 2        # 200 ms overlap to de-duplicate word boundaries
-    # BUG-052 fast endpoint: short utterances commit after 1.2 s of quiet once
-    # >=600 ms was captured. People pause for about a second mid-sentence while
-    # thinking, so a shorter wait keeps the first words and loses the rest.
-    fast_quiet_blocks = 12
+    # BUG-052 fast endpoint: short utterances commit once >=600 ms was captured.
+    # The wait matches the long one on purpose. People pause longest right after a
+    # short opening ("Can you open the project ... and check"), and any shorter
+    # wait kept those first words, sent them, and lost the rest of the sentence.
+    fast_quiet_blocks = 20
     fast_total_blocks = 6
     fast_speech_cap = 20       # utterances with <=2 s speech are "short"
     lead_blocks = 2

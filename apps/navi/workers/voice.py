@@ -24,7 +24,7 @@ import speech_config
 import speech_out
 import tts
 from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, MicWatchdog,
-                          SilenceWatch, SttQueue, StatusSnapshot, agc)
+                          SilenceWatch, SpeechVad, SttQueue, StatusSnapshot, agc)
 
 CANCEL_FILE = RUNTIME / "voice.cancel"
 # BUG-056: one settlement per capture. The daemon creates `voice.claim` for a
@@ -102,7 +102,9 @@ WAKE_KEYWORDS = ("▁NA VI", "▁HE Y ▁NA VI")
 WAKE_TUNING = {"▁NA VI": ":1.5 #0.08", "▁HE Y ▁NA VI": ":1.5 #0.15"}
 WAKE_WORD = "Navi"
 # While Navi says its own name, a wake needs a second hit within this window.
-WAKE_CONFIRM_SECONDS = 4.0
+# A reply that names Navi needs two calls to interrupt it, in case the speaker fired
+# the wake. People wait to see if the first call worked: real calls came 5 s apart.
+WAKE_CONFIRM_SECONDS = 8.0
 STOP_WORDS = ("stop", "cancel", "stop navi", "navi stop", "quiet", "shut up")
 
 
@@ -580,6 +582,29 @@ def load_spotter(speech, data=DATA):
     )
 
 
+def load_vad(data=DATA):
+    """The speech gate: Silero when installed, else the energy gate, which a quiet
+    microphone can end mid-sentence, so that fallback is reported."""
+    model = Path(data) / "models/vad/silero_vad.onnx"
+    try:
+        return SpeechVad(model) if model.exists() else fallback_vad("model not installed")
+    except (OSError, RuntimeError, ImportError) as error:
+        return fallback_vad(error)
+
+
+def fallback_vad(reason):
+    log(f"neural speech detection unavailable ({reason}); using the energy gate")
+    return AdaptiveVad()
+
+
+def capture_report(event):
+    """Numbers for the journal, never audio: why the next cut-off happened."""
+    samples = [float(sample) for block in event.blocks for sample in block]
+    level = (sum(s * s for s in samples) / max(len(samples), 1)) ** .5
+    ended = "time limit" if event.truncated else "silence"
+    return f"capture ended by {ended}: {len(samples) / 16000:.1f} s kept, level {level:.4f}"
+
+
 def load_recognizer(speech, data=DATA):
     """Build the local STT fallback; returns (engine, recognizer)."""
     import sherpa_onnx
@@ -1043,7 +1068,7 @@ def listen(commands, playback=None, snapshot=None):
                                          language=language)
 
                     stt_queue = SttQueue(stt_job, on_result=on_stt)
-                vad = AdaptiveVad()
+                vad = load_vad()
                 capture = CaptureBuffer(spotter)
                 stop_detector = StopDetector()
                 silence = SilenceWatch()
@@ -1179,6 +1204,7 @@ def listen(commands, playback=None, snapshot=None):
                             state("transcribing")
                         elif event.kind == "utterance":
                             # BUG-054: STT runs on its worker; the mic never stops.
+                            log(capture_report(event))
                             state("transcribing", vad=vad.state())
                             if stt_queue is not None:
                                 stt_queue.submit(event)

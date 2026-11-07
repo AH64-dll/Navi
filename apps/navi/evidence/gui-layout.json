@@ -21,15 +21,15 @@
       "opacity": "0"
     },
     "art": {
-      "x": 215.9,
-      "y": 27.7,
-      "w": 168.1,
-      "h": 158.5,
-      "scale": 0.176,
+      "x": 213.9,
+      "y": 74.2,
+      "w": 172.2,
+      "h": 161.4,
+      "scale": 0.197,
       "settled": true,
       "cell": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "w": 576,
         "h": 200
       }
@@ -40,7 +40,7 @@
     "pendingOps": [],
     "pendingStale": 0,
     "pendingOldestMs": 0,
-    "cursor": 1837081814845455,
+    "cursor": 1837083104516111,
     "polls": 8,
     "pollFailures": 0,
     "offline": false,
@@ -49,7 +49,7 @@
     "dropped": 0,
     "unknownReplies": 0,
     "daemon": {
-      "pid": 1274071,
+      "pid": 1316682,
       "version": "0.1.0"
     },
     "workers": {
@@ -61,15 +61,15 @@
     "sessions": [
       {
         "active": true,
-        "created": 1794025210014,
-        "cwd": "/tmp/navi-isolated-yy3ssfus",
+        "created": 1794026469622,
+        "cwd": "/tmp/navi-isolated-qdx3zr_3",
         "exit_status": null,
         "exited": null,
         "gen": 0,
         "harness": "bash",
-        "id": "navi-33ef36cc90293c34",
+        "id": "navi-441968a0a2d80ec2",
         "label": "Layout probe",
-        "last_active": 1794025217089,
+        "last_active": 1794026476580,
         "last_launched": true,
         "launch_kind": "new",
         "name": "Layout probe",
@@ -77,7 +77,7 @@
         "native_name": null,
         "origin": "navi",
         "orphan": false,
-        "pid": 1274148,
+        "pid": 1316760,
         "profile": "terminal",
         "project_id": null,
         "replaced_by": null,
@@ -184,20 +184,20 @@
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
@@ -208,155 +208,155 @@
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837081814845452
+          "since": 1837083104516108
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-33ef36cc90293c34"
+          "id": "navi-441968a0a2d80ec2"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837081814845452
+          "since": 1837083104516108
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837081814845453
+          "since": 1837083104516109
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-33ef36cc90293c34"
+          "id": "navi-441968a0a2d80ec2"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837081814845453
+          "since": 1837083104516110
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837081814845454
+          "since": 1837083104516110
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-33ef36cc90293c34"
+          "id": "navi-441968a0a2d80ec2"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837081814845455
+          "since": 1837083104516111
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837081814845455
+          "since": 1837083104516111
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-7989f409"
+          "project_id": "prj-8f40d054"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-7989f409"
+          "project_id": "prj-8f40d054"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-7989f409"
+          "project_id": "prj-8f40d054"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-bdcf766b"
+          "project_id": "prj-2fde2df1"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-bdcf766b"
+          "project_id": "prj-2fde2df1"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-bdcf766b"
+          "project_id": "prj-2fde2df1"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-bdf1db86"
+          "project_id": "prj-c30d8e2e"
         }
       }
     ],
@@ -368,7 +368,7 @@
     "graphOpen": true,
     "phase": "idle",
     "project": {
-      "id": "prj-bdf1db86",
+      "id": "prj-c30d8e2e",
       "name": "Navi",
       "path": "/home/amrhares/Documents/navi",
       "path_state": "ok",
@@ -377,14 +377,14 @@
       "options": 3,
       "scope": {
         "directory": "/home/amrhares/Documents/navi",
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "session": null
       }
     },
     "graph": {
       "open": true,
       "loading": false,
-      "project_id": "prj-bdf1db86",
+      "project_id": "prj-c30d8e2e",
       "percent": null,
       "percent_null": true,
       "unknown": true,
@@ -406,40 +406,40 @@
       "evidence": 2,
       "evidenceTotal": "Evidence (2)",
       "empty": true,
-      "as_of": "as of Nov 7, 06:21 AM"
+      "as_of": "as of Nov 7, 06:42 AM"
     },
     "layout": {
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 936,
         "height": 200,
         "visible": true
       },
       "chat": {
         "x": 20,
-        "y": 441,
+        "y": 488,
         "width": 920,
         "height": 140,
         "visible": true
       },
       "terminal": {
         "x": 12,
-        "y": 224,
+        "y": 271,
         "width": 936,
         "height": 205,
         "visible": true
       },
       "sessions": {
         "x": 0,
-        "y": 594,
+        "y": 0,
         "width": 725,
         "height": 46,
         "visible": true
       },
       "graph": {
         "x": 588,
-        "y": 12,
+        "y": 59,
         "width": 360,
         "height": 200,
         "visible": true
@@ -452,8 +452,8 @@
         "skipped": 4,
         "errors": 0,
         "unhandled": 0,
-        "bytes": 7657,
-        "cursor": 1837081814845455,
+        "bytes": 7658,
+        "cursor": 1837083104516111,
         "active": false,
         "rate": 0.65
       }
@@ -471,56 +471,56 @@
       "phase": "idle",
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 350,
         "height": 581,
         "visible": true
       },
       "art": {
-        "x": 31,
-        "y": 155.4,
-        "w": 314.5,
-        "h": 288.2,
-        "scale": 0.274,
+        "x": 31.6,
+        "y": 205.1,
+        "w": 313.9,
+        "h": 286.1,
+        "scale": 0.294,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 349.6,
           "h": 581
         }
       },
       "art_closed": {
-        "x": 228.4,
-        "y": 50.2,
-        "w": 588.1,
-        "h": 527.4,
-        "scale": 0.479,
+        "x": 228.7,
+        "y": 98.3,
+        "w": 587.1,
+        "h": 525.9,
+        "scale": 0.512,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 1024,
           "h": 581
         }
       },
       "chat": {
         "x": 260,
-        "y": 605,
+        "y": 652,
         "width": 920,
         "height": 256,
         "visible": true
       },
       "terminal": {
         "x": 374,
-        "y": 12,
+        "y": 59,
         "width": 662,
         "height": 581,
         "visible": true
       },
       "sessions": {
         "x": 0,
-        "y": 874,
+        "y": 0,
         "width": 1205,
         "height": 46,
         "visible": true
@@ -528,7 +528,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -550,7 +550,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:20 AM"
+        "as_of": "as of Nov 7, 06:41 AM"
       },
       "overlaps": [],
       "splitter": {
@@ -560,10 +560,10 @@
         "restored": 662
       },
       "switcher": {
-        "first": "prj-bdf1db86",
-        "alpha": "prj-7989f409",
+        "first": "prj-c30d8e2e",
+        "alpha": "prj-8f40d054",
         "label": "100%",
-        "scope": "prj-7989f409"
+        "scope": "prj-8f40d054"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"
@@ -579,56 +579,56 @@
       "phase": "idle",
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 264,
         "height": 423,
         "visible": true
       },
       "art": {
-        "x": 31.4,
-        "y": 113.7,
-        "w": 228.6,
-        "h": 210.8,
-        "scale": 0.249,
+        "x": 30.9,
+        "y": 162.7,
+        "w": 229,
+        "h": 209.7,
+        "scale": 0.274,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 264,
           "h": 423
         }
       },
       "art_closed": {
-        "x": 232.7,
-        "y": 41.6,
-        "w": 420,
-        "h": 377.3,
-        "scale": 0.432,
+        "x": 232.8,
+        "y": 89.8,
+        "w": 419,
+        "h": 375.9,
+        "scale": 0.47,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 864,
           "h": 423
         }
       },
       "chat": {
         "x": 180,
-        "y": 447,
+        "y": 494,
         "width": 920,
         "height": 214,
         "visible": true
       },
       "terminal": {
         "x": 288,
-        "y": 12,
+        "y": 59,
         "width": 588,
         "height": 423,
         "visible": true
       },
       "sessions": {
         "x": 0,
-        "y": 674,
+        "y": 0,
         "width": 1045,
         "height": 46,
         "visible": true
@@ -636,7 +636,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -658,7 +658,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:20 AM"
+        "as_of": "as of Nov 7, 06:41 AM"
       },
       "overlaps": [],
       "splitter": {
@@ -668,10 +668,10 @@
         "restored": 588
       },
       "switcher": {
-        "first": "prj-bdf1db86",
-        "alpha": "prj-7989f409",
+        "first": "prj-c30d8e2e",
+        "alpha": "prj-8f40d054",
         "label": "100%",
-        "scope": "prj-7989f409"
+        "scope": "prj-8f40d054"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"
@@ -687,56 +687,56 @@
       "phase": "idle",
       "stage": {
         "x": 12,
-        "y": 12,
+        "y": 59,
         "width": 936,
         "height": 200,
         "visible": true
       },
       "art": {
-        "x": 216.2,
-        "y": 24.5,
-        "w": 168.4,
-        "h": 158.5,
-        "scale": 0.177,
+        "x": 214.4,
+        "y": 71.5,
+        "w": 172.5,
+        "h": 161.4,
+        "scale": 0.197,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 576,
           "h": 200.2
         }
       },
       "art_closed": {
-        "x": 137.5,
-        "y": 33.9,
-        "w": 324.9,
-        "h": 292.5,
-        "scale": 0.366,
+        "x": 138.1,
+        "y": 81.8,
+        "w": 323.9,
+        "h": 291.2,
+        "scale": 0.401,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 12,
+          "y": 59,
           "w": 576,
           "h": 331
         }
       },
       "chat": {
         "x": 20,
-        "y": 441,
+        "y": 488,
         "width": 920,
         "height": 140,
         "visible": true
       },
       "terminal": {
         "x": 12,
-        "y": 224,
+        "y": 271,
         "width": 936,
         "height": 205,
         "visible": true
       },
       "sessions": {
         "x": 0,
-        "y": 594,
+        "y": 0,
         "width": 725,
         "height": 46,
         "visible": true
@@ -744,7 +744,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-bdf1db86",
+        "project_id": "prj-c30d8e2e",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -766,7 +766,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:21 AM"
+        "as_of": "as of Nov 7, 06:42 AM"
       },
       "overlaps": [],
       "splitter": {
@@ -776,10 +776,10 @@
         "restored": 205
       },
       "switcher": {
-        "first": "prj-bdf1db86",
-        "alpha": "prj-7989f409",
+        "first": "prj-c30d8e2e",
+        "alpha": "prj-8f40d054",
         "label": "100%",
-        "scope": "prj-7989f409"
+        "scope": "prj-8f40d054"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"

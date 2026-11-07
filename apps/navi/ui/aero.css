@@ -1,23 +1,24 @@
 /* ── Aero chrome ───────────────────────────────────────────────────────────────
-   Windows 7 era look for everything except the scene: pale blue window frames, a
-   dark glass taskbar along the bottom, glossy two-tone buttons that glow blue on
-   hover, soft rounded corners and green progress bars.
+   Windows 7 era shapes in Navi's own deep blue, so the chrome belongs to the scene
+   behind it: dark glass window frames, a glass taskbar along the top, glossy two-tone
+   buttons that glow on hover, soft rounded corners and green progress bars. Nothing
+   here is white: a pale panel on this scene reads as a hole in it.
    The glass is painted, not blurred: blurring the live scene behind every panel is
    what BUG-026 removed, and a painted sheen costs nothing per frame.
-   Text places stay in Navi's navy-and-ice type: the chat log, the graph, the terminal
-   and every input are wells in the chrome, so typing and reading look like one
-   surface. Loaded after station.css and only restyles, apart from the strip's row. */
+   Loaded after station.css and only restyles. */
 :root{
   --ui:"Segoe UI",Selawik,"Open Sans","Noto Sans",Cantarell,"DejaVu Sans",Arial,sans-serif;
-  --ink:#1e1e1e;--ink-soft:#4c607a;--face:#f0f0f0;--line:#a0a0a0;--frame-line:#5f7c9d;
-  --title-ink:#14283f;--link:#0a5bc4;--well:#040a34;
-  --frame:linear-gradient(180deg,#e7f1fa 0,#cfe0f1 26px,#bcd2e8 60%,#c9dced 100%);
-  --sheen:linear-gradient(115deg,#ffffff00 30%,#ffffff40 42%,#ffffff00 54%);
-  --taskbar:linear-gradient(180deg,#5d87ad 0,#3a648c 2px,#2b4f73 48%,#1d3b5a 52%,#21466a 100%);
-  --btn:linear-gradient(180deg,#f6f6f6 0,#ebebeb 48%,#dddddd 50%,#cfcfcf 100%);
-  --btn-hover:linear-gradient(180deg,#eaf6fd 0,#d9f0fc 48%,#bee6fd 50%,#a7d9f5 100%);
-  --btn-down:linear-gradient(180deg,#e5f4fc 0,#c4e5f6 48%,#98d1ef 50%,#68b3db 100%);
-  --window-shadow:0 0 0 1px #ffffff66 inset,0 4px 18px #00122e80;
+  --ink:#e6f1ff;--ink-soft:#a9c3e2;--face:#12305c;--line:#3a659c;--frame-line:#0a1c40;
+  --title-ink:#ffffff;--link:#8fd0ff;--well:#040a34;--good:#7df09a;--warn:#ffd76a;--bad:#ff9d91;
+  --frame:linear-gradient(180deg,#2d609b 0,#1d4579 26px,#13315f 60%,#173a6b 100%);
+  --sheen:linear-gradient(115deg,#ffffff00 30%,#ffffff1f 42%,#ffffff00 54%);
+  --taskbar:linear-gradient(180deg,#3f6fa3 0,#2b5589 2px,#1f4474 48%,#132f58 52%,#183866 100%);
+  --btn:linear-gradient(180deg,#4a7fb8 0,#34689f 48%,#1f4d86 50%,#2a5c98 100%);
+  --btn-hover:linear-gradient(180deg,#6ba6dc 0,#4b8cc9 48%,#2f74b8 50%,#4a93d4 100%);
+  --btn-down:linear-gradient(180deg,#143563 0,#1a4274 48%,#21558f 50%,#2a659f 100%);
+  --fill:linear-gradient(180deg,#b9f0b0 0,#57d043 45%,#2fb31d 50%,#6fdc5f 100%);
+  --glow:#7fd0ff;
+  --window-shadow:0 0 0 1px #7fb2e84d inset,0 4px 18px #00122e80;
   --surface-panel:var(--frame);--surface-overlay:var(--frame);--edge:var(--frame-line);
   --composer-min:140px;
 }
@@ -30,36 +31,36 @@
 
 /* Buttons. The :not() list is every button that is really a row or a link. */
 button:not(.hud-main,.aspect-head,.project-option,.launch-option,.project-add,.recent-clear,.md-link,.msg-action,.attachment-remove,.session-drop,.code-copy){
-  font:12px var(--ui);letter-spacing:0;color:var(--ink);background:var(--btn);padding:3px 12px;min-height:23px;
-  border:1px solid #707070;border-radius:3px;box-shadow:inset 0 0 0 1px #ffffffb3;text-shadow:none;transition:background-color .15s}
+  font:12px var(--ui);letter-spacing:0;color:#fff;background:var(--btn);padding:3px 12px;min-height:23px;text-shadow:0 1px 1px #00152c;
+  border:1px solid var(--frame-line);border-radius:3px;box-shadow:inset 0 0 0 1px #9cc8f033;transition:background-color .15s}
 button:not(.hud-main,.aspect-head,.project-option,.launch-option,.project-add,.recent-clear,.md-link,.msg-action,.attachment-remove,.session-drop,.code-copy):hover{
-  background:var(--btn-hover);border-color:#3c7fb1;color:var(--ink);box-shadow:inset 0 0 0 1px #ffffffb3,0 0 4px #4fb4ff80}
+  background:var(--btn-hover);border-color:#0d2f5c;color:#fff;box-shadow:inset 0 0 0 1px #bfe4ff59,0 0 5px #7fd0ff99}
 button:not(.hud-main,.aspect-head,.project-option,.launch-option,.project-add,.recent-clear,.md-link,.msg-action,.attachment-remove,.session-drop,.code-copy):active,
 .mic[aria-pressed=true]:not(#_),.link-tabs button[aria-pressed=true]:not(#_){
-  color:var(--ink);text-shadow:none;background:var(--btn-down);border-color:#2c628b;box-shadow:inset 0 1px 2px #00254a59}
-button:disabled:not(#_){color:#838383;background:#f4f4f4;border-color:#adb2b5;box-shadow:none;opacity:1}
-button:focus-visible{outline:1px dotted #000;outline-offset:-4px}
-/* The default button: the blue glow around the action Enter takes. */
-.primary:not(#_),.chat-empty .primary:not(#_),.graph-panel .primary:not(#_),.settings .primary:not(#_){color:var(--ink);
-  border-color:#3399ff;box-shadow:inset 0 0 0 1px #9fdcff,0 0 3px #3399ff80;background:var(--btn);font-weight:400}
-.primary:not(#_):hover{background:var(--btn-hover);border-color:#3c7fb1}
-.stop:not(#_){color:#a1150f;font-weight:600}
+  color:#fff;background:var(--btn-down);border-color:var(--glow);box-shadow:inset 0 1px 3px #00122e99}
+button:disabled:not(#_){color:#8ba3c0;background:#21395c;border-color:#1a2d4c;box-shadow:none;text-shadow:none;opacity:1}
+button:focus-visible{outline:1px dotted #fff;outline-offset:-4px}
+/* The default button: the glow around the action Enter takes. */
+.primary:not(#_),.chat-empty .primary:not(#_),.graph-panel .primary:not(#_),.settings .primary:not(#_){color:#fff;
+  border-color:var(--glow);box-shadow:inset 0 0 0 1px #7fd0ff59,0 0 4px #7fd0ffa6;background:var(--btn);font-weight:400}
+.primary:not(#_):hover{background:var(--btn-hover)}
+.stop:not(#_){color:#ffc4bb;font-weight:600}
 .mic,.send,.stop,#terminal-send{min-height:25px!important}
-.icon:not(#_){padding:2px 5px;min-height:0;color:var(--ink);font-size:12px}
+.icon:not(#_){padding:2px 5px;min-height:0;color:#fff;font-size:12px}
 /* The caption button: red, as on every window of the period. */
 #terminal-close:not(#_){padding:0 12px;min-height:18px;color:#fff;font-weight:700;text-shadow:0 0 3px #000;
-  border-color:#6b1a14;border-radius:0 0 4px 4px;background:linear-gradient(180deg,#e9a79e 0,#d9574b 48%,#c0281b 50%,#d2655a 100%)}
-#terminal-close:not(#_):hover{border-color:#6b1a14;background:linear-gradient(180deg,#f8c1b8 0,#f06f61 48%,#e63a29 50%,#f2897d 100%)}
+  border-color:#4f120d;border-radius:0 0 4px 4px;background:linear-gradient(180deg,#e9a79e 0,#d9574b 48%,#c0281b 50%,#d2655a 100%)}
+#terminal-close:not(#_):hover{border-color:#4f120d;background:linear-gradient(180deg,#f8c1b8 0,#f06f61 48%,#e63a29 50%,#f2897d 100%)}
 
 /* Text places: one navy well, whichever panel it sits in. */
 input:not([type=checkbox]),textarea,.settings select{font:12px var(--ui);color:var(--ice);background-color:var(--well);padding:4px 6px;
-  border:1px solid;border-color:#7a8ea5 #aab9c9 #bccad8;border-radius:2px;box-shadow:inset 0 1px 2px #00000059}
-input:not([type=checkbox]):hover,textarea:hover,.settings select:hover{border-color:#3d7bad #a4c9e3 #b7d9ed}
-input:not([type=checkbox]):focus,textarea:focus,.settings select:focus{outline:none;border-color:#3d7bad;box-shadow:inset 0 1px 2px #00000059,0 0 4px #4fb4ffa6}
+  border:1px solid;border-color:#0a1c40 #2f5a90 #3a659c;border-radius:2px;box-shadow:inset 0 1px 2px #00000080}
+input:not([type=checkbox]):hover,textarea:hover,.settings select:hover{border-color:#3d7bad #5a9ace #6db0e0}
+input:not([type=checkbox]):focus,textarea:focus,.settings select:focus{outline:none;border-color:var(--glow);box-shadow:inset 0 1px 2px #00000080,0 0 4px #7fd0ffa6}
 input::placeholder,textarea::placeholder{color:#8fb4d9;opacity:1}
 .settings input:not([type=checkbox]){padding:4px 6px}
 #terminal-prompt{padding:3px 6px}
-.chat-log-wrap{background:var(--well);border:1px solid #6f8499;border-radius:3px;box-shadow:inset 0 1px 3px #00000080}
+.chat-log-wrap{background:var(--well);border:1px solid var(--frame-line);border-radius:3px;box-shadow:inset 0 1px 3px #00000080}
 #chat-log{padding:6px 8px 10px;scrollbar-width:auto;scrollbar-color:auto}
 .msg p,.md-list li{font-size:13px;line-height:1.45}
 .msg .who{font-size:11px;letter-spacing:0;text-transform:none;font-weight:600}
@@ -68,7 +69,7 @@ input::placeholder,textarea::placeholder{color:#8fb4d9;opacity:1}
 .empty-title{font:600 14px var(--ui)}
 .empty-hint,.empty-note{font-size:12px}
 .empty-actions{gap:6px}
-#terminal-host{border:1px solid #6f8499;border-radius:3px;box-shadow:inset 0 1px 3px #00000080}
+#terminal-host{border:1px solid var(--frame-line);border-radius:3px;box-shadow:inset 0 1px 3px #00000080}
 
 /* A short window with the terminal open leaves the chat little height. The first-run
    card gives way, so what you type into is never pushed out of the panel. */
@@ -82,48 +83,38 @@ input::placeholder,textarea::placeholder{color:#8fb4d9;opacity:1}
 /* Title bars: the chat and the terminal read as windows. */
 .chat{padding:0 6px 4px;gap:0;border-radius:7px 7px 5px 5px}
 .chat::before{content:"Navi";display:block;flex:0 0 auto;padding:5px 2px 4px;color:var(--title-ink);font:12px var(--ui);
-  text-shadow:0 0 6px #fff,0 0 2px #fff}
+  text-shadow:0 1px 3px #00152c}
 #chat-form{border-top:0;padding:5px 0 0;gap:4px}
 .chat-meta{gap:8px;padding:4px 2px 1px;font-size:12px;letter-spacing:0;color:var(--ink);opacity:1}
 #state{letter-spacing:0}
-#state[data-phase=ready]{color:#0b6a1e}
-#state[data-phase=working]{color:#8a5a00}
-#state[data-phase=attention],#state[data-phase=offline]{color:#b3160c}
-#project-status{color:#17457a;opacity:1}
-#project-status[data-state=missing]{color:#b3160c}
+#state[data-phase=ready]{color:var(--good)}
+#state[data-phase=working]{color:var(--warn)}
+#state[data-phase=attention],#state[data-phase=offline]{color:var(--bad)}
+#project-status{color:#bfe0ff;opacity:1}
+#project-status[data-state=missing]{color:var(--bad)}
 #chief-status{opacity:1}
 .pill:not(#_){font-size:12px;letter-spacing:0;padding:1px 9px;min-height:20px}
 .terminal-pane{border-radius:7px;padding:0 6px 6px}
 .terminal-head{padding:0 0 4px 2px;gap:4px;border-bottom:0;background:none;align-items:flex-start}
-.terminal-head span{font:12px var(--ui);color:var(--title-ink);text-shadow:0 0 6px #fff,0 0 2px #fff;padding-top:5px}
+.terminal-head span{font:12px var(--ui);color:var(--title-ink);text-shadow:0 1px 3px #00152c;padding-top:5px}
 .terminal-head input,.terminal-head #terminal-send,.terminal-head #terminal-stop{margin-top:4px}
 #dock-splitter{background:none;width:6px}
-#dock-splitter:hover,#dock-splitter:focus-visible{background:#3c7fb166}
+#dock-splitter:hover,#dock-splitter:focus-visible{background:#7fd0ff66}
 
-/* The taskbar: the strip moves to the bottom edge, full width, in dark glass. */
-#shell{grid-template-rows:minmax(180px,1fr) auto auto;
-  grid-template-areas:"stage dock graph" "composer composer composer" "strip strip strip"}
-@media(max-width:1199px){
-  #shell{grid-template-rows:minmax(180px,1fr) auto auto auto;grid-template-areas:"stage" "dock" "composer" "strip"}
-}
-@media(max-width:899px){
-  #shell{grid-template-rows:minmax(180px,1fr) auto auto;grid-template-areas:"stage" "composer" "strip"}
-}
-body[data-dock="max"] #shell{grid-template-rows:minmax(0,1fr) auto auto;
-  grid-template-areas:"stage graph" "composer composer" "strip strip"}
-.strip{margin:0 calc(var(--gap) * -1) calc(var(--gap) * -1);min-height:38px;align-items:stretch;gap:0;
-  background:var(--sheen),var(--taskbar);border-top:1px solid #0d2238;box-shadow:inset 0 1px #ffffff55}
+/* The taskbar: full width along the top edge, in the same glass. */
+.strip{margin:calc(var(--gap) * -1) calc(var(--gap) * -1) 0;min-height:38px;align-items:stretch;gap:0;
+  background:var(--sheen),var(--taskbar);border-bottom:1px solid var(--frame-line);box-shadow:inset 0 1px #ffffff40,0 2px 6px #00122e66}
 .strip .panel{background:none;border:0;border-radius:0;box-shadow:none;color:#fff}
 .sessions{flex:1 1 auto;padding:3px 6px;gap:3px}
 /* :not(#_) outranks the general button rule: some of these are real buttons. */
 .strip .session-chip:not(#_),.strip .project-button:not(#_){min-height:30px;padding:2px 10px;gap:6px;font-size:12px;color:#fff;text-shadow:0 1px 2px #00152c;
-  border:1px solid #ffffff3d;border-radius:3px;background:linear-gradient(180deg,#ffffff3d 0,#ffffff1a 48%,#ffffff08 50%,#ffffff1f 100%);
+  border:1px solid #ffffff2e;border-radius:3px;background:linear-gradient(180deg,#ffffff33 0,#ffffff14 48%,#ffffff05 50%,#ffffff1a 100%);
   box-shadow:inset 0 0 0 1px #00000026}
-.strip .session-chip:not(#_):hover,.strip .session-chip:not(#_):focus-visible,.strip .project-button:not(#_):hover,.strip .project-button:not(#_):focus-visible{border-color:#ffffff99;color:#fff;
-  background:linear-gradient(180deg,#ffffff66 0,#ffffff33 48%,#ffffff1a 50%,#ffffff40 100%),radial-gradient(ellipse at 50% 100%,#7fd0ff99,#7fd0ff00 70%)}
+.strip .session-chip:not(#_):hover,.strip .session-chip:not(#_):focus-visible,.strip .project-button:not(#_):hover,.strip .project-button:not(#_):focus-visible{border-color:#ffffff80;color:#fff;
+  background:linear-gradient(180deg,#ffffff4d 0,#ffffff26 48%,#ffffff14 50%,#ffffff33 100%),radial-gradient(ellipse at 50% 100%,#7fd0ff99,#7fd0ff00 70%)}
 .strip .session-chip:not(#_):focus-visible,.strip .project-button:not(#_):focus-visible{outline:1px dotted #fff;outline-offset:-4px}
-.strip .session-chip.active:not(#_),.strip .session-chip.attached:not(#_){border-color:#ffffffb3;font-weight:600;
-  background:linear-gradient(180deg,#ffffff80 0,#ffffff40 48%,#ffffff26 50%,#ffffff59 100%),radial-gradient(ellipse at 50% 100%,#8fd8ff,#8fd8ff00 75%)}
+.strip .session-chip.active:not(#_),.strip .session-chip.attached:not(#_){border-color:#ffffff99;font-weight:600;
+  background:linear-gradient(180deg,#ffffff59 0,#ffffff2e 48%,#ffffff1a 50%,#ffffff40 100%),radial-gradient(ellipse at 50% 100%,#8fd8ff,#8fd8ff00 75%)}
 .session-state,.session-chip.active .session-state,.session-chip[data-state] .session-state{font-size:11px;letter-spacing:0;text-transform:none;color:#dcecfb;opacity:1}
 .session-dot{box-shadow:none!important;border:1px solid #00152c;width:8px;height:8px;background:#5ee07a}
 .session-chip.dead .session-dot{background:#9aa7b5}
@@ -137,16 +128,14 @@ body[data-dock="max"] #shell{grid-template-rows:minmax(0,1fr) auto auto;
 .recent-toggle:not(#_){border-style:solid;font-size:12px}
 .recent-toggle.attention{border-color:#ffd76a;font-weight:600}
 .project-percent{color:#c9f5d4;font-size:12px}
-.project-percent.stale{color:#ffd76a}
+.project-percent.stale{color:var(--warn)}
 .project-path-state{letter-spacing:0;text-transform:none;font-size:11px;border-color:#ffffff66;color:#fff}
 .project-path-state[data-state=missing]{color:#ffb3a8;border-color:#ffb3a8}
 .project-caret{color:#fff;opacity:1}
-/* A taskbar's menus can only open upward. */
-.project-menu,.launch-menu,.sessions-recent-chips{top:auto;bottom:calc(100% + 6px)}
 
-/* Progress sits in the notification area, at the right end of the taskbar. */
-.progress-hud{padding:3px 10px 3px 12px;gap:8px;overflow:visible;border-left:1px solid #0d2238!important;
-  box-shadow:inset 1px 0 #ffffff33!important}
+/* Progress sits at the right end of the taskbar. */
+.progress-hud{padding:3px 10px 3px 12px;gap:8px;overflow:visible;border-left:1px solid var(--frame-line)!important;
+  box-shadow:inset 1px 0 #ffffff26!important}
 .hud-main{padding-bottom:7px}
 .hud-label{font-size:11px;letter-spacing:0;text-transform:none;font-weight:600;color:#fff;text-shadow:0 1px 2px #00152c}
 .hud-basis{font-size:11px;color:#dcecfb}
@@ -154,95 +143,92 @@ body[data-dock="max"] #shell{grid-template-rows:minmax(0,1fr) auto auto;
 .hud-percent[data-null=true]{color:#c5d6e8}
 .hud-main:hover .hud-percent,.hud-main:focus-visible .hud-percent{color:#bfe7ff;text-shadow:0 0 6px #7fd0ff}
 .hud-main:focus-visible{outline:1px dotted #fff;outline-offset:1px}
-.hud-stale,.progress-hud[data-state=assessing] .hud-basis{color:#ffd76a}
-.hud-bar{left:12px;right:80px;bottom:3px;height:6px;border-radius:2px;background:#e6e6e6;border:1px solid #1a2f46;box-shadow:inset 0 1px 1px #00000040}
-.hud-bar i{border-radius:1px;box-shadow:none;background:linear-gradient(180deg,#b9f0b0 0,#57d043 45%,#2fb31d 50%,#6fdc5f 100%)}
+.hud-stale,.progress-hud[data-state=assessing] .hud-basis{color:var(--warn)}
+.hud-bar{left:12px;right:80px;bottom:3px;height:6px;border-radius:2px;background:var(--well);border:1px solid var(--frame-line);box-shadow:inset 0 1px 1px #00000080}
+.hud-bar i{border-radius:1px;box-shadow:none;background:var(--fill)}
 
-/* Graph and dialogs. The graph's readings stay on a well of their own. */
+/* The graph's readings stay on a well of their own. */
 #graph-region{background:var(--well);color:var(--ice);border:1px solid var(--frame-line);border-radius:7px;box-shadow:var(--window-shadow)}
 #graph-region[data-more=true]{-webkit-mask-image:none;mask-image:none}
 .graph-percent{font:600 26px var(--ui)}
 .graph-caption,.graph-sub-title,.graph-stat-label,.graph-evidence-head,.evidence-kind,.task-flag{letter-spacing:0;text-transform:none;font-size:11px}
-.aspect-bar,.graph-bar{background:#e6e6e6;border:1px solid #6f8499;border-radius:2px;box-shadow:inset 0 1px 1px #00000040}
+.aspect-bar,.graph-bar{background:#0a1c40;border:1px solid #2f5a90;border-radius:2px;box-shadow:inset 0 1px 1px #00000080}
 .meter-fill,.aspect-fill,.hud-bar i{transition:width .3s}
-.meter-fill,.aspect-fill,.chip-bar{background:linear-gradient(180deg,#b9f0b0 0,#57d043 45%,#2fb31d 50%,#6fdc5f 100%)}
-.graph-close:not(#_){color:var(--ink)}
+.meter-fill,.aspect-fill,.chip-bar{background:var(--fill)}
 
-/* Dialogs: a glass frame round a plain grey client area. */
-.settings{background:var(--sheen),var(--frame);color:var(--ink);padding:0 6px 6px;border:1px solid var(--frame-line);border-radius:8px;box-shadow:0 0 0 1px #ffffff66 inset,0 8px 34px #00122eb3}
-.settings::backdrop{background:#00002040;backdrop-filter:none}
-.settings form{background:var(--face);border:1px solid #8ba4bd;border-radius:2px;padding:10px 12px 0;gap:6px}
+/* Dialogs: a glass frame round a dark client area. */
+.settings{background:var(--sheen),var(--frame);color:var(--ink);padding:0 6px 6px;border:1px solid var(--frame-line);border-radius:8px;box-shadow:0 0 0 1px #7fb2e84d inset,0 8px 34px #00122eb3}
+.settings::backdrop{background:#00002066;backdrop-filter:none}
+.settings form{background:var(--face);border:1px solid var(--frame-line);border-radius:2px;padding:10px 12px 0;gap:6px}
 .settings h2{margin:-10px -12px 8px;padding:5px 12px;font:12px var(--ui);letter-spacing:0;color:var(--title-ink);
-  text-shadow:0 0 6px #fff,0 0 2px #fff;background:var(--sheen),var(--frame);border-bottom:1px solid #8ba4bd}
+  text-shadow:0 1px 3px #00152c;background:var(--sheen),var(--frame);border-bottom:1px solid var(--frame-line)}
 .settings .field,#diagnostics>b,.link-outside>summary,.profile-head{font-size:12px;letter-spacing:0;text-transform:none;color:var(--ink);font-weight:400}
-.settings .hint,.settings .hint:not(.error){font-size:12px;color:#4d4d4d;opacity:1}
-.settings .hint.error{color:#b3160c}
+.settings .hint,.settings .hint:not(.error){font-size:12px;color:var(--ink-soft);opacity:1}
+.settings .hint.error{color:var(--bad)}
 .settings .toggles,.settings .check{font-size:12px;letter-spacing:0;color:var(--ink);gap:16px}
 .settings select{background-color:var(--well);padding-right:30px}
 .settings button{font-size:12px}
-#settings-form .actions,.settings .actions{bottom:0;margin:8px -12px 0;padding:8px 12px;background:#e4e8ed;box-shadow:none;border-top:1px solid #c6ccd3}
-.link-outside{background:none;border:1px solid #c6ccd3;border-radius:3px;padding:4px 8px}
-#link-snippet{background:var(--well);border:1px solid #6f8499;border-radius:2px}
-.profile-remove:not(#_){color:#b3160c}
+#settings-form .actions,.settings .actions{bottom:0;margin:8px -12px 0;padding:8px 12px;background:#0e2750;box-shadow:none;border-top:1px solid var(--frame-line)}
+.link-outside{background:none;border:1px solid var(--line);border-radius:3px;padding:4px 8px}
+#link-snippet{background:var(--well);border:1px solid var(--frame-line);border-radius:2px}
+.profile-remove:not(#_){color:var(--bad)}
 .profile-row input.missing{color:#ffe2bd}
 input[type=checkbox]{appearance:none;-webkit-appearance:none;flex:0 0 auto;box-sizing:border-box;width:13px;height:13px;min-height:0;margin:0;padding:0;
-  background:linear-gradient(135deg,#dcdcdc,#fff) center/auto no-repeat;border:1px solid #8e8f8f;border-radius:1px;box-shadow:inset 0 0 0 1px #fff;cursor:pointer}
-input[type=checkbox]:hover{border-color:#3c7fb1;background:linear-gradient(135deg,#c7e3f5,#f2faff)}
-input[type=checkbox]:checked{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 11 11'%3E%3Cpath d='M2 5.5l2.5 2.5L9 2.5' fill='none' stroke='%23354f8c' stroke-width='1.8'/%3E%3C/svg%3E") center/11px 11px no-repeat,linear-gradient(135deg,#dcdcdc,#fff)}
-input[type=checkbox]:focus-visible{outline:1px dotted #000;outline-offset:2px}
+  background:var(--well) center/auto no-repeat;border:1px solid #6d94c2;border-radius:2px;cursor:pointer}
+input[type=checkbox]:hover{border-color:var(--glow);box-shadow:0 0 3px #7fd0ffa6}
+input[type=checkbox]:checked{background:var(--well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 11 11'%3E%3Cpath d='M2 5.5l2.5 2.5L9 2.5' fill='none' stroke='%237fd0ff' stroke-width='1.8'/%3E%3C/svg%3E") center/11px 11px no-repeat}
+input[type=checkbox]:focus-visible{outline:1px dotted #fff;outline-offset:2px}
 
-#diagnostics{margin-top:6px;padding:4px 8px 8px;border:1px solid #c6ccd3;border-radius:3px;color:var(--ink)}
-#diagnostics-body{color:var(--ice);background:var(--well);padding:4px 6px;border:1px solid #6f8499;border-radius:2px}
+#diagnostics{margin-top:6px;padding:4px 8px 8px;border:1px solid var(--line);border-radius:3px;color:var(--ink)}
+#diagnostics-body{color:var(--ice);background:var(--well);padding:4px 6px;border:1px solid var(--frame-line);border-radius:2px}
 
 /* Connections: a group box. */
-.connections{margin:6px 0 2px;padding:4px 8px 8px;border:1px solid #c6ccd3;border-radius:3px;display:flex;flex-direction:column;gap:6px;min-width:0}
-.connections legend{padding:0 3px;font-size:12px;color:#0a3d8a}
+.connections{margin:6px 0 2px;padding:4px 8px 8px;border:1px solid var(--line);border-radius:3px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.connections legend{padding:0 3px;font-size:12px;color:var(--link)}
 .connection-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .connection-row[hidden]{display:none}
 .connection-row input{flex:1 1 150px}
 .connection-state{font-size:12px;color:var(--ink);overflow-wrap:anywhere}
-.connection-state[data-state=on]{color:#0b6a1e}
-.connection-state[data-state=error]{color:#b3160c}
+.connection-state[data-state=on]{color:var(--good)}
+.connection-state[data-state=error]{color:var(--bad)}
 
-/* Popups: white menus with the pale blue selection. */
-.project-menu,.launch-menu,.sessions-recent-chips,#slash-list,.combobox-list,.model-pop{background:#f5f6f7;color:var(--ink);padding:2px;text-shadow:none;
-  border:1px solid #979797;border-radius:3px;box-shadow:3px 3px 6px #00000059}
-.launch-head,.combobox-group{font-size:12px;letter-spacing:0;text-transform:none;font-weight:600;color:#0a3d8a}
+/* Popups: dark glass menus with the bright selection. */
+.project-menu,.launch-menu,.sessions-recent-chips,#slash-list,.combobox-list,.model-pop{background:var(--face);color:var(--ink);padding:2px;text-shadow:none;
+  border:1px solid var(--line);border-radius:3px;box-shadow:3px 3px 8px #00122e99}
+.launch-head,.combobox-group{font-size:12px;letter-spacing:0;text-transform:none;font-weight:600;color:var(--link)}
 .project-option,.launch-option,.project-add,.combobox-option,#slash-list li{border:1px solid transparent;border-radius:3px;color:var(--ink);font-size:12px}
 .project-option:hover,.project-option:focus-visible,.launch-option:hover,.launch-option:focus-visible,.project-add:hover,.project-add:focus-visible,
-.combobox-option:hover,.combobox-option.active,#slash-list li.active,#slash-list li:hover{background:linear-gradient(180deg,#f2f8fe,#d6e9fb);border-color:#aecff7;color:var(--ink)}
+.combobox-option:hover,.combobox-option.active,#slash-list li.active,#slash-list li:hover{background:linear-gradient(180deg,#3f82c4,#2a66a6);border-color:var(--glow);color:#fff}
 .project-option .project-name,.option-name,.launch-option{color:var(--ink);font-size:12px}
-.project-menu .project-percent{color:#0b6a1e}
+.project-menu .project-percent{color:var(--good)}
 .project-menu .project-path-state{color:var(--ink);border-color:var(--line)}
-.project-option .project-path,.project-option .project-key,.launch-hint,.option-ref,.slash-hint{color:#5b5b5b;opacity:1;font-size:11px}
-.project-option[aria-selected=true],.combobox-option[aria-selected=true]{background:#e3effb;border-color:#aecff7}
-.project-add,.launch-more{color:var(--link);border-top-color:#d0d0d0}
+.project-option .project-path,.project-option .project-key,.launch-hint,.option-ref,.slash-hint{color:var(--ink-soft);opacity:1;font-size:11px}
+.project-option[aria-selected=true],.combobox-option[aria-selected=true]{background:#1f4d86;border-color:#3f82c4}
+.project-add,.launch-more{color:var(--link);border-top-color:var(--line)}
 .slash-name{font:600 12px var(--ui);color:var(--ink)}
-.recent-clear{color:#b3160c;font-size:12px;letter-spacing:0;text-transform:none}
-.recent-clear:hover,.recent-clear:focus-visible{color:#b3160c}
-.strip .sessions-recent-chips .session-chip:not(#_){color:var(--ink);text-shadow:none;background:var(--btn);border-color:#707070}
-.strip .sessions-recent-chips .session-chip:not(#_):hover{color:var(--ink);background:var(--btn-hover);border-color:#3c7fb1}
-.sessions-recent-chips .session-state:not(#_){color:#4d4d4d}
-.launch-option:disabled:hover{background:none;border-color:transparent;color:#838383}
+.recent-clear{color:var(--bad);font-size:12px;letter-spacing:0;text-transform:none}
+.recent-clear:hover,.recent-clear:focus-visible{color:var(--bad)}
+.sessions-recent-chips .session-state:not(#_){color:var(--ink-soft)}
+.launch-option:disabled:hover{background:none;border-color:transparent;color:#8ba3c0}
 
-/* Notices: the soft white tooltip. */
-#toast,.voice-banner{background:linear-gradient(180deg,#fff,#e4e5f0);color:var(--ink);border:1px solid #767676;border-radius:3px;font-size:12px;box-shadow:2px 2px 4px #00000040}
+/* Notices: a small pane of the same glass. */
+#toast,.voice-banner{background:var(--frame);color:var(--ink);border:1px solid var(--line);border-radius:3px;font-size:12px;box-shadow:2px 2px 6px #00122e99}
 .voice-source,.voice-text,.voice-count{color:var(--ink);letter-spacing:0;text-transform:none}
 .voice-source{font-weight:600}
-.chat-pill:not(#_){font-size:12px;letter-spacing:0;box-shadow:inset 0 0 0 1px #ffffffb3,1px 1px 3px #00000059}
+.chat-pill:not(#_){font-size:12px;letter-spacing:0;box-shadow:inset 0 0 0 1px #9cc8f033,1px 1px 3px #00000059}
 
 /* Inside the wells, chips keep the well's colours and lose their glow. */
 .progress-chip{box-shadow:none}
-.attachment-chip{background:var(--btn);color:var(--ink);border:1px solid #8e8f8f;border-radius:3px;font-size:12px}
-.attachment-size{color:#4d4d4d}
-.attachment-remove{color:var(--ink)}
-.attachment-remove:hover{color:#b3160c}
+.attachment-chip{background:var(--btn);color:#fff;border:1px solid var(--frame-line);border-radius:3px;font-size:12px}
+.attachment-size{color:#c9dcf2}
+.attachment-remove{color:#fff}
+.attachment-remove:hover{color:var(--bad)}
 .code-head,.tool-label,.code-lang,.part.reasoning summary{letter-spacing:0;text-transform:none}
 
-/* Scrollbars: pale and rounded, with the glossy thumb. */
+/* Scrollbars: dark track, glossy blue thumb. */
 #shell ::-webkit-scrollbar,dialog ::-webkit-scrollbar,dialog::-webkit-scrollbar{width:15px;height:15px}
-#shell ::-webkit-scrollbar-track,dialog ::-webkit-scrollbar-track,dialog::-webkit-scrollbar-track{background:linear-gradient(90deg,#e3e3e3,#f5f5f5)}
-#shell ::-webkit-scrollbar-thumb,dialog ::-webkit-scrollbar-thumb,dialog::-webkit-scrollbar-thumb{border:1px solid #979797;border-radius:3px;
-  background:linear-gradient(90deg,#f6f6f6,#e6e6e6 48%,#d4d4d4 50%,#c8c8c8);box-shadow:inset 0 0 0 1px #ffffff99}
-#shell ::-webkit-scrollbar-thumb:hover,dialog ::-webkit-scrollbar-thumb:hover{border-color:#3c7fb1;background:linear-gradient(90deg,#eaf6fd,#d9f0fc 48%,#bee6fd 50%,#a7d9f5)}
-#shell ::-webkit-scrollbar-corner,dialog ::-webkit-scrollbar-corner{background:var(--face)}
+#shell ::-webkit-scrollbar-track,dialog ::-webkit-scrollbar-track,dialog::-webkit-scrollbar-track{background:#0a1c40}
+#shell ::-webkit-scrollbar-thumb,dialog ::-webkit-scrollbar-thumb,dialog::-webkit-scrollbar-thumb{border:1px solid var(--frame-line);border-radius:3px;
+  background:linear-gradient(90deg,#4a7fb8,#34689f 48%,#1f4d86 50%,#2a5c98);box-shadow:inset 0 0 0 1px #9cc8f033}
+#shell ::-webkit-scrollbar-thumb:hover,dialog ::-webkit-scrollbar-thumb:hover{background:linear-gradient(90deg,#6ba6dc,#4b8cc9 48%,#2f74b8 50%,#4a93d4)}
+#shell ::-webkit-scrollbar-corner,dialog ::-webkit-scrollbar-corner{background:#0a1c40}
