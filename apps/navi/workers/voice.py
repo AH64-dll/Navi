@@ -33,6 +33,17 @@ CANCEL_FILE = RUNTIME / "voice.cancel"
 # outlives the turn so a late Enter cannot dispatch the same text again.
 CLAIM_FILE = RUNTIME / "voice.claim"
 CONFIRM_FILE = RUNTIME / "voice.confirm"
+# The daemon creates this when the user presses Transcribe now.
+FINISH_FILE = RUNTIME / "voice.finish"
+
+
+def finish_requested():
+    """True once per press. A press with no capture running is simply used up."""
+    try:
+        FINISH_FILE.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def clear_confirm():
@@ -599,9 +610,10 @@ def fallback_vad(reason):
 
 def capture_report(event):
     """Numbers for the journal, never audio: why the next cut-off happened."""
-    samples = [float(sample) for block in event.blocks for sample in block]
-    level = (sum(s * s for s in samples) / max(len(samples), 1)) ** .5
-    ended = "time limit" if event.truncated else "silence"
+    import numpy as np
+    samples = np.concatenate(event.blocks) if event.blocks else np.zeros(1)
+    level = float(np.sqrt(np.mean(np.square(samples))))
+    ended = "time limit" if event.truncated else "silence or the button"
     return f"capture ended by {ended}: {len(samples) / 16000:.1f} s kept, level {level:.4f}"
 
 
@@ -702,7 +714,7 @@ def recognize(blocks, engine, recognizer, status, cloud=True, *,
 
 
 def offline(samples, spotter, recognizer, engine, status=None, *, assume_wake=False,
-            dispatch=None, quiet=.008, tail_blocks=25, vad=None, language=None,
+            dispatch=None, quiet=.008, tail_blocks=45, vad=None, language=None,
             recognize_fn=None):
     """Run the live wake/endpoint/STT path over recorded float32 samples.
 
@@ -997,6 +1009,7 @@ def listen(commands, playback=None, snapshot=None):
     language = "en"
     loaded_speech = None
     stt_queue = None
+    capture = None
     called_again = threading.Event()
     watchdog = MicWatchdog()
     stop_watchdog = threading.Event()
@@ -1019,7 +1032,8 @@ def listen(commands, playback=None, snapshot=None):
             return
         if event.kind == "segment":
             if transcript:
-                state("transcribing", partial=transcript, source=source)
+                state("transcribing", partial=transcript, source=source,
+                      capturing=capture is not None and capture.recording is not None)
             return
         if not transcript:
             # Only a call came through: they are still waiting to be heard, so
@@ -1112,6 +1126,7 @@ def listen(commands, playback=None, snapshot=None):
                         if stt_queue is not None:
                             stt_queue.remember(samples)
                         if playback.speaking():
+                            finish_requested()  # nothing to finish while Navi talks
                             was_speaking = True
                             # BUG-060/061: while Navi talks, a wake must be
                             # confirmed by a second hit and a bare "stop"
@@ -1174,7 +1189,9 @@ def listen(commands, playback=None, snapshot=None):
                                 capture.start_follow_up()
                                 clear_confirm()
                                 state("hearing command")
-                        event = capture.feed(samples, quiet=quiet_now, overflow=overflow)
+                        event = capture.finish_now() if finish_requested() else None
+                        if event is None:
+                            event = capture.feed(samples, quiet=quiet_now, overflow=overflow)
                         if event is None:
                             continue
                         if event.kind == "overflow":
@@ -1201,7 +1218,7 @@ def listen(commands, playback=None, snapshot=None):
                             # BUG-056: long captures stream ~10 s parts to STT.
                             if stt_queue is not None:
                                 stt_queue.submit(event)
-                            state("transcribing")
+                            state("transcribing", capturing=True)
                         elif event.kind == "utterance":
                             # BUG-054: STT runs on its worker; the mic never stops.
                             log(capture_report(event))

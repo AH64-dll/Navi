@@ -568,6 +568,40 @@
     assert(rows('navi').at(-1).textContent.includes('arrives in pieces'), 'The final text did not replace the stream');
     report.chat.streaming = {first: firstSample, second: secondSample};
 
+    /* Reasoning is one section however many chunks it arrives in: the daemon's empty
+       flushes between chunks must not split it, and a section the reader opened stays
+       open while more arrives. Stored fragments come back merged too. */
+    await feed('thinking', {}, 'thinking');
+    await feed('reasoning', {text: 'First thought. '});
+    await feed('reply_delta', {turn: 'reasoned-1', text: '', done: false});
+    await feed('reasoning', {text: 'Second thought.'});
+    await painted();
+    const sections = () => rows('navi').at(-1).querySelectorAll('.part.reasoning');
+    assert(sections().length === 1, `Reasoning split into ${sections().length} sections`);
+    sections()[0].open = true;
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await feed('reasoning', {text: ' Third thought.'});
+    await painted();
+    assert(sections().length === 1 && sections()[0].open, 'Repainting closed or split the open reasoning');
+    assert(sections()[0].textContent.includes('First thought. Second thought. Third thought.'), 'Reasoning lost text: ' + sections()[0].textContent);
+    await feed('reply', {text: 'Reasoned answer'}, 'Reasoned answer');
+    await waitFor(() => rows('navi').at(-1).dataset.status === 'complete', 'The reasoned turn never finalised');
+    const stored = window.navi.hooks.mergeReasoning([{type: 'text', text: ''}, {type: 'reasoning', text: 'a'}, {type: 'reasoning', text: 'b'}, {type: 'text', text: 'c'}]);
+    assert(JSON.stringify(stored) === JSON.stringify([{type: 'reasoning', text: 'ab'}, {type: 'text', text: 'c'}]), 'Stored fragments were not merged: ' + JSON.stringify(stored));
+
+    /* Transcribe now shows only while Navi is recording, and asks the worker to finish. */
+    const finish = document.getElementById('voice-finish');
+    assert(finish.hidden, 'Transcribe now showed with no capture running');
+    update({...snapshot, busy: false, voice: {status: 'hearing command'}});
+    assert(!finish.hidden, 'Transcribe now did not show during a capture');
+    update({...snapshot, busy: false, voice: {status: 'transcribing', capturing: true, partial: 'so far'}});
+    assert(!finish.hidden, 'Transcribe now hid when a long capture streamed a segment');
+    finish.click();
+    assert(finish.hidden, 'Transcribe now stayed after the press');
+    await waitFor(() => inspect().rpcCalls.some(call => call.op === 'voice_finish'), 'The press never reached the daemon');
+    update({...snapshot, busy: false, voice: {status: 'listening'}});
+    assert(finish.hidden, 'Transcribe now stayed after the capture ended');
+
     /* The host's push channel (`navi.push`) may deliver a coalesced `turn_state`
        instead of chunks: it replaces the live row's text and `done` ends the turn. */
     await feed('reply_delta', {text: 'Chunk that a coalesced payload will replace '});

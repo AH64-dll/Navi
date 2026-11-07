@@ -125,7 +125,7 @@ class SpeechVad:
     The threshold is low on purpose: a false "speech" costs a slightly later endpoint,
     and a false "quiet" cuts the user off. sherpa keeps speech in its own buffer until
     a segment closes, so segments are discarded and the longest one is bounded just
-    above the 60 s capture cap.
+    above the 5 min capture cap.
     """
 
     def __init__(self, model, threshold=0.3):
@@ -135,11 +135,11 @@ class SpeechVad:
         config.silero_vad.threshold = threshold
         config.silero_vad.min_silence_duration = 0.25
         config.silero_vad.min_speech_duration = 0.1
-        config.silero_vad.max_speech_duration = 62
+        config.silero_vad.max_speech_duration = 302
         config.silero_vad.window_size = 512
         config.sample_rate = 16000
         config.num_threads = 1
-        self.detector = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=65)
+        self.detector = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=305)
 
     def feed(self, samples):
         self.detector.accept_waveform(samples)
@@ -192,15 +192,15 @@ class CaptureBuffer:
     block_size = 1600
     pre_roll_blocks = 30
     minimum_blocks = 15        # wake path: >=1.5 s captured before endpointing
-    maximum_blocks = 600       # 60 s dictation cap (BUG-053)
-    quiet_blocks = 20          # 2 s of quiet commits an utterance
+    maximum_blocks = 3000      # 5 min dictation cap (BUG-053), only a safety stop
+    quiet_blocks = 40          # 4 s without speech commits an utterance
     segment_blocks = 100       # stream a "segment" every ~10 s of speech
     segment_overlap = 2        # 200 ms overlap to de-duplicate word boundaries
     # BUG-052 fast endpoint: short utterances commit once >=600 ms was captured.
     # The wait matches the long one on purpose. People pause longest right after a
     # short opening ("Can you open the project ... and check"), and any shorter
     # wait kept those first words, sent them, and lost the rest of the sentence.
-    fast_quiet_blocks = 20
+    fast_quiet_blocks = 40
     fast_total_blocks = 6
     fast_speech_cap = 20       # utterances with <=2 s speech are "short"
     lead_blocks = 2
@@ -212,11 +212,6 @@ class CaptureBuffer:
     # quiet so the chime cannot end the command as if it were speech; they stay
     # in the recording, so a command spoken straight away keeps its first word.
     ack_blocks = 2
-    # A wake during a capture is a new call when nothing was said yet, or when
-    # the capture has run this long: noise can hold the VAD open for the full
-    # 60 s cap, and a call must still get through. Sooner than this, "Navi" is
-    # most likely a word in the command ("open Navi settings").
-    rewake_after_blocks = 80
 
     def __init__(self, spotter, fast_endpoint=True):
         self.spotter = spotter
@@ -279,9 +274,20 @@ class CaptureBuffer:
         return max(0, (self.speech_start or 0) - self.lead_blocks,
                    self._wake_mark + 1)
 
-    def _emit_utterance(self):
+    def finish_now(self):
+        """The user pressed Transcribe now: send what was said, without waiting for
+        silence. Nothing said yet ends the capture instead of sending silence."""
+        if self.recording is None:
+            return None
+        if self.speech_start is None:
+            self.reset()
+            return CaptureEvent("no_command")
+        return self._emit_utterance(keep_tail=True)
+
+    def _emit_utterance(self, keep_tail=False):
         start = self._trim_start()
-        end = len(self.recording) if self.last_speech is None else min(
+        # A press can land on the last word, before the detector has marked it.
+        end = len(self.recording) if self.last_speech is None or keep_tail else min(
             len(self.recording), self.last_speech + 1 + self.tail_blocks)
         event = CaptureEvent(
             "utterance", tuple(self.recording[start:end]),
@@ -342,10 +348,14 @@ class CaptureBuffer:
         if self.recording is None:
             self.pre_roll.append(samples)
             return self._wake() if self._heard_wake(samples) else None
-        if self._heard_wake(samples) and (
-                self.awaiting_speech or self._captured() >= self.rewake_after_blocks):
-            self.pre_roll.append(samples)
-            return self._wake()
+        if self._heard_wake(samples):
+            # Before any speech, this is a repeated call. Once speech has begun it is
+            # a word in the sentence ("open Navi settings", or "navy" misheard), and
+            # starting over would throw away everything said so far.
+            if self.awaiting_speech:
+                self.pre_roll.append(samples)
+                return self._wake()
+            self.stream = self.spotter.create_stream()
         if self._ack_left:
             self._ack_left -= 1
             quiet = True

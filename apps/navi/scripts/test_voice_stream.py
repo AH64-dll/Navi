@@ -140,13 +140,45 @@ class CaptureTests(unittest.TestCase):
         self.assertIsNotNone(self.capture.recording)
         self.assertIn(8, [block[0] for block in self.capture.recording])
 
-    def test_a_call_gets_through_a_capture_held_open_by_noise(self):
-        """Noise keeps the VAD open up to the 60 s cap; the wake is not deaf for that."""
+    def test_finish_now_sends_what_was_said_including_the_last_word(self):
         self.wake()
-        for _ in range(self.capture.rewake_after_blocks):
+        for _ in range(8):
+            self.feed(7)
+        self.feed(9, quiet=True)
+        event = self.capture.finish_now()
+        self.assertEqual(event.kind, "utterance")
+        self.assertIn(9, [block[0] for block in event.blocks])
+        self.assertIsNone(self.capture.recording)
+
+    def test_finish_now_with_nothing_said_sends_nothing(self):
+        self.wake()
+        self.feed(quiet=True)
+        self.assertEqual(self.capture.finish_now().kind, "no_command")
+        self.assertIsNone(self.capture.finish_now())
+
+    def test_a_silence_under_four_seconds_never_ends_a_sentence(self):
+        self.wake()
+        self.feed(7)
+        for _ in range(39):
+            self.assertIsNone(self.feed(quiet=True))
+        self.assertEqual(self.feed(quiet=True).kind, "utterance")
+
+    def test_the_name_in_long_speech_never_restarts_the_capture(self):
+        """A keyword hit mid-sentence used to start over after 8 s, losing it all."""
+        self.wake()
+        for _ in range(90):
+            self.feed(7)
+        kept = len(self.capture.recording)
+        event = self.feed(-1)
+        self.assertTrue(event is None or event.kind == "segment")
+        self.assertEqual(len(self.capture.recording), kept + 1)
+
+    def test_talking_for_two_minutes_is_not_stopped(self):
+        self.wake()
+        for _ in range(1200):
             event = self.feed(7)
             self.assertTrue(event is None or event.kind == "segment")
-        self.assertEqual(self.feed(-1).kind, "wake")
+        self.assertIsNotNone(self.capture.recording)
 
     def test_short_pause_does_not_commit_or_split_the_command(self):
         self.wake()

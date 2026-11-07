@@ -139,7 +139,9 @@ def transcribe(blocks, sample_rate=16000, timeout=None, executable=None):
         result = subprocess.run(
             [str(binary), "model", "transcribe", handle.name],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, timeout=timeout or TIMEOUT, text=True,
+            stderr=subprocess.DEVNULL, text=True,
+            # A long talk takes longer to read: never less time than it took to say.
+            timeout=timeout or max(TIMEOUT, sum(len(block) for block in blocks) / sample_rate),
         )
     except (OSError, subprocess.SubprocessError):
         return None

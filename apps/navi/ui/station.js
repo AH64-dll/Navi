@@ -253,7 +253,7 @@ function hydrateMessages(rows, options={}) {
       role:role==='tool'?'system':role,
       time:Number(row.time)||Date.now(),
       status:'complete',
-      parts:Array.isArray(row.parts)?row.parts:[],
+      parts:Array.isArray(row.parts)?mergeReasoning(row.parts):[],
       meta:{project_id:row.project_id||undefined},
       version:0, index:0,
     });
@@ -683,6 +683,9 @@ function textPart(part) {
 function reasoningPart(part) {
   const box=document.createElement('details');
   box.className='part reasoning';
+  /* A row repaints with each chunk: what the reader opened stays open. */
+  box.open=part.open===true;
+  box.ontoggle=()=>{ part.open=box.open; };
   const summary=document.createElement('summary');
   summary.textContent='Reasoning';
   const body=document.createElement('div');
@@ -690,6 +693,18 @@ function reasoningPart(part) {
   renderMarkdown(body,part.text||'');
   box.append(summary,body);
   return box;
+}
+/* Messages stored before the empty-flush fix hold one reasoning part per model chunk.
+ * They come back as one section, with the blank text parts between them gone. */
+function mergeReasoning(parts) {
+  const merged=[];
+  for (const part of parts) {
+    if (part?.type==='text'&&!String(part.text||'').trim()) continue;
+    const tail=merged.at(-1);
+    if (part?.type==='reasoning'&&tail?.type==='reasoning') tail.text=String(tail.text||'')+String(part.text||'');
+    else merged.push(part?.type==='reasoning'?{...part}:part);
+  }
+  return merged;
 }
 
 function toolState(part) {
@@ -1107,6 +1122,9 @@ function replyDelta(event) {
   const details=event.details||{};
   const text=typeof details.text==='string'?details.text:(event.message||'');
   const message=assistantMessage(event);
+  /* The daemon flushes an empty turn while the model reasons. A blank text part
+   * from that would split the reasoning into one section per chunk. */
+  if (!text&&!lastTextPart(message,false)) return;
   const part=lastTextPart(message,true);
   /* A per-chunk delta appends; a cumulative payload (``turn``/``done``) replaces.
    * Both shapes are accepted so the producer can coalesce without a UI change. */
@@ -2086,6 +2104,8 @@ const VOICE_WORDS={
   confirming:'Confirming',queued:'Queued','loading speech':'Loading voice',stopped:'Stopped',
   discarded:'Mic off','deciding':'Working','listening for your answer':'Your answer',
 };
+/* The worker's statuses while it is recording you: Transcribe now can end these. */
+const VOICE_CAPTURING=new Set(['hearing command','listening for your answer','interrupted; listening']);
 function voiceWord(status) {
   const value=String(status||'off');
   if (VOICE_WORDS[value]) return VOICE_WORDS[value];
@@ -2196,6 +2216,8 @@ function applyVoice(voice) {
     pill.hidden=status==='off'||status==='discarded';
     pill.title='Voice: '+status+(voice.wake_word?' · say “'+voice.wake_word+'”':'');
   }
+  const finish=element('voice-finish');
+  if (finish) finish.hidden=!(voice.capturing===true||VOICE_CAPTURING.has(status));
   if (status==='confirming'&&voice.transcript) beginConfirm(voice);
   else if (confirmState.active) finishConfirm({clear:true});
   if (status==='transcribing'&&voice.partial) {
@@ -2723,6 +2745,10 @@ function toggleSpeak() {
 element('speak-toggle').onclick=toggleSpeak;
 element('microphone').onclick=toggleMicrophone;
 element('voice-pill').onclick=toggleMicrophone;
+element('voice-finish').onclick=()=>{
+  element('voice-finish').hidden=true;
+  rpc('voice_finish').catch(error=>record('warn','transcribe now failed: '+error.message));
+};
 element('voice-use').onclick=()=>useConfirm();
 element('voice-edit').onclick=()=>editConfirm();
 element('empty-mic').onclick=toggleMicrophone;
@@ -5143,6 +5169,7 @@ if (host.isolated===true) {
     update,
     push:value=>{ try { update(value); } catch (error) { record('warn','push failed: '+error.message); } },
     resetChat:()=>resetChat(),
+    mergeReasoning,
     pausePoll:value=>{
       pollPaused=!!value;
       if (!pollPaused) poll();

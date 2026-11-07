@@ -1556,6 +1556,12 @@ impl App {
             }
             // BUG-056: the UI either takes the held transcript or withdraws it.
             "voice_confirm" => self.voice_confirm(p),
+            // The Transcribe now button: end the capture without waiting for silence.
+            "voice_finish" => {
+                fs::write(self.runtime.join("voice.finish"), now().to_string())
+                    .map_err(|error| error.to_string())?;
+                Ok(json!({"finishing":true}))
+            }
             "oc_models" => self.gateway_op(&["models"]),
             "oc_agents" => self.gateway_op(&["agents"]),
             "oc_commands" => self.gateway_op(&["commands"]),
