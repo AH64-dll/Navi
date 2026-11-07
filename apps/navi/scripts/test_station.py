@@ -158,6 +158,14 @@ class StationTests(unittest.TestCase):
         self.assertFalse(claim.exists())
         self.assertFalse(self.call("voice_confirm", {})["ok"])
 
+    def test_transcribe_now_leaves_the_signal_for_the_voice_worker(self):
+        signal = self.runtime / "voice.finish"
+        self.assertFalse(signal.exists())
+        reply = self.call("voice_finish")
+        self.assertTrue(reply["ok"], reply)
+        self.assertTrue(reply["result"]["finishing"])
+        self.assertTrue(signal.exists())
+
     def test_unregistered_session_and_remote_chief_are_rejected(self):
         self.assertFalse(self.call("select",{"id":"other-user-session"})["ok"])
         settings=self.call("status")["result"]["settings"]
