@@ -13,8 +13,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workers"))
 from voice import enabled
-from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter,
-                          StatusSnapshot, SttQueue, agc, trim_span)
+from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, MicWatchdog,
+                          SilenceWatch, StatusSnapshot, SttQueue, agc, trim_span)
 
 
 class WakeStream:
@@ -47,6 +47,10 @@ class WakeSpotter:
 class CaptureTests(unittest.TestCase):
     def setUp(self):
         self.capture = CaptureBuffer(WakeSpotter())
+        # Timing tests count speech from the first block; the chime has its own test.
+        self.capture.ack_blocks = 0
+        self.fast = self.capture.fast_quiet_blocks
+        self.slow = self.capture.quiet_blocks
 
     def feed(self, value=0, *, quiet=False, overflow=False):
         return self.capture.feed([value] * 1600, quiet=quiet, overflow=overflow)
@@ -69,7 +73,7 @@ class CaptureTests(unittest.TestCase):
             self.assertIsNone(self.feed(quiet=True))
         self.assertEqual(len(self.capture.recording), 35)  # pause stored, not speech
         self.assertIsNone(self.feed(100))  # the request starts here
-        for _ in range(3):
+        for _ in range(self.fast - 1):
             self.assertIsNone(self.feed(quiet=True))
         event = self.feed(quiet=True)
         self.assertEqual(event.kind, "utterance")
@@ -77,7 +81,7 @@ class CaptureTests(unittest.TestCase):
         # blocks, then the command, then the trimmed quiet tail. The wake
         # word and the earlier pause/pre-roll never reach STT.
         values = [block[0] for block in event.blocks]
-        self.assertEqual(values, [0, 0, 100, 0, 0, 0])
+        self.assertEqual(values, [0, 0, 100] + [0] * self.capture.tail_blocks)
         self.assertNotIn(-1, values)
 
     def test_lead_in_keeps_soft_onset_but_excludes_wake(self):
@@ -85,36 +89,80 @@ class CaptureTests(unittest.TestCase):
         self.wake()  # wake mark = index 14 (the -1 block)
         self.assertIsNone(self.feed(50, quiet=True))   # captured 0
         self.assertIsNone(self.feed(60))                # captured 1 = onset
-        for _ in range(3):
+        for _ in range(self.fast - 1):
             self.assertIsNone(self.feed(quiet=True))
         event = self.feed(quiet=True)
         values = [block[0] for block in event.blocks]
         self.assertNotIn(-1, values)
         self.assertEqual(values[:2], [50, 60])  # pause lead-in, then onset
     def test_immediate_command_commits_on_the_fast_endpoint(self):
-        """BUG-052: a short command ends ~400 ms after its last speech block."""
+        """BUG-052: a short command ends 1 s after its last speech block."""
         self.wake()
         self.assertIsNone(self.feed(100))
-        for _ in range(4):
+        for _ in range(self.fast - 1):
             self.assertIsNone(self.feed(quiet=True))
-        event = self.feed(quiet=True)  # ~500 ms of quiet -> ~600 ms after onset
-        self.assertEqual(event.kind, "utterance")
+        self.assertEqual(self.feed(quiet=True).kind, "utterance")
+
+    def test_a_thinking_pause_does_not_end_a_short_command(self):
+        """"open the ... settings": the words after an 800 ms pause are kept."""
+        self.wake()
+        self.assertIsNone(self.feed(1))
+        for _ in range(8):
+            self.assertIsNone(self.feed(quiet=True))
+        self.assertIsNone(self.feed(2))
+        for _ in range(self.fast - 1):
+            self.assertIsNone(self.feed(quiet=True))
+        values = [block[0] for block in self.feed(quiet=True).blocks]
+        self.assertIn(1, values)
+        self.assertIn(2, values)
+
+    def test_chime_after_a_wake_is_not_taken_for_speech(self):
+        self.capture.ack_blocks = 2
+        self.wake()
+        self.assertIsNone(self.feed(9))  # the chime, heard by the microphone
+        self.assertIsNone(self.feed(9))
+        self.assertTrue(self.capture.awaiting_speech)
+        self.assertEqual(self.capture.speech_blocks, 0)
+        self.assertIsNone(self.feed(5))  # the first word
+        self.assertFalse(self.capture.awaiting_speech)
+
+    def test_a_second_call_before_any_request_is_a_new_wake(self):
+        self.wake()
+        self.assertIsNone(self.feed(quiet=True))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        self.assertTrue(self.capture.awaiting_speech)
+
+    def test_the_name_inside_a_command_does_not_restart_it(self):
+        """"open Navi settings": the words before the name are not thrown away."""
+        self.wake()
+        self.assertIsNone(self.feed(8))
+        self.assertIsNone(self.feed(-1))
+        self.assertIsNotNone(self.capture.recording)
+        self.assertIn(8, [block[0] for block in self.capture.recording])
+
+    def test_a_call_gets_through_a_capture_held_open_by_noise(self):
+        """Noise keeps the VAD open up to the 60 s cap; the wake is not deaf for that."""
+        self.wake()
+        for _ in range(self.capture.rewake_after_blocks):
+            event = self.feed(7)
+            self.assertTrue(event is None or event.kind == "segment")
+        self.assertEqual(self.feed(-1).kind, "wake")
 
     def test_short_pause_does_not_commit_or_split_the_command(self):
         self.wake()
         for _ in range(8):
             self.assertIsNone(self.feed(quiet=True))
         self.assertIsNone(self.feed(50))
-        for _ in range(3):
+        for _ in range(self.fast - 1):
             self.assertIsNone(self.feed(quiet=True))
         self.assertEqual(self.feed(quiet=True).kind, "utterance")
 
     def test_long_speech_waits_for_the_full_quiet_run(self):
-        """BUG-052: >2 s of speech keeps the 900 ms endpoint."""
+        """BUG-052: >2 s of speech keeps the slower endpoint."""
         self.wake()
         for _ in range(25):
             self.assertIsNone(self.feed(20))  # 2.5 s of speech
-        for _ in range(8):
+        for _ in range(self.slow - 1):
             self.assertIsNone(self.feed(quiet=True))
         self.assertEqual(self.feed(quiet=True).kind, "utterance")
 
@@ -151,7 +199,7 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(self.feed(0, overflow=True).kind, "gap")
         self.assertIsNotNone(self.capture.recording)  # no reset
         self.assertIsNone(self.feed(102))
-        for _ in range(3):
+        for _ in range(self.fast - 1):
             self.assertIsNone(self.feed(quiet=True))
         event = self.feed(quiet=True)
         self.assertEqual(event.kind, "utterance")
@@ -191,15 +239,15 @@ class CaptureTests(unittest.TestCase):
         self.assertTrue(self.capture.barge_in)
         for _ in range(14):
             self.assertIsNone(self.feed(7))
-        for _ in range(8):
+        for _ in range(self.slow - 1):
             self.assertIsNone(self.feed(quiet=True))
         event = self.feed(quiet=True)
         self.assertEqual(event.kind, "utterance")
-        # Barge-in keeps the slow 900 ms endpoint (BUG-052); the pre-roll
-        # lead-in is kept (echo tail), speech and a 300 ms tail follow.
+        # Barge-in keeps the slow endpoint (BUG-052); the pre-roll lead-in is
+        # kept (echo tail), speech and the quiet tail follow.
         values = [block[0] for block in event.blocks]
         self.assertEqual(values[:15], [3] + [7] * 14)
-        self.assertEqual(len(event.blocks), 18)
+        self.assertEqual(len(event.blocks), 15 + self.capture.tail_blocks)
         self.assertIsNone(self.capture.recording)
 
 
@@ -244,6 +292,26 @@ class VadTests(unittest.TestCase):
                 self.assertGreater(quiet, 0, f"noise={noise} speech={speech_rms}")
                 self.assertLess(quiet, 20, f"speech drowned: noise={noise} speech={speech_rms}")
 
+    def test_speaking_cannot_close_the_gate_mid_sentence(self):
+        """12 s of speech at any loudness stays speech. The old floor learned from
+        speech, so the threshold passed the voice and the command ended at 1-2 s."""
+        for level in (0.012, 0.04, 0.1):
+            vad = AdaptiveVad()
+            for _ in range(30):
+                vad.feed([0.003] * 1600)
+            heard = [vad.feed([level if block % 7 else 0.005] * 1600) for block in range(120)]
+            voiced = [said for block, said in enumerate(heard) if block % 7]
+            self.assertTrue(all(voiced), f"gate closed on speech at level {level}")
+
+    def test_floor_follows_a_lasting_change_in_the_room(self):
+        vad = AdaptiveVad()
+        for _ in range(30):
+            vad.feed([0.003] * 1600)
+        for _ in range(vad.recent.maxlen):
+            vad.feed([0.02] * 1600)  # a fan turned on
+        self.assertFalse(vad.feed([0.02] * 1600))
+        self.assertTrue(vad.feed([0.2] * 1600))
+
     def test_floor_surfaces_for_diagnostics(self):
         vad = AdaptiveVad()
         for _ in range(15):
@@ -258,6 +326,26 @@ class VadTests(unittest.TestCase):
         self.assertAlmostEqual(lifted[0][0], 0.001 * 12.0, places=4)  # max 12x
         loud = [[0.5] * 100]
         self.assertEqual(agc(loud), tuple(loud))
+
+
+class MicrophoneHealthTests(unittest.TestCase):
+    def test_a_read_that_never_returns_is_a_stall(self):
+        watchdog = MicWatchdog()
+        self.assertFalse(watchdog.stalled(now=1000))
+        watchdog.begin(now=1000)
+        self.assertFalse(watchdog.stalled(now=1000 + watchdog.limit))
+        self.assertTrue(watchdog.stalled(now=1001 + watchdog.limit))
+        watchdog.end()
+        self.assertFalse(watchdog.stalled(now=5000))
+
+    def test_only_a_long_run_of_exact_zeros_reopens_the_stream(self):
+        watch = SilenceWatch()
+        for _ in range(watch.limit_blocks - 1):
+            self.assertFalse(watch.feed([0.0] * 1600))
+        self.assertFalse(watch.feed([0.001] + [0.0] * 1599))  # quiet room, not dead
+        for _ in range(watch.limit_blocks - 1):
+            self.assertFalse(watch.feed([0.0] * 1600))
+        self.assertTrue(watch.feed([0.0] * 1600))
 
 
 class SttQueueTests(unittest.TestCase):
@@ -420,8 +508,8 @@ class DispatchTests(unittest.TestCase):
         self.release.set()
         self.router.dispatch("Open terminal", self.speech)
         self.router.pending.exception(timeout=2)
-        with self.assertRaisesRegex(RuntimeError, "Disconnected"):
-            self.router.poll()
+        # A lost reply must not raise: that would stop the capture loop for seconds.
+        self.router.poll()
         self.assertIsNone(self.router.pending)
         self.failure = None
         self.assertEqual(self.router.dispatch("Switch to Review", self.speech), "deciding")

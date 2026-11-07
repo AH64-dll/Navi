@@ -97,8 +97,12 @@ the same chief. Voice is experimental. Stop interrupts pending inference and und
 actions; it cannot undo an action already dispatched. Uncertain actions are never retried.
 
 Voice reads 100 ms mono blocks at 16 kHz. A three-second pre-roll preserves the wake
-phrase while the detector catches up; a command ends after 900 ms of silence or at
-the 20-second buffer limit. After the wake, Navi waits up to 6 seconds for speech to
+phrase while the detector catches up; a chime confirms the wake, and a command ends
+after 1.2 s of silence (1.8 s once it has more than 2 s of speech) or at the 60-second
+limit. Calling again while nothing has been said yet, or after 8 s of a capture, starts
+over, so noise holding a capture open cannot block a wake. A stalled or digitally silent
+microphone is restarted or reopened, and each wake is logged to the service journal.
+After the wake, Navi waits up to 6 seconds for speech to
 begin, so a natural pause before the request does not end the command. Silence with
 no request is discarded instead of being sent to the assistant. Overflow discards
 the entire partial command and requires another wake. Whistle receives at most 24
@@ -208,7 +212,7 @@ navi-pi       # the older Copland-themed Pi window (pi-navi-theme)
 ```
 
 Flow: 16 kHz mono audio -> local sherpa KWS ("Navi" / "Hey Navi") -> wait for
-speech to start (up to 6 s) -> endpoint after 900 ms of silence -> STT -> the same
+speech to start (up to 6 s) -> endpoint after 1.2-1.8 s of silence -> STT -> the same
 Rust chief as typed commands -> OpenCode gateway -> `reply_delta` events while the
 answer streams, then `reply` -> optional `speech_out`. Wake detection always stays
 local.

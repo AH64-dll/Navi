@@ -1,11 +1,15 @@
 """Voice policy checks without importing speech engines or opening audio devices."""
+import io
 import os
 from pathlib import Path
 import sys
+import threading
 import unittest
+import wave
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workers"))
 os.environ["NAVI_HEX_DISABLE"] = "1"  # this suite asserts the cloud/local order
+import voice
 from voice import (ReplySpeaker, event_speech, watch_replies, command_for, command_text, enabled, ignored_wake,
                    input_device, speech_keywords)
 
@@ -55,6 +59,28 @@ class VoicePolicyTests(unittest.TestCase):
         self.assertTrue(ignored_wake("Navigator window"))
         self.assertFalse(ignored_wake("Navi, open terminal"))
         self.assertFalse(ignored_wake("open terminal"))
+
+    def test_repeated_calls_are_not_a_request(self):
+        self.assertEqual(command_text("hey navi, navi, hey navi"), "")
+        self.assertEqual(command_text("Navi. Hey Navi, open the files"), "open the files")
+        self.assertTrue(voice.only_wake("Hey Navi. Navi."))
+        self.assertFalse(voice.only_wake("Navi, open the files"))
+        self.assertFalse(voice.only_wake("navigation tips"))
+        self.assertFalse(voice.only_wake(""))
+
+    def test_wake_chime_is_a_short_valid_wav(self):
+        with wave.open(io.BytesIO(voice.ack_tone())) as sound:
+            self.assertEqual(sound.getnchannels(), 1)
+            self.assertLess(sound.getnframes() / sound.getframerate(), 0.2)
+
+    def test_stalled_microphone_exits_so_the_daemon_restarts_the_worker(self):
+        codes = []
+        class Stalled:
+            def stalled(self):
+                return True
+        stop = threading.Event()
+        voice.watch_microphone(Stalled(), stop, exit_process=codes.append, interval=0.001)
+        self.assertEqual(codes, [70])
 
     def test_ignored_wake_evaluates_the_raw_transcript(self):
         """BUG-067: "Navi navigate to X" is a command; bare "navigation" is

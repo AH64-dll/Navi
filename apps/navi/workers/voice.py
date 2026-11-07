@@ -23,8 +23,8 @@ import hex_asr
 import speech_config
 import speech_out
 import tts
-from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, SttQueue,
-                          StatusSnapshot, agc)
+from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, MicWatchdog,
+                          SilenceWatch, SttQueue, StatusSnapshot, agc)
 
 CANCEL_FILE = RUNTIME / "voice.cancel"
 # BUG-056: one settlement per capture. The daemon creates `voice.claim` for a
@@ -94,7 +94,15 @@ window_spawned = 0.0
 # Both the bare name and the classic phrase wake Navi. Token spelling comes
 # from the sherpa KWS model's tokens.txt (▁NA VI / ▁HE Y ▁NA VI).
 WAKE_KEYWORDS = ("▁NA VI", "▁HE Y ▁NA VI")
+# Per-keyword boost and threshold, measured on 9 synthetic voices at two levels:
+# "Navi" went from 15/36 to 25/36 and "Hey Navi" from 29/36 to 33/36, with no false
+# wake in 9 minutes of ordinary talk. The bare name is short, so it needs the lower
+# bar. "navy" and "navigate" fire with or without this tuning; `ignored_wake` rejects
+# the navigation words only after transcription, so they still chime.
+WAKE_TUNING = {"▁NA VI": ":1.5 #0.08", "▁HE Y ▁NA VI": ":1.5 #0.15"}
 WAKE_WORD = "Navi"
+# While Navi says its own name, a wake needs a second hit within this window.
+WAKE_CONFIRM_SECONDS = 4.0
 STOP_WORDS = ("stop", "cancel", "stop navi", "navi stop", "quiet", "shut up")
 
 
@@ -121,6 +129,62 @@ def pop_window():
                          start_new_session=True)
     except OSError:
         pass
+
+
+def log(message):
+    """One line in the service journal: without this a wake that was heard and a
+    wake that was missed look identical afterwards."""
+    sys.stderr.write(f"[voice] {message}\n")
+    sys.stderr.flush()
+
+
+def ack_tone():
+    """A soft two-note chime as 16-bit mono WAV bytes, about 120 ms long."""
+    import io
+    import math
+    import struct
+    import wave
+    rate = 16000
+    frames = bytearray()
+    for frequency, seconds in ((660, .05), (880, .07)):
+        count = int(rate * seconds)
+        for index in range(count):
+            fade = min(1.0, index / 80, (count - index) / 80)
+            value = .22 * fade * math.sin(2 * math.pi * frequency * index / rate)
+            frames += struct.pack("<h", int(value * 32767))
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as file:
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(rate)
+        file.writeframes(bytes(frames))
+    return buffer.getvalue()
+
+
+def acknowledge_wake():
+    """Tell the speaker they were heard. Without this, a wake with the window
+    already open changes only a small status pill, which reads as being ignored.
+    Never blocks or raises: the capture thread calls it."""
+    try:
+        path = RUNTIME / "wake-ack.wav"
+        if not path.exists():
+            path.write_bytes(ack_tone())
+        argv = tts._player_command("wav")
+        if argv:
+            subprocess.Popen([*argv, str(path)], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+    except (OSError, ValueError) as error:
+        log(f"wake chime failed: {error}")
+
+
+def watch_microphone(watchdog, stop, exit_process=os._exit, interval=2.0):
+    """Exit when a microphone read never returns; the daemon restarts the worker."""
+    while not stop.wait(interval):
+        if watchdog.stalled():
+            log("microphone read stalled; restarting the voice worker")
+            exit_process(70)
+            return
 
 
 # ------------------------------------------------------------------ state
@@ -186,9 +250,21 @@ def command_text(transcript):
 
     Safety net only (BUG-050): the wake word was already trimmed from the
     audio, so this runs on wake-triggered captures and the caller logs any
-    residue it strips.
+    residue it strips. Someone calling twice ("hey navi, navi, open files") loses
+    every leading call, so a repeated call never reaches the model as a request.
     """
-    return _STRIP_RE.sub("", (transcript or "").strip()).strip(" ,.!?")
+    text = (transcript or "").strip()
+    while True:
+        stripped = _STRIP_RE.sub("", text, count=1).strip(" ,.!?")
+        if stripped == text:
+            return stripped
+        text = stripped
+
+
+def only_wake(raw):
+    """True when a capture held nothing but calls: "navi" or "hey navi, navi"."""
+    raw = (raw or "").strip()
+    return bool(raw) and not ignored_wake(raw) and not command_text(raw)
 
 
 def ignored_wake(transcript):
@@ -486,7 +562,7 @@ def load_spotter(speech, data=DATA):
     import sherpa_onnx
     folder = Path(data) / WAKE_FOLDER
     keywords = folder / "navi-keywords.txt"
-    wanted = "\n".join(WAKE_KEYWORDS) + "\n"
+    wanted = "\n".join(f"{word} {WAKE_TUNING[word]}" for word in WAKE_KEYWORDS) + "\n"
     try:
         if keywords.read_text() != wanted:
             keywords.write_text(wanted)
@@ -601,7 +677,7 @@ def recognize(blocks, engine, recognizer, status, cloud=True, *,
 
 
 def offline(samples, spotter, recognizer, engine, status=None, *, assume_wake=False,
-            dispatch=None, quiet=.008, tail_blocks=15, vad=None, language=None,
+            dispatch=None, quiet=.008, tail_blocks=25, vad=None, language=None,
             recognize_fn=None):
     """Run the live wake/endpoint/STT path over recorded float32 samples.
 
@@ -896,6 +972,11 @@ def listen(commands, playback=None, snapshot=None):
     language = "en"
     loaded_speech = None
     stt_queue = None
+    called_again = threading.Event()
+    watchdog = MicWatchdog()
+    stop_watchdog = threading.Event()
+    threading.Thread(target=watch_microphone, args=(watchdog, stop_watchdog),
+                     daemon=True).start()
 
     def on_stt(payload, event):
         transcript, source, meta = payload
@@ -916,6 +997,11 @@ def listen(commands, playback=None, snapshot=None):
                 state("transcribing", partial=transcript, source=source)
             return
         if not transcript:
+            # Only a call came through: they are still waiting to be heard, so
+            # the capture loop answers and takes the request without another wake.
+            if event.kind == "utterance" and only_wake(meta.get("raw")):
+                called_again.set()
+                return
             state("listening", wake_word="Navi")
             return
         playback.confirm_interrupted = False
@@ -960,6 +1046,7 @@ def listen(commands, playback=None, snapshot=None):
                 vad = AdaptiveVad()
                 capture = CaptureBuffer(spotter)
                 stop_detector = StopDetector()
+                silence = SilenceWatch()
                 barge_in = False
                 was_speaking = follow_up = False
                 wake_hits = 0
@@ -989,8 +1076,13 @@ def listen(commands, playback=None, snapshot=None):
                             last_gen = generation
                         if not enabled(status) or status["settings"].get("speech", {}) != loaded_speech:
                             break  # closes the physical capture stream
+                        watchdog.begin()
                         samples, overflow = microphone.read(1600)
+                        watchdog.end()
                         samples = samples[:, 0]
+                        if silence.feed(samples):
+                            log("microphone gave 30 s of digital silence; reopening it")
+                            break
                         quiet_now = not vad.feed(samples)
                         if stt_queue is not None:
                             stt_queue.remember(samples)
@@ -1004,14 +1096,20 @@ def listen(commands, playback=None, snapshot=None):
                             if event is not None and event.kind == "wake":
                                 wake_hits += 1
                                 wake_last = time.monotonic()
-                            elif wake_hits and time.monotonic() - wake_last > 2.0:
+                                log(f"wake heard while speaking (hit {wake_hits})")
+                            elif wake_hits and time.monotonic() - wake_last > WAKE_CONFIRM_SECONDS:
                                 wake_hits = 0
                             needed = 2 if playback.self_wake_likely() else 1
                             if wake_hits >= needed and wake_hits > 0:
                                 confirmed = True
+                            elif event is not None and event.kind == "wake":
+                                # Not confirmed yet: stay out of recording, which
+                                # is discarded here, so the next hit can register.
+                                capture.reset()
                             if confirmed:
                                 wake_hits = 0
                                 playback.cancel()
+                                acknowledge_wake()
                                 if pops_window(status):
                                     pop_window()
                                 barge_in = True
@@ -1043,6 +1141,14 @@ def listen(commands, playback=None, snapshot=None):
                                 capture.start_follow_up()
                                 clear_confirm()
                                 state("listening for your answer")
+                        if called_again.is_set():
+                            called_again.clear()
+                            if capture.recording is None:
+                                log("only a call was heard; waiting for the request")
+                                acknowledge_wake()
+                                capture.start_follow_up()
+                                clear_confirm()
+                                state("hearing command")
                         event = capture.feed(samples, quiet=quiet_now, overflow=overflow)
                         if event is None:
                             continue
@@ -1056,6 +1162,8 @@ def listen(commands, playback=None, snapshot=None):
                         elif event.kind == "no_command":
                             state("listening", wake_word="Navi")
                         elif event.kind == "wake":
+                            log("wake heard")
+                            acknowledge_wake()
                             playback.confirm_interrupted = True
                             # A new capture starts unclaimed (BUG-056).
                             clear_confirm()
@@ -1080,9 +1188,12 @@ def listen(commands, playback=None, snapshot=None):
                                     wake_triggered=True, language=language)
                                 on_stt(payload, event)
             except (OSError, RuntimeError, ImportError, ValueError) as error:
+                watchdog.end()
+                log(f"capture error: {error}")
                 state("error", error=str(error))
                 time.sleep(3)
     finally:
+        stop_watchdog.set()
         if stt_queue is not None:
             stt_queue.close()
         if owns_snapshot:

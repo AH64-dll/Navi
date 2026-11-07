@@ -21,17 +21,17 @@
       "opacity": "0"
     },
     "art": {
-      "x": 221.1,
-      "y": 86.1,
-      "w": 157.8,
-      "h": 148.4,
-      "scale": 0.184,
+      "x": 215.9,
+      "y": 27.7,
+      "w": 168.1,
+      "h": 158.5,
+      "scale": 0.176,
       "settled": true,
       "cell": {
         "x": 12,
-        "y": 71,
+        "y": 12,
         "w": 576,
-        "h": 188
+        "h": 200
       }
     },
     "devtools": false,
@@ -40,7 +40,7 @@
     "pendingOps": [],
     "pendingStale": 0,
     "pendingOldestMs": 0,
-    "cursor": 1837054672446479,
+    "cursor": 1837081814845455,
     "polls": 8,
     "pollFailures": 0,
     "offline": false,
@@ -49,7 +49,7 @@
     "dropped": 0,
     "unknownReplies": 0,
     "daemon": {
-      "pid": 701820,
+      "pid": 1274071,
       "version": "0.1.0"
     },
     "workers": {
@@ -61,15 +61,15 @@
     "sessions": [
       {
         "active": true,
-        "created": 1793998703623,
-        "cwd": "/tmp/navi-isolated-szum68v2",
+        "created": 1794025210014,
+        "cwd": "/tmp/navi-isolated-yy3ssfus",
         "exit_status": null,
         "exited": null,
         "gen": 0,
         "harness": "bash",
-        "id": "navi-7884cb17f82eeb9c",
+        "id": "navi-33ef36cc90293c34",
         "label": "Layout probe",
-        "last_active": 1793998710263,
+        "last_active": 1794025217089,
         "last_launched": true,
         "launch_kind": "new",
         "name": "Layout probe",
@@ -77,7 +77,7 @@
         "native_name": null,
         "origin": "navi",
         "orphan": false,
-        "pid": 701886,
+        "pid": 1274148,
         "profile": "terminal",
         "project_id": null,
         "replaced_by": null,
@@ -184,20 +184,20 @@
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
@@ -208,155 +208,155 @@
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054672446476
+          "since": 1837081814845452
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-7884cb17f82eeb9c"
+          "id": "navi-33ef36cc90293c34"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054672446476
+          "since": 1837081814845452
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054672446477
+          "since": 1837081814845453
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-7884cb17f82eeb9c"
+          "id": "navi-33ef36cc90293c34"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054672446477
+          "since": 1837081814845453
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054672446478
+          "since": 1837081814845454
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-7884cb17f82eeb9c"
+          "id": "navi-33ef36cc90293c34"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054672446478
+          "since": 1837081814845455
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054672446479
+          "since": 1837081814845455
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-0a2a6b15"
+          "project_id": "prj-7989f409"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-0a2a6b15"
+          "project_id": "prj-7989f409"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-0a2a6b15"
+          "project_id": "prj-7989f409"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-ec7780ef"
+          "project_id": "prj-bdcf766b"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-ec7780ef"
+          "project_id": "prj-bdcf766b"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-ec7780ef"
+          "project_id": "prj-bdcf766b"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-e4fd9f6a"
+          "project_id": "prj-bdf1db86"
         }
       }
     ],
@@ -368,23 +368,23 @@
     "graphOpen": true,
     "phase": "idle",
     "project": {
-      "id": "prj-e4fd9f6a",
+      "id": "prj-bdf1db86",
       "name": "Navi",
-      "path": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
+      "path": "/home/amrhares/Documents/navi",
       "path_state": "ok",
       "label": "Navi",
       "switcher": false,
       "options": 3,
       "scope": {
-        "directory": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
-        "project_id": "prj-e4fd9f6a",
+        "directory": "/home/amrhares/Documents/navi",
+        "project_id": "prj-bdf1db86",
         "session": null
       }
     },
     "graph": {
       "open": true,
       "loading": false,
-      "project_id": "prj-e4fd9f6a",
+      "project_id": "prj-bdf1db86",
       "percent": null,
       "percent_null": true,
       "unknown": true,
@@ -406,42 +406,42 @@
       "evidence": 2,
       "evidenceTotal": "Evidence (2)",
       "empty": true,
-      "as_of": "as of Nov 6, 10:59 PM"
+      "as_of": "as of Nov 7, 06:21 AM"
     },
     "layout": {
       "stage": {
         "x": 12,
-        "y": 71,
+        "y": 12,
         "width": 936,
-        "height": 188,
+        "height": 200,
         "visible": true
       },
       "chat": {
         "x": 20,
-        "y": 488,
+        "y": 441,
         "width": 920,
         "height": 140,
         "visible": true
       },
       "terminal": {
         "x": 12,
-        "y": 271,
+        "y": 224,
         "width": 936,
         "height": 205,
         "visible": true
       },
       "sessions": {
-        "x": 12,
-        "y": 12,
-        "width": 285,
-        "height": 34,
+        "x": 0,
+        "y": 594,
+        "width": 725,
+        "height": 46,
         "visible": true
       },
       "graph": {
         "x": 588,
-        "y": 71,
+        "y": 12,
         "width": 360,
-        "height": 188,
+        "height": 200,
         "visible": true
       },
       "overlaps": []
@@ -452,10 +452,10 @@
         "skipped": 4,
         "errors": 0,
         "unhandled": 0,
-        "bytes": 7746,
-        "cursor": 1837054672446479,
+        "bytes": 7657,
+        "cursor": 1837081814845455,
         "active": false,
-        "rate": 0.67
+        "rate": 0.65
       }
     }
   },
@@ -471,64 +471,64 @@
       "phase": "idle",
       "stage": {
         "x": 12,
-        "y": 71,
+        "y": 12,
         "width": 350,
-        "height": 571,
+        "height": 581,
         "visible": true
       },
       "art": {
-        "x": 31.5,
-        "y": 212.4,
-        "w": 313.9,
-        "h": 285.8,
-        "scale": 0.297,
+        "x": 31,
+        "y": 155.4,
+        "w": 314.5,
+        "h": 288.2,
+        "scale": 0.274,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 71,
+          "y": 12,
           "w": 349.6,
-          "h": 571
+          "h": 581
         }
       },
       "art_closed": {
-        "x": 233.8,
-        "y": 109.6,
-        "w": 576.7,
-        "h": 516.6,
-        "scale": 0.51,
+        "x": 228.4,
+        "y": 50.2,
+        "w": 588.1,
+        "h": 527.4,
+        "scale": 0.479,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 71,
+          "y": 12,
           "w": 1024,
-          "h": 571
+          "h": 581
         }
       },
       "chat": {
         "x": 260,
-        "y": 654,
+        "y": 605,
         "width": 920,
-        "height": 254,
+        "height": 256,
         "visible": true
       },
       "terminal": {
         "x": 374,
-        "y": 71,
+        "y": 12,
         "width": 662,
-        "height": 571,
+        "height": 581,
         "visible": true
       },
       "sessions": {
-        "x": 12,
-        "y": 12,
-        "width": 285,
-        "height": 34,
+        "x": 0,
+        "y": 874,
+        "width": 1205,
+        "height": 46,
         "visible": true
       },
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-e4fd9f6a",
+        "project_id": "prj-bdf1db86",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -550,7 +550,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 6, 10:58 PM"
+        "as_of": "as of Nov 7, 06:20 AM"
       },
       "overlaps": [],
       "splitter": {
@@ -560,10 +560,10 @@
         "restored": 662
       },
       "switcher": {
-        "first": "prj-e4fd9f6a",
-        "alpha": "prj-0a2a6b15",
+        "first": "prj-bdf1db86",
+        "alpha": "prj-7989f409",
         "label": "100%",
-        "scope": "prj-0a2a6b15"
+        "scope": "prj-7989f409"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"
@@ -579,64 +579,64 @@
       "phase": "idle",
       "stage": {
         "x": 12,
-        "y": 71,
+        "y": 12,
         "width": 264,
-        "height": 412,
+        "height": 423,
         "visible": true
       },
       "art": {
-        "x": 31.2,
-        "y": 169.7,
+        "x": 31.4,
+        "y": 113.7,
         "w": 228.6,
-        "h": 209.2,
-        "scale": 0.277,
+        "h": 210.8,
+        "scale": 0.249,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 71,
+          "y": 12,
           "w": 264,
-          "h": 412
+          "h": 423
         }
       },
       "art_closed": {
-        "x": 238.7,
-        "y": 101.1,
-        "w": 407.4,
-        "h": 365.5,
-        "scale": 0.465,
+        "x": 232.7,
+        "y": 41.6,
+        "w": 420,
+        "h": 377.3,
+        "scale": 0.432,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 71,
+          "y": 12,
           "w": 864,
-          "h": 412
+          "h": 423
         }
       },
       "chat": {
         "x": 180,
-        "y": 495,
+        "y": 447,
         "width": 920,
-        "height": 213,
+        "height": 214,
         "visible": true
       },
       "terminal": {
         "x": 288,
-        "y": 71,
+        "y": 12,
         "width": 588,
-        "height": 412,
+        "height": 423,
         "visible": true
       },
       "sessions": {
-        "x": 12,
-        "y": 12,
-        "width": 285,
-        "height": 34,
+        "x": 0,
+        "y": 674,
+        "width": 1045,
+        "height": 46,
         "visible": true
       },
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-e4fd9f6a",
+        "project_id": "prj-bdf1db86",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -658,7 +658,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 6, 10:58 PM"
+        "as_of": "as of Nov 7, 06:20 AM"
       },
       "overlaps": [],
       "splitter": {
@@ -668,10 +668,10 @@
         "restored": 588
       },
       "switcher": {
-        "first": "prj-e4fd9f6a",
-        "alpha": "prj-0a2a6b15",
+        "first": "prj-bdf1db86",
+        "alpha": "prj-7989f409",
         "label": "100%",
-        "scope": "prj-0a2a6b15"
+        "scope": "prj-7989f409"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"
@@ -687,64 +687,64 @@
       "phase": "idle",
       "stage": {
         "x": 12,
-        "y": 71,
+        "y": 12,
         "width": 936,
-        "height": 188,
+        "height": 200,
         "visible": true
       },
       "art": {
-        "x": 221.6,
-        "y": 83.5,
-        "w": 157.9,
-        "h": 148.2,
-        "scale": 0.184,
+        "x": 216.2,
+        "y": 24.5,
+        "w": 168.4,
+        "h": 158.5,
+        "scale": 0.177,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 71,
+          "y": 12,
           "w": 576,
-          "h": 188.2
+          "h": 200.2
         }
       },
       "art_closed": {
-        "x": 143.9,
-        "y": 93.3,
-        "w": 312.3,
-        "h": 280.8,
-        "scale": 0.394,
+        "x": 137.5,
+        "y": 33.9,
+        "w": 324.9,
+        "h": 292.5,
+        "scale": 0.366,
         "settled": true,
         "cell": {
           "x": 12,
-          "y": 71,
+          "y": 12,
           "w": 576,
-          "h": 320
+          "h": 331
         }
       },
       "chat": {
         "x": 20,
-        "y": 488,
+        "y": 441,
         "width": 920,
         "height": 140,
         "visible": true
       },
       "terminal": {
         "x": 12,
-        "y": 271,
+        "y": 224,
         "width": 936,
         "height": 205,
         "visible": true
       },
       "sessions": {
-        "x": 12,
-        "y": 12,
-        "width": 285,
-        "height": 34,
+        "x": 0,
+        "y": 594,
+        "width": 725,
+        "height": 46,
         "visible": true
       },
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-e4fd9f6a",
+        "project_id": "prj-bdf1db86",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -766,7 +766,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 6, 10:59 PM"
+        "as_of": "as of Nov 7, 06:21 AM"
       },
       "overlaps": [],
       "splitter": {
@@ -776,10 +776,10 @@
         "restored": 205
       },
       "switcher": {
-        "first": "prj-e4fd9f6a",
-        "alpha": "prj-0a2a6b15",
+        "first": "prj-bdf1db86",
+        "alpha": "prj-7989f409",
         "label": "100%",
-        "scope": "prj-0a2a6b15"
+        "scope": "prj-7989f409"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"

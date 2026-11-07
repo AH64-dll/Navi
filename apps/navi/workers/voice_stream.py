@@ -15,8 +15,52 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import queue
+import sys
 import threading
 import time
+
+
+class MicWatchdog:
+    """A microphone read blocks with no timeout, so a stalled audio device (after
+    a suspend, or a PipeWire restart) would leave Navi deaf with nothing to show
+    for it. The capture loop marks each read; `stalled` reports one that never
+    returned, and the worker exits so the daemon restarts it."""
+
+    limit = 15.0
+
+    def __init__(self):
+        self.reading_since = None
+
+    def begin(self, now=None):
+        self.reading_since = time.monotonic() if now is None else now
+
+    def end(self):
+        self.reading_since = None
+
+    def stalled(self, now=None):
+        now = time.monotonic() if now is None else now
+        return self.reading_since is not None and now - self.reading_since > self.limit
+
+
+class SilenceWatch:
+    """A real microphone is never digitally zero. Exact zeros for this many blocks
+    mean the stream is dead or muted upstream, and reopening it is the fix."""
+
+    limit_blocks = 300
+
+    def __init__(self):
+        self.zero_blocks = 0
+
+    def feed(self, samples):
+        """True once per dead run, when the stream should be reopened."""
+        if any(samples):
+            self.zero_blocks = 0
+            return False
+        self.zero_blocks += 1
+        if self.zero_blocks >= self.limit_blocks:
+            self.zero_blocks = 0
+            return True
+        return False
 
 
 @dataclass(frozen=True)
@@ -30,46 +74,40 @@ class CaptureEvent:
 class AdaptiveVad:
     """Noise-floor calibrated energy gate for speech detection (BUG-051).
 
-    The floor is seeded over ~1 s of audio and then tracks quiet blocks with
-    a slow EMA; speech blocks raise it only through a much slower asymmetric
-    update so a loud sentence cannot train the gate closed. A block is
-    "speech" when its RMS exceeds floor x factor, never below a hardware
-    minimum so a silent room cannot drive the threshold to zero.
+    The floor is a low percentile of the last ~30 s of block energy. Speaking
+    cannot raise it, because even continuous speech has quiet gaps between
+    words and those set the percentile. A lasting change in the room does move
+    it, within the window. Blending speech into the floor is what used to end a
+    command mid-sentence: the threshold climbed past the voice in about a second.
+    A block is "speech" when its RMS exceeds floor x factor, never below a
+    hardware minimum so a silent room cannot drive the threshold to zero.
     """
 
     def __init__(self, floor=0.004, minimum=0.002, factor=3.0,
-                 calibrate_blocks=10, ema_up=0.02, ema_down=0.05):
+                 calibrate_blocks=10, window_blocks=300, percentile=0.1, ceiling=0.05):
         self.floor = floor
         self.minimum = minimum
         self.factor = factor
         self.calibrate_blocks = calibrate_blocks
-        self.ema_up = ema_up
-        self.ema_down = ema_down
-        self.calibration = []
+        self.percentile = percentile
+        self.ceiling = ceiling
+        self.recent = deque(maxlen=window_blocks)
         self.calibrated = False
 
     def feed(self, samples):
         rms = float((sum(float(s) * float(s) for s in samples) / max(len(samples), 1)) ** .5)
+        threshold = max(self.floor * self.factor, self.minimum)
         if not self.calibrated:
-            self.calibration.append(rms)
-            if len(self.calibration) >= self.calibrate_blocks:
-                ordered = sorted(self.calibration)
-                median = ordered[len(ordered) // 2]
-                self.floor = max(self.minimum, median * 1.5)
-                self.calibrated = True
-                self.calibration = []
             # While calibrating, energy above the default floor still counts
             # as speech so the first utterance is not lost to a loud room.
-            return rms > max(self.floor, self.minimum)
-        threshold = max(self.floor * self.factor, self.minimum)
-        if rms > threshold:
-            # Speech: the floor may only creep up, far below the signal.
-            self.floor += (min(rms, threshold * 4) - self.floor) * self.ema_up
-            self.floor = min(self.floor, 0.05)
-            return True
-        self.floor += (rms - self.floor) * self.ema_down
-        self.floor = max(self.minimum, min(self.floor, 0.05))
-        return False
+            threshold = max(self.floor, self.minimum)
+        self.recent.append(rms)
+        if len(self.recent) >= self.calibrate_blocks:
+            ordered = sorted(self.recent)
+            quiet = ordered[int(len(ordered) * self.percentile)]
+            self.floor = max(self.minimum, min(quiet, self.ceiling))
+            self.calibrated = True
+        return rms > threshold
 
     def state(self):
         return {"floor": round(self.floor, 5), "calibrated": self.calibrated}
@@ -117,20 +155,29 @@ class CaptureBuffer:
     pre_roll_blocks = 30
     minimum_blocks = 15        # wake path: >=1.5 s captured before endpointing
     maximum_blocks = 600       # 60 s dictation cap (BUG-053)
-    quiet_blocks = 9           # 900 ms of quiet commits a normal utterance
+    quiet_blocks = 18          # 1.8 s of quiet commits a longer utterance
     segment_blocks = 100       # stream a "segment" every ~10 s of speech
     segment_overlap = 2        # 200 ms overlap to de-duplicate word boundaries
-    # BUG-052 fast endpoint: short utterances commit after ~350 ms of quiet
-    # once >=600 ms was captured; the 900 ms run only guards barge-in and
-    # long utterances where speakers pause mid-sentence.
-    fast_quiet_blocks = 4
+    # BUG-052 fast endpoint: short utterances commit after 1.2 s of quiet once
+    # >=600 ms was captured. People pause for about a second mid-sentence while
+    # thinking, so a shorter wait keeps the first words and loses the rest.
+    fast_quiet_blocks = 12
     fast_total_blocks = 6
     fast_speech_cap = 20       # utterances with <=2 s speech are "short"
     lead_blocks = 2
-    tail_blocks = 3
+    tail_blocks = 5            # soft word endings often fall under the threshold
     # After a wake, a natural pause before the request must not end the
     # command. Wait this long for speech to start, then endpoint normally.
     wake_grace_blocks = 60
+    # The acknowledgement chime plays right after a wake. These blocks count as
+    # quiet so the chime cannot end the command as if it were speech; they stay
+    # in the recording, so a command spoken straight away keeps its first word.
+    ack_blocks = 2
+    # A wake during a capture is a new call when nothing was said yet, or when
+    # the capture has run this long: noise can hold the VAD open for the full
+    # 60 s cap, and a call must still get through. Sooner than this, "Navi" is
+    # most likely a word in the command ("open Navi settings").
+    rewake_after_blocks = 80
 
     def __init__(self, spotter, fast_endpoint=True):
         self.spotter = spotter
@@ -154,6 +201,7 @@ class CaptureBuffer:
         self._segment_mark = 0
         self._wake_mark = -1
         self._barge_in = False
+        self._ack_left = 0
         self.stream = self.spotter.create_stream()
 
     def start_recording(self):
@@ -216,6 +264,26 @@ class CaptureBuffer:
         self.truncated = False
         self._segment_mark = 0
         self._wake_mark = -1
+        self._ack_left = 0
+
+    def _heard_wake(self, samples):
+        """Run one block through the KWS. The caller keeps it live in every state."""
+        self.stream.accept_waveform(self.sample_rate, samples)
+        while self.spotter.is_ready(self.stream):
+            self.spotter.decode_stream(self.stream)
+            if self.spotter.get_result(self.stream):
+                return True
+        return False
+
+    def _wake(self):
+        """Start a command after a wake. The KWS restarts so it can hear the next."""
+        self.stream = self.spotter.create_stream()
+        self._barge_in = False
+        self._begin()
+        self.awaiting_speech = True
+        self._wake_mark = len(self.recording) - 1
+        self._ack_left = self.ack_blocks
+        return CaptureEvent("wake", tuple(self.recording))
 
     def feed(self, samples, *, quiet, overflow=False):
         if len(samples) != self.block_size:
@@ -234,15 +302,14 @@ class CaptureBuffer:
             return CaptureEvent("overflow")
         if self.recording is None:
             self.pre_roll.append(samples)
-            self.stream.accept_waveform(self.sample_rate, samples)
-            while self.spotter.is_ready(self.stream):
-                self.spotter.decode_stream(self.stream)
-                if self.spotter.get_result(self.stream):
-                    self._begin()
-                    self.awaiting_speech = True
-                    self._wake_mark = len(self.recording) - 1
-                    return CaptureEvent("wake", tuple(self.recording))
-            return None
+            return self._wake() if self._heard_wake(samples) else None
+        if self._heard_wake(samples) and (
+                self.awaiting_speech or self._captured() >= self.rewake_after_blocks):
+            self.pre_roll.append(samples)
+            return self._wake()
+        if self._ack_left:
+            self._ack_left -= 1
+            quiet = True
         if self.awaiting_speech:
             if quiet:
                 # The pause is stored (it becomes the ~200 ms lead-in before
@@ -441,7 +508,14 @@ class CommandRouter:
         if self.pending is not None and self.pending.done():
             completed = self.pending
             self.pending = None
-            result = completed.result()
+            try:
+                result = completed.result()
+            except (OSError, RuntimeError) as error:
+                # A model turn can outlast the RPC timeout while the daemon keeps
+                # working. Raising here would stop the capture loop for seconds.
+                sys.stderr.write(f"[voice] command reply lost: {error}\n")
+                sys.stderr.flush()
+                result = None
             if self.on_result is not None:
                 self.on_result(result)
         if self.pending is None and self.queued:

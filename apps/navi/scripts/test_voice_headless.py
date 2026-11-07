@@ -191,6 +191,9 @@ class OfflineTrimTests(unittest.TestCase):
             def create_stream(self):
                 return self
 
+            def accept_waveform(self, *_):
+                pass
+
             def is_ready(self, stream):
                 return False
 
@@ -261,6 +264,9 @@ class OfflineTrimTests(unittest.TestCase):
 class _NullSpotter:
     def create_stream(self):
         return self
+
+    def accept_waveform(self, *_):
+        pass
 
     def is_ready(self, stream):
         return False
