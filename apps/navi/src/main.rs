@@ -906,7 +906,9 @@ impl App {
         fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         let target = directory.join(AGENT_FILE);
         let text = format!(
-            "---\ndescription: Navi, the coding agent persona for the Navi desktop app\nmode: primary\n---\n{}\n",
+            // `question` waits for a click in a dialog Navi does not have, so one call
+            // hung the turn until it timed out. Denied, the model asks in its reply.
+            "---\ndescription: Navi, the coding agent persona for the Navi desktop app\nmode: primary\npermission:\n  question: deny\n---\n{}\n",
             prompt.trim()
         );
         // Rewrite only when the stored prompt actually changed: the file is

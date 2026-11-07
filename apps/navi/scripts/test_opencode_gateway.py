@@ -285,6 +285,37 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaises(gateway_module.GatewayError):
             self.gateway.ask("silent", timeout=0.6)
 
+    def test_a_turn_that_keeps_working_outlasts_the_timeout(self):
+        self.gateway._turn_started = self.gateway._last_activity = time.time()
+        self.gateway._busy = True
+        self.gateway._events_alive = True
+        self.gateway.session_id = "ses"
+        self.gateway._latest_reply = lambda previous: None
+        stop = threading.Event()
+        def working():
+            while not stop.wait(.1):
+                self.gateway._last_activity = time.time()
+        thread = threading.Thread(target=working)
+        thread.start()
+        timer = threading.Timer(1.0, lambda: setattr(self.gateway, "_ended_texts", ["done"])
+                                or setattr(self.gateway, "_busy", False))
+        timer.start()
+        try:
+            self.assertEqual(self.gateway._wait_reply(set(), timeout=.4), "done")
+        finally:
+            stop.set()
+            thread.join()
+            timer.join()
+
+    def test_a_running_tool_is_not_silence_but_a_question_is(self):
+        tool = {"finished": False, "name": "shell"}
+        self.gateway._tools = {"a": tool}
+        self.assertTrue(self.gateway._tool_running())
+        tool["name"] = "question"
+        self.assertFalse(self.gateway._tool_running())
+        tool.update(name="shell", finished=True)
+        self.assertFalse(self.gateway._tool_running())
+
     def test_new_session_rotates_the_file(self):
         self.gateway.ensure_session()
         session = self.gateway.new_session()
@@ -376,7 +407,7 @@ class GatewayTests(unittest.TestCase):
                       if entry["path"].endswith("/interrupt")]
         self.assertEqual(len(interrupts), 2)
 
-    def test_busy_turn_is_interrupted_before_next_prompt(self):
+    def test_a_timeout_stops_the_turn_so_the_next_message_is_not_queued_behind_it(self):
         self.gateway.start_event_stream()
         self.gateway.ensure_session()
         session = self.gateway.session_id
@@ -389,8 +420,9 @@ class GatewayTests(unittest.TestCase):
             self.gateway.ask("hang", timeout=1.2)
         except gateway_module.GatewayError:
             pass
-        self.assertTrue(self.gateway._busy)
-        # A second ask interrupts the wedged turn, waits, then prompts.
+        self.assertFalse(self.gateway._busy)
+        self.assertEqual(len([entry for entry in FakeOpenCode.requests
+                              if entry["path"].endswith("/interrupt")]), 1)
         FakeOpenCode.next_events = turn_events(session, "echo: fine")
         self.assertEqual(self.gateway.ask("fine", timeout=8.0), "echo: fine")
         interrupts = [entry for entry in FakeOpenCode.requests

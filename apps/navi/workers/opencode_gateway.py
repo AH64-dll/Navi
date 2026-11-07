@@ -88,7 +88,11 @@ DEFAULT_AGENT = "navi"
 SERVICE_FILE = os.path.expanduser("~/.config/opencode/service.json")
 SERVER_UNIT = "navi-opencode.service"
 SESSION_TITLE = "Navi"
+# A turn fails after this long with nothing happening, not this long in total:
+# a long job that keeps working is not a failure.
 PROMPT_TIMEOUT_S = 180.0
+# The backstop for a tool that runs but never ends.
+TURN_LIMIT_S = 1800.0
 POLL_INTERVAL_S = 0.25
 SPAWN_TIMEOUT_S = 15.0
 WAIT_IDLE_TIMEOUT_S = 15.0
@@ -906,8 +910,11 @@ class Gateway:
         return None
 
     def _wait_reply(self, previous_ids, timeout=PROMPT_TIMEOUT_S, emit=None):
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        started = time.time()
+        while time.time() - started < TURN_LIMIT_S:
+            silent = time.time() - max(self._last_activity, started)
+            if silent >= timeout and not self._tool_running():
+                break
             if self._failure:
                 raise GatewayError(f"OpenCode: {self._failure}")
             if emit is not None:
@@ -934,7 +941,17 @@ class Gateway:
                                    "reply read from the message store")
                         return reply
             time.sleep(POLL_INTERVAL_S)
-        raise GatewayError(f"no assistant reply within {timeout:.0f}s")
+        # Each message is its own process: a turn left running here would hold the
+        # session, and the next message (Retry too) would only queue behind it.
+        stopped = self.interrupt()
+        raise GatewayError(f"no assistant reply: nothing happened for {timeout:.0f}s"
+                           + (", so the turn was stopped" if stopped else ""))
+
+    def _tool_running(self):
+        """A tool can work for minutes without an event. `question` is not work: it
+        waits for an answer that Navi has no way to give."""
+        return any(not record["finished"] and record["name"] != "question"
+                   for record in self._tools.values())
 
     def _begin_turn(self):
         if self._events_running:
