@@ -45,10 +45,13 @@ class AssistantTests(unittest.TestCase):
         FakeOpenCode.session_counter = 0
         FakeOpenCode.message_counter = 0
         FakeOpenCode.fail_interrupts = 0
-        FakeOpenCode.reject_parts = False
+        FakeOpenCode.reject_files = False
         FakeOpenCode.honor_directory = True
         FakeOpenCode.next_events = None
         FakeOpenCode.last_directory = None
+        FakeOpenCode.contract_errors = []
+        FakeOpenCode.pending_permissions = []
+        FakeOpenCode.parents = {}
         self.opencode = ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenCode)
         self.opencode.sse_condition = threading.Condition()
         self.opencode.pending_events = []
@@ -90,6 +93,8 @@ class AssistantTests(unittest.TestCase):
         self.assertTrue(self.call("settings", settings)["ok"])
 
     def tearDown(self):
+        self.assertEqual(FakeOpenCode.contract_errors, [],
+                         "the gateway sent a request OpenCode's spec does not accept")
         self.process.terminate()
         self.process.wait(timeout=3)
         self.stop_tmux(self.data)
@@ -193,16 +198,15 @@ class AssistantTests(unittest.TestCase):
         # BUG-004/088: the session carries the project directory and the prompt
         # leads with the ≤600-byte project context block.
         created = self.posts("/api/session")
-        self.assertEqual(created[-1]["body"]["directory"], self.project()["path"])
+        self.assertEqual(created[-1]["body"]["location"], {"directory": self.project()["path"]})
         prompt = self.posts("/prompt")[-1]["body"]
         self.assertTrue(prompt["text"].startswith("[project Navi"),
                         prompt["text"][:200])
         self.assertLessEqual(len(prompt["text"].split("\n\n")[0].encode()), 600)
         self.assertIn("open tasks:", prompt["text"])
-        # BUG-005: the attachment rode the wire as a parts entry.
-        self.assertEqual(prompt["parts"][0]["type"], "text")
-        self.assertEqual(prompt["parts"][1]["type"], "file")
-        self.assertEqual(prompt["parts"][1]["text"], "attach me")
+        # BUG-005: the attachment rode the wire as a file the server reads itself.
+        self.assertEqual([entry["name"] for entry in prompt["files"]], ["note.txt"])
+        self.assertTrue(prompt["files"][0]["uri"].startswith("file:///"))
 
         # BUG-088: the turn is remembered per project.
         db = sqlite3.connect(self.data / "station.sqlite3")
@@ -312,16 +316,17 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(self.posts("/command")[-1]["body"],
                          {"name": "review", "text": "me"})
         reply = self.call("permission_reply",
-                          {"id": "perm_1", "decision": "allow"})
+                          {"id": "per_1", "decision": "allow"})
         self.assertTrue(reply["ok"], reply)
         self.assertTrue(reply["result"]["replied"])
         permissions = [e for e in FakeOpenCode.requests
                        if "/permission" in e["path"]]
         self.assertEqual(len(permissions), 1)
-        self.assertEqual(permissions[0]["body"]["decision"], "allow")
-        self.assertIn("/permission", permissions[0]["path"])
-        deny = self.call("permission_reply", {"id": "perm_2", "decision": "deny"})
+        self.assertEqual(permissions[0]["body"], {"decision": "once"})
+        self.assertEqual(permissions[0]["path"], "/api/session/ses_fake1/permission/per_1/reply")
+        deny = self.call("permission_reply", {"id": "per_2", "decision": "deny"})
         self.assertTrue(deny["result"]["replied"])
+        self.assertEqual(self.posts("/per_2/reply")[-1]["body"], {"decision": "reject"})
         bad = self.call("permission_reply", {"id": "p", "decision": "maybe"})
         self.assertFalse(bad["ok"])
 

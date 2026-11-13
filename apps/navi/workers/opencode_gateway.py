@@ -10,7 +10,12 @@ Talks to the running `opencode serve` HTTP API (basic auth, JSON envelope
   commands   - list slash commands OpenCode knows about
   new        - start a fresh Navi session for the current project directory
   interrupt  - stop the current turn, retrying once
-  permission - reply to a gated-tool approval request (endpoint unverified)
+  permission - reply to a gated-tool approval request
+  form       - answer a question form the assistant opened
+
+Every HTTP call here is listed in opencode_contract.py, which pins the request
+shapes from the server's own OpenAPI spec; the tests reject a body that does
+not match it, because the server drops unknown fields without an error.
 
 Streaming events come from GET /api/event (SSE). Verified upstream schema
 (live probe): session.text.started/delta/ended, session.reasoning.*,
@@ -21,7 +26,8 @@ variant}), session.step.streamed, session.step.ended (tokens incl. reasoning,
 cost, finish), session.usage.updated (cumulative), session.execution.succeeded
 (observed terminal event), session.execution.failed, shell.created/exited.
 `tool.called.executed` is NOT an approval signal (it was false while a shell
-ran). `session.permission.*` is unverified and matched defensively.
+ran). Approvals arrive as permission.asked (a Permission.Request) and questions
+as form.created (a Form.Info); both may come from a subagent's child session.
 
 Structured records are emitted as JSON lines on stdout (only with --stream,
 except "warning"/"error"/"done" which are always printed):
@@ -31,7 +37,10 @@ except "warning"/"error"/"done" which are always printed):
   {"type":"tool_status","id":..,"status":..,..}     transient tool progress
   {"type":"tool","id":..,"name":..,"status":..,     exactly ONE final record
      "input":..,"output":..,"exit":..,"final":true}   per tool-call id
-  {"type":"permission","id","tool","input"}         approval request (defensive)
+  {"type":"permission","id","session","tool",       approval request
+     "input":{"resources","metadata"},"message"}
+  {"type":"form","id","session","title","fields"}   the assistant asks a question
+  {"type":"form_settled","id","outcome"}            answered or cancelled
   {"type":"warning","text":...}                     e.g. ignored directory field
   {"type":"done","text":reply,"session":id,         terminal record
      "usage":{...},"session_usage":{...},
@@ -47,10 +56,9 @@ $NAVI_DATA_DIR/opencode-session as {"<directory>": {"id","model","agent"}};
 a legacy plain-id file is migrated on first use. Model/agent are POSTed only
 when the tuple changes (one configure per session unless settings move).
 
-The session-create body carries "directory" (unverified upstream). After
-create, GET /api/location verifies it; when the server ignores the field the
-prompt is prefixed with "[working directory: <path>]" and a warning record
-is emitted. Never assume the field works.
+The session-create body carries location.directory, and the created session
+reports the directory it got. When that differs, prompts are prefixed with
+"[working directory: <path>]" and a warning record is emitted.
 
 Config via env:
   NAVI_OPENCODE_URL       base URL, default http://127.0.0.1:49374
@@ -70,7 +78,6 @@ A plain `opencode serve` is only the fallback for a source checkout without it.
 import base64
 import http.client
 import json
-import mimetypes
 import os
 import re
 import shutil
@@ -102,7 +109,6 @@ TOOL_OUTPUT_CAP = 8192
 ATTACHMENT_LIMIT = 4
 ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024
 INTERRUPT_RETRY_S = 1.0
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 
 # Every observed terminal execution event, plus plausible siblings; the
 # catch-all below also clears busy on any unknown `session.execution.*`.
@@ -117,26 +123,10 @@ TERMINAL_EXECUTION = {
     "session.execution.stopped",
     "session.execution.ended",
 }
-# Unverified permission event family (plan BUG-006): accept plausible names.
-PERMISSION_EVENTS = {
-    "session.permission.requested",
-    "session.permission.ask",
-    "session.permission.pending",
-    "session.permission.required",
-    "session.approval.requested",
-    "session.approval.pending",
-    "session.tool.permission",
-    "session.tool.ask",
-}
-# Candidate reply endpoints for a permission decision; the first one that the
-# server accepts wins and is reported (plan BUG-006, schema unverified).
-PERMISSION_ENDPOINTS = [
-    "/api/session/{session}/permission",
-    "/api/permission/{id}",
-    "/api/session/{session}/permission/{id}",
-    "/api/permission/{id}/reply",
-    "/api/session/{session}/approval/{id}",
-]
+# Navi's decision words -> OpenCode's Permission.Reply.
+DECISIONS = {"allow": "once", "always": "always", "deny": "reject"}
+# A subagent runs in a child session; its approvals and questions belong to this turn.
+SESSION_ANCESTRY_LIMIT = 4
 SENSITIVE = re.compile(r"(?i)(token|secret|key|password)")
 SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)((?:token|secret|key|password)[\w.-]*\s*[:=]\s*)\S+")
@@ -231,41 +221,30 @@ def _call_id(data):
     return None
 
 
-def _guess_mime(path):
-    mime, _ = mimetypes.guess_type(path)
-    if mime:
-        return mime
-    suffix = os.path.splitext(path)[1].lower()
-    if suffix in IMAGE_SUFFIXES:
-        return f"image/{suffix.lstrip('.').replace('jpg', 'jpeg')}"
-    return "text/plain"
+def _payload(data, *wrappers):
+    """The object an event carries, whether bare or under one wrapper key. The spec
+    names events but does not type their data."""
+    for key in wrappers:
+        if isinstance(data.get(key), dict):
+            return data[key]
+    return data
 
 
-def _attachment_part(path):
-    """Build one prompt part; {"skip": reason} when the file cannot travel."""
-    mime = _guess_mime(path)
-    kind = "image" if mime.startswith("image/") else "file"
-    name = os.path.basename(path) or path
+def _attachment_file(path):
+    """One PromptInput.FileAttachment; {"skip": reason} when the file cannot travel.
+    The server runs on this machine: it reads the file:// URI itself and works out
+    the type, images included."""
     try:
         size = os.path.getsize(path)
+        readable = os.access(path, os.R_OK) and os.path.isfile(path)
     except OSError as error:
         return {"skip": f"{path}: {error}"}
+    if not readable:
+        return {"skip": f"{path}: not a readable file"}
     if size > ATTACHMENT_MAX_BYTES:
         return {"skip": f"{path}: {size} bytes over {ATTACHMENT_MAX_BYTES}"}
-    try:
-        with open(path, "rb") as handle:
-            raw = handle.read()
-    except OSError as error:
-        return {"skip": f"{path}: {error}"}
-    if kind == "image":
-        return {"type": "image", "name": name, "mime": mime, "filename": name,
-                "url": f"data:{mime};base64,{base64.b64encode(raw).decode()}"}
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        text = raw.decode("utf-8", errors="replace")
-    return {"type": "file", "name": name, "mime": mime, "filename": name,
-            "text": text, "url": f"file://{os.path.abspath(path)}"}
+    absolute = os.path.abspath(path)
+    return {"uri": "file://" + urllib.parse.quote(absolute), "name": os.path.basename(absolute)}
 
 
 class Gateway:
@@ -306,6 +285,8 @@ class Gateway:
         self._tools = {}               # call id -> merged record
         self._pending = {}             # call id -> buffered input bits
         self._permissions = []
+        self._forms = {}               # form id -> Form.Info still waiting for an answer
+        self._family = {}              # session id -> whether it is a subagent of ours
         self._shell_cwds = []
         self._last_usage = None        # step.ended tokens/cost/finish
         self._session_usage = None     # usage.updated cumulative
@@ -420,20 +401,6 @@ class Gateway:
             return []
         return [a.get("id") for a in agents if isinstance(a, dict)]
 
-    def server_directory(self):
-        """GET /api/location -> reported cwd, or None when unverifiable."""
-        try:
-            data = self._get("/api/location", timeout=5.0)
-        except GatewayError:
-            return None
-        if isinstance(data, dict):
-            for key in ("directory", "cwd", "path", "worktree"):
-                if isinstance(data.get(key), str) and data[key]:
-                    return data[key]
-        elif isinstance(data, str) and data:
-            return data
-        return None
-
     def _title(self):
         name = os.path.basename(self.directory.rstrip("/")) if self.directory else ""
         return f"{SESSION_TITLE} · {name}" if name else SESSION_TITLE
@@ -512,23 +479,19 @@ class Gateway:
     def _create_session(self):
         body = {"title": self._title()}
         if self.directory:
-            # Unverified upstream field; verified via /api/location afterwards.
-            body["directory"] = self.directory
+            body["location"] = {"directory": self.directory}
         data = self._post("/api/session", body)
         self.session_id = data["id"]
         self._dir_prefix = False
         if self.directory:
-            reported = self.server_directory()
-            if reported is None:
+            # The session says where it runs. GET /api/location is the server's own
+            # directory, not the session's, so it cannot confirm this.
+            reported = ((data.get("location") or {}).get("directory")
+                        if isinstance(data.get("location"), dict) else None)
+            if not reported or os.path.abspath(reported) != os.path.abspath(self.directory):
                 self._dir_prefix = True
-                self._warn("OpenCode does not expose /api/location; "
-                           f"cannot verify directory={self.directory}; "
-                           "prompts will carry a [working directory] prefix")
-            elif os.path.abspath(reported) != os.path.abspath(self.directory):
-                self._dir_prefix = True
-                self._warn(f"OpenCode ignored directory={self.directory} "
-                           f"(server reports {reported}); prompts will carry "
-                           "a [working directory] prefix")
+                self._warn(f"OpenCode put the session in {reported or 'an unknown directory'}, "
+                           f"not {self.directory}; prompts will carry a [working directory] prefix")
         self._save_session()
         _log(f"session {self.session_id} dir={self._session_key()}")
         return self.session_id
@@ -622,24 +585,48 @@ class Gateway:
         self._busy = False
         return True
 
-    def permission_reply(self, permission_id, decision):
-        """POST a permission decision to candidate endpoints (schema
-        unverified, plan BUG-006). Returns {"replied":bool,"endpoint","detail"}."""
-        self.ensure_session()
+    def _pending_permission_session(self, permission_id):
+        """The session a pending approval belongs to: a subagent asks from its own."""
+        try:
+            pending = self._get("/api/permission/request", timeout=5.0) or []
+        except GatewayError:
+            return None
+        for request in pending if isinstance(pending, list) else []:
+            if isinstance(request, dict) and request.get("id") == permission_id:
+                return request.get("sessionID")
+        return None
+
+    def permission_reply(self, permission_id, decision, session_id=None):
+        """POST an approval decision. Returns {"replied":bool,"endpoint"} or {"replied":False,"error"}."""
         decision = str(decision or "").strip().lower()
-        if decision not in ("allow", "deny"):
-            raise GatewayError("decision must be allow or deny")
-        body = {"id": permission_id, "decision": decision,
-                "approved": decision == "allow"}
-        errors = []
-        for template in PERMISSION_ENDPOINTS:
-            path = template.format(session=self.session_id, id=permission_id)
-            try:
-                self._post(path, body, timeout=10.0)
-                return {"replied": True, "endpoint": path}
-            except GatewayError as error:
-                errors.append(f"{path}: {error}")
-        return {"replied": False, "error": "; ".join(errors)}
+        if decision not in DECISIONS:
+            raise GatewayError("decision must be " + ", ".join(DECISIONS))
+        self.ensure_up()
+        session_id = (session_id or self._pending_permission_session(permission_id)
+                      or self.session_id or self._load_session())
+        if not session_id:
+            return {"replied": False, "error": "No OpenCode session is waiting for this approval"}
+        path = f"/api/session/{session_id}/permission/{urllib.parse.quote(permission_id)}/reply"
+        try:
+            self._post(path, {"decision": DECISIONS[decision]}, timeout=10.0)
+        except GatewayError as error:
+            return {"replied": False, "error": str(error)}
+        return {"replied": True, "endpoint": path}
+
+    def form_reply(self, form_id, answer, session_id=None):
+        """Answer a question form: `answer` maps each field key to its value."""
+        if not isinstance(answer, dict):
+            raise GatewayError("a form answer is an object of field key -> value")
+        self.ensure_up()
+        session_id = session_id or self.session_id or self._load_session()
+        if not session_id:
+            return {"replied": False, "error": "No OpenCode session is waiting for this answer"}
+        path = f"/api/session/{session_id}/form/{urllib.parse.quote(form_id)}/reply"
+        try:
+            self._post(path, {"answer": answer}, timeout=10.0)
+        except GatewayError as error:
+            return {"replied": False, "error": str(error)}
+        return {"replied": True, "endpoint": path}
 
     # -- SSE records ------------------------------------------------------------
 
@@ -666,8 +653,10 @@ class Gateway:
         sid = _event_session(data)
         # Events carrying another session's id are ignored; id-less events
         # (some shell.* payloads) are accepted — this gateway owns one session.
+        # A subagent's approval or question is the exception: the turn waits on it.
         if sid and self.session_id and sid != self.session_id:
-            return
+            if not (kind.startswith(("permission.", "form.")) and self._descends_from_own(sid)):
+                return
         # The server also announces its own housekeeping (mcp.status.changed,
         # model.updated) on this stream. That says nothing about this turn.
         if kind.startswith(("session.", "shell.")):
@@ -842,14 +831,53 @@ class Gateway:
             return
         if kind == "shell.exited":
             return
-        if kind in PERMISSION_EVENTS or ".permission." in kind or kind.endswith(".permission"):
-            call_data = data.get("permission") if isinstance(data.get("permission"), dict) else data
-            self._permissions.append(call_data)
-            self._emit({"type": "permission",
-                        "id": _call_id(call_data) or call_data.get("id"),
-                        "tool": call_data.get("tool") or call_data.get("name"),
-                        "input": _redact(call_data.get("input"))})
+        if kind == "permission.asked":
+            request = _payload(data, "request", "permission")
+            if not request.get("id"):
+                return
+            self._permissions.append(request)
+            self._emit({"type": "permission", "id": request["id"],
+                        "session": request.get("sessionID") or sid,
+                        "tool": request.get("action"),
+                        "input": _redact({"resources": request.get("resources") or [],
+                                          "metadata": request.get("metadata") or {}}),
+                        "message": request.get("message")})
             return
+        if kind == "form.created":
+            form = _payload(data, "form")
+            if not form.get("id"):
+                return
+            self._forms[form["id"]] = form
+            self._emit({"type": "form", "id": form["id"], "session": form.get("sessionID") or sid,
+                        "title": form.get("title") or "", "fields": form.get("fields") or [],
+                        "metadata": form.get("metadata") or {}})
+            return
+        if kind in ("form.replied", "form.cancelled"):
+            form = _payload(data, "form")
+            form_id = form.get("id") or data.get("formID")
+            if form_id:
+                self._forms.pop(form_id, None)
+                self._emit({"type": "form_settled", "id": form_id,
+                            "outcome": "answered" if kind == "form.replied" else "cancelled"})
+            return
+
+    def _descends_from_own(self, session_id):
+        """True when `session_id` is a subagent session under this gateway's session."""
+        if session_id in self._family:
+            return self._family[session_id]
+        current, mine = session_id, False
+        for _ in range(SESSION_ANCESTRY_LIMIT):
+            try:
+                current = (self._get(f"/api/session/{current}", timeout=3.0) or {}).get("parentID")
+            except GatewayError:
+                break
+            if not current:
+                break
+            if current == self.session_id:
+                mine = True
+                break
+        self._family[session_id] = mine
+        return mine
 
     def _read_events(self):
         """Stay on the stream for the life of the turn: without it, nothing shows
@@ -992,6 +1020,7 @@ class Gateway:
         self._tools = {}
         self._pending = {}
         self._permissions = []
+        self._forms = {}
         self._last_usage = None
         self._actual_model = None
         self._actual_agent = None
@@ -1023,28 +1052,20 @@ class Gateway:
             text = f"[working directory: {self.directory}]\n\n{text}"
         previous = {message.get("id") for message in self._assistant_messages(limit=5)}
         body = {"text": text}
-        parts = None
-        if attachments:
-            parts = [{"type": "text", "text": text}]
-            skipped = []
-            for path in attachments[:ATTACHMENT_LIMIT]:
-                part = _attachment_part(path)
-                if part.get("skip"):
-                    skipped.append(part["skip"])
-                else:
-                    parts.append(part)
-            for note in skipped:
-                self._warn(f"attachment skipped: {note}")
-            if len(parts) > 1:
-                body["parts"] = parts
+        files = []
+        for path in (attachments or [])[:ATTACHMENT_LIMIT]:
+            attachment = _attachment_file(path)
+            if attachment.get("skip"):
+                self._warn(f"attachment skipped: {attachment['skip']}")
             else:
-                parts = None
-        if parts:
+                files.append(attachment)
+        if files:
+            body["files"] = files
             try:
                 self._post(f"/api/session/{self.session_id}/prompt", body, timeout=30.0)
-                posted = "parts"
+                posted = "files"
             except GatewayError as error:
-                self._warn(f"server rejected prompt parts ({error}); "
+                self._warn(f"server rejected the attachments ({error}); "
                            "falling back to text-only prompt")
                 self._post(f"/api/session/{self.session_id}/prompt",
                            {"text": text}, timeout=30.0)
@@ -1114,7 +1135,7 @@ def main(argv):
     import argparse
     parser = argparse.ArgumentParser(prog="opencode_gateway")
     parser.add_argument("mode", choices=["ask", "slash", "models", "agents", "commands",
-                                         "new", "interrupt", "permission", "status"])
+                                         "new", "interrupt", "permission", "form", "status"])
     parser.add_argument("text", nargs="?", default="")
     parser.add_argument("--model", default=None)
     parser.add_argument("--agent", default=None)
@@ -1123,9 +1144,13 @@ def main(argv):
     parser.add_argument("--attachment", action="append", default=[],
                         help="attach a file/image to the prompt (repeatable)")
     parser.add_argument("--id", dest="permission_id", default=None,
-                        help="permission request id (permission mode)")
-    parser.add_argument("--decision", choices=["allow", "deny"], default=None,
+                        help="permission request or form id (permission and form modes)")
+    parser.add_argument("--session", default=None,
+                        help="session the request belongs to, when it came from a subagent")
+    parser.add_argument("--decision", choices=sorted(DECISIONS), default=None,
                         help="permission decision (permission mode)")
+    parser.add_argument("--answer", default=None,
+                        help='form answer as JSON, {"<field key>": value} (form mode)')
     parser.add_argument("--stream", action="store_true",
                         help="emit streaming records as JSON lines")
     parser.add_argument("--timeout", type=float, default=PROMPT_TIMEOUT_S)
@@ -1156,8 +1181,17 @@ def main(argv):
             return 0
         if args.mode == "permission":
             if not args.permission_id or not args.decision:
-                raise GatewayError("permission needs --id and --decision allow|deny")
-            print(json.dumps(gateway.permission_reply(args.permission_id, args.decision)))
+                raise GatewayError("permission needs --id and --decision " + "|".join(DECISIONS))
+            print(json.dumps(gateway.permission_reply(args.permission_id, args.decision, args.session)))
+            return 0
+        if args.mode == "form":
+            try:
+                answer = json.loads(args.answer or "")
+            except ValueError:
+                raise GatewayError("form needs --answer as a JSON object") from None
+            if not args.permission_id:
+                raise GatewayError("form needs --id")
+            print(json.dumps(gateway.form_reply(args.permission_id, answer, args.session)))
             return 0
         if not args.text.strip():
             raise GatewayError("missing text")

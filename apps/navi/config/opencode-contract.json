@@ -1,0 +1,611 @@
+{
+ "events": [
+  "form.cancelled",
+  "form.created",
+  "form.replied",
+  "permission.asked",
+  "permission.replied",
+  "session.execution.failed",
+  "session.execution.interrupted",
+  "session.execution.started",
+  "session.execution.succeeded",
+  "session.reasoning.delta",
+  "session.reasoning.ended",
+  "session.reasoning.started",
+  "session.step.ended",
+  "session.step.started",
+  "session.step.streamed",
+  "session.text.delta",
+  "session.text.ended",
+  "session.text.started",
+  "session.tool.called",
+  "session.tool.failed",
+  "session.tool.input.ended",
+  "session.tool.input.started",
+  "session.tool.progress",
+  "session.tool.success",
+  "session.usage.updated",
+  "shell.created",
+  "shell.exited"
+ ],
+ "opencode": "2.2.5",
+ "operations": {
+  "agent.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/agent"
+  },
+  "command.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/command"
+  },
+  "event.subscribe": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/event"
+  },
+  "model.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/model"
+  },
+  "permission.request.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/permission/request"
+  },
+  "server.info": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/info"
+  },
+  "session.command": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "agents": {
+      "items": {
+       "$ref": "#/components/schemas/Prompt.AgentAttachment"
+      },
+      "type": "array"
+     },
+     "delivery": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Inbox.Delivery"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "files": {
+      "items": {
+       "$ref": "#/components/schemas/PromptInput.FileAttachment"
+      },
+      "type": "array"
+     },
+     "name": {
+      "type": "string"
+     },
+     "skills": {
+      "items": {
+       "$ref": "#/components/schemas/PromptInput.SkillAttachment"
+      },
+      "type": "array"
+     },
+     "text": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "text"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/command"
+  },
+  "session.create": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Agent.ID"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "id": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.ID"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "location": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Location.PublicRef"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "metadata": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Metadata"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "model": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Model.Ref"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "parentID": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.ID"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "permissions": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Permission.Ruleset"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session"
+  },
+  "session.form.reply": {
+   "body": {
+    "$ref": "#/components/schemas/Form.Reply"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/form/{formID}/reply"
+  },
+  "session.get": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/session/{sessionID}"
+  },
+  "session.interrupt": {
+   "body": null,
+   "method": "POST",
+   "path": "/api/session/{sessionID}/interrupt"
+  },
+  "session.message.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/session/{sessionID}/message"
+  },
+  "session.permission.reply": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "decision": {
+      "$ref": "#/components/schemas/Permission.Reply"
+     },
+     "message": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "decision"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/permission/{requestID}/reply"
+  },
+  "session.prompt": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "agents": {
+      "items": {
+       "$ref": "#/components/schemas/Prompt.AgentAttachment"
+      },
+      "type": "array"
+     },
+     "delivery": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Inbox.Delivery"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "files": {
+      "items": {
+       "$ref": "#/components/schemas/PromptInput.FileAttachment"
+      },
+      "type": "array"
+     },
+     "id": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Message.ID"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "metadata": {
+      "type": "object"
+     },
+     "resume": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "skills": {
+      "items": {
+       "$ref": "#/components/schemas/PromptInput.SkillAttachment"
+      },
+      "type": "array"
+     },
+     "text": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/prompt"
+  },
+  "session.switchAgent": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "agent": {
+      "$ref": "#/components/schemas/Agent.ID"
+     }
+    },
+    "required": [
+     "agent"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/agent"
+  },
+  "session.switchModel": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "model": {
+      "$ref": "#/components/schemas/Model.Ref"
+     }
+    },
+    "required": [
+     "model"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/model"
+  }
+ },
+ "schemas": {
+  "AbsolutePath": {
+   "type": "string"
+  },
+  "Agent.ID": {
+   "type": "string"
+  },
+  "Form.Answer": {
+   "additionalProperties": {
+    "$ref": "#/components/schemas/Form.Value"
+   },
+   "type": "object"
+  },
+  "Form.Reply": {
+   "additionalProperties": false,
+   "properties": {
+    "answer": {
+     "$ref": "#/components/schemas/Form.Answer"
+    }
+   },
+   "required": [
+    "answer"
+   ],
+   "type": "object"
+  },
+  "Form.Value": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "number"
+    },
+    {
+     "enum": [
+      "Infinity",
+      "-Infinity",
+      "NaN"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "boolean"
+    },
+    {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   ]
+  },
+  "Location.PublicRef": {
+   "additionalProperties": false,
+   "properties": {
+    "directory": {
+     "$ref": "#/components/schemas/AbsolutePath"
+    }
+   },
+   "required": [
+    "directory"
+   ],
+   "type": "object"
+  },
+  "Model.Ref": {
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "providerID": {
+     "$ref": "#/components/schemas/Provider.ID"
+    },
+    "variant": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "providerID"
+   ],
+   "type": "object"
+  },
+  "Permission.Effect": {
+   "enum": [
+    "allow",
+    "deny",
+    "ask"
+   ],
+   "type": "string"
+  },
+  "Permission.Reply": {
+   "enum": [
+    "once",
+    "always",
+    "reject"
+   ],
+   "type": "string"
+  },
+  "Permission.Rule": {
+   "additionalProperties": false,
+   "properties": {
+    "action": {
+     "type": "string"
+    },
+    "effect": {
+     "$ref": "#/components/schemas/Permission.Effect"
+    },
+    "resource": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "action",
+    "resource",
+    "effect"
+   ],
+   "type": "object"
+  },
+  "Permission.Ruleset": {
+   "items": {
+    "$ref": "#/components/schemas/Permission.Rule"
+   },
+   "type": "array"
+  },
+  "Prompt.AgentAttachment": {
+   "additionalProperties": false,
+   "properties": {
+    "mention": {
+     "$ref": "#/components/schemas/Prompt.Mention"
+    },
+    "name": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "type": "object"
+  },
+  "Prompt.FileSource": {
+   "anyOf": [
+    {
+     "additionalProperties": false,
+     "properties": {
+      "type": {
+       "enum": [
+        "inline"
+       ],
+       "type": "string"
+      }
+     },
+     "required": [
+      "type"
+     ],
+     "type": "object"
+    },
+    {
+     "additionalProperties": false,
+     "properties": {
+      "type": {
+       "enum": [
+        "uri"
+       ],
+       "type": "string"
+      },
+      "uri": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "type",
+      "uri"
+     ],
+     "type": "object"
+    }
+   ]
+  },
+  "Prompt.Mention": {
+   "additionalProperties": false,
+   "properties": {
+    "end": {
+     "type": "number"
+    },
+    "start": {
+     "type": "number"
+    },
+    "text": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "start",
+    "end",
+    "text"
+   ],
+   "type": "object"
+  },
+  "PromptInput.FileAttachment": {
+   "additionalProperties": false,
+   "properties": {
+    "description": {
+     "type": "string"
+    },
+    "mention": {
+     "$ref": "#/components/schemas/Prompt.Mention"
+    },
+    "name": {
+     "type": "string"
+    },
+    "source": {
+     "$ref": "#/components/schemas/Prompt.FileSource"
+    },
+    "uri": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "uri"
+   ],
+   "type": "object"
+  },
+  "PromptInput.SkillAttachment": {
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "$ref": "#/components/schemas/Skill.ID"
+    },
+    "mention": {
+     "$ref": "#/components/schemas/Prompt.Mention"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "type": "object"
+  },
+  "Provider.ID": {
+   "type": "string"
+  },
+  "Session.ID": {
+   "pattern": "^ses",
+   "type": "string"
+  },
+  "Session.Inbox.Delivery": {
+   "enum": [
+    "steer",
+    "queue"
+   ],
+   "type": "string"
+  },
+  "Session.Message.ID": {
+   "pattern": "^msg_",
+   "type": "string"
+  },
+  "Session.Metadata": {
+   "type": "object"
+  },
+  "Skill.ID": {
+   "type": "string"
+  }
+ }
+}
