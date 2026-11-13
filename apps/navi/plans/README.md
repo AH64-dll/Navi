@@ -22,6 +22,7 @@ Every plan has: evidence (`path:line`), root cause, fix steps, end state, why it
 | [05-harness.md](05-harness.md) | Harness discovery, launch, resume, output | 069–082 |
 | [06-project-graph.md](06-project-graph.md) | Project model, signals, completion panel | 083–092 |
 | [07-reliability.md](07-reliability.md) | RPC, polling, workers, failure paths | 093–100 |
+| [08-opencode-layer.md](08-opencode-layer.md) | Layer over OpenCode 2.x, harnesses over ACP, browser and email (phased, 2026-11-13; supersedes 001–019 where they conflict) | phases 0–7 |
 
 ## The 100 plans
 
