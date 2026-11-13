@@ -53,6 +53,36 @@ class VoicePolicyTests(unittest.TestCase):
         self.assertEqual(command_text("Hey Navigator, open Codex"), "Hey Navigator, open Codex")
         self.assertEqual(command_text("navigation tips"), "navigation tips")
 
+    def test_the_name_is_stripped_however_the_recognizer_spells_it(self):
+        """The command now carries the audio of the name, so the text always does."""
+        self.assertEqual(command_text("Nevi, open the settings"), "open the settings")
+        self.assertEqual(command_text("Okay Navi, start a new session."), "start a new session")
+        self.assertEqual(command_text("Hi Navy, stop"), "stop")
+        self.assertEqual(command_text("Navi, I want a new session in the Navi project"),
+                         "I want a new session in the Navi project")
+
+    def test_opening_words_decide_whether_it_was_a_call(self):
+        verdict = voice.opening_verdict
+        # Spellings the small recognizer gave the name on 12 accented voices.
+        for text in ("Navi open the", "navy, opened", "Hey Nevi start a", "okay nabi i want", "nadi open"):
+            self.assertEqual(verdict(text, False), "name", text)
+        self.assertEqual(verdict("Navi.", False), "name_only")
+        self.assertEqual(verdict("hey navy", False), "name_only")
+        self.assertEqual(verdict("Navi, stop.", False), "stop")
+        self.assertEqual(verdict("navy shut up", True), "stop")
+        self.assertIsNone(verdict("", True))
+        self.assertIsNone(verdict("um", True))
+        # Ordinary talk never counts, whether or not the spotter fired.
+        for text in ("the meeting was moved", "my brother joined the navy", "I want you to check"):
+            self.assertEqual(verdict(text, False), "other", text)
+            self.assertEqual(verdict(text, True), "other", text)
+        # A rough spelling only counts once the spotter has fired as well.
+        for text in ("nappy open the", "maybe I want", "no bee", "inavi start"):
+            self.assertEqual(verdict(text, False), "other", text)
+            self.assertIn(verdict(text, True), ("name", "name_only"), text)
+        self.assertEqual(verdict("need to open the settings", False), "other")
+        self.assertEqual(verdict("navigation tips", True), "other")
+
     def test_navigation_words_are_not_treated_as_commands(self):
         self.assertTrue(ignored_wake("navigation tips"))
         self.assertTrue(ignored_wake("Navigate to the settings page"))
@@ -198,6 +228,36 @@ class VoicePolicyTests(unittest.TestCase):
         ])))
         self.assertIsNone(input_device(Devices([])))
         self.assertIsNone(input_device(Devices([{"name": "Built-in Mic", "max_input_channels": 1}])))
+
+    def test_an_engine_label_for_noise_is_not_a_command(self):
+        """Whisper answers a capture of room noise with a label. It must not be sent."""
+        import numpy as np
+        import cloud_stt
+        import hex_asr
+        import speech_config
+        import voice
+
+        class Local:
+            text = ""
+
+            def transcribe(self, samples, language=None, keywords=None):
+                return {"text": Local.text}
+
+        status = {"settings": {"profiles": [], "projects": [], "favorites": []}, "sessions": []}
+        audio = [np.zeros(1600, dtype=np.float32)]
+        old = (cloud_stt.available, hex_asr.transcribe, speech_config._speech_cache)
+        try:
+            speech_config._speech_cache = dict(speech_config.DEFAULTS)
+            cloud_stt.available = lambda order=None: False
+            hex_asr.transcribe = lambda blocks, *a, **k: None
+            for label in ("[BLANK_AUDIO]", "[ Silence ]", "[BLANK_AUD", "(silence)", " [MUSIC]. "):
+                Local.text = label
+                text, _source, meta = voice.recognize(audio, "whistle", Local(), status)
+                self.assertEqual((text, meta["raw"]), ("", ""), label)
+            Local.text = "open [the] settings"
+            self.assertEqual(voice.recognize(audio, "whistle", Local(), status)[0], "open [the] settings")
+        finally:
+            cloud_stt.available, hex_asr.transcribe, speech_config._speech_cache = old
 
     def test_cloud_stt_runs_before_local_and_falls_back(self):
         import numpy as np

@@ -88,7 +88,7 @@ class ListenWakeTests(unittest.TestCase):
         import types
         self.types = types
         self.saved = {name: getattr(voice, name) for name in
-                      ("rpc", "load_spotter", "load_recognizer", "CaptureBuffer",
+                      ("rpc", "load_spotter", "load_opening", "load_recognizer", "CaptureBuffer",
                        "pops_window", "pop_window", "state")}
         self.saved_sd = sys.modules.get("sounddevice")
         self.pops = []
@@ -106,7 +106,7 @@ class ListenWakeTests(unittest.TestCase):
         outer = self
 
         class FakeCapture:
-            def __init__(self, spotter):
+            def __init__(self, spotter, opening=None):
                 self.woken = False
 
             def feed(self, samples, quiet=False, overflow=False):
@@ -119,6 +119,9 @@ class ListenWakeTests(unittest.TestCase):
                 pass
 
             def start_recording(self):
+                pass
+
+            def after_interrupt(self):
                 pass
 
         class FakeStream:
@@ -134,6 +137,7 @@ class ListenWakeTests(unittest.TestCase):
 
         voice.rpc = lambda op, params=None, timeout=90: outer.status
         voice.load_spotter = lambda speech: object()
+        voice.load_opening = lambda: None
         voice.load_recognizer = lambda speech: ("whistle", object())
         voice.CaptureBuffer = FakeCapture
         voice.pops_window = lambda status: outer.pops.append(status) or True
@@ -225,8 +229,10 @@ class OfflineTrimTests(unittest.TestCase):
         first = [block[0] for block in result["blocks_sent"]].index(0.3)
         self.assertLessEqual(first, 3)
 
-    def test_segments_concatenate_for_long_dictation(self):
-        """BUG-053: ~10 s segments join into one transcript, unflagged."""
+    def test_segments_preview_a_long_dictation_and_the_final_text_is_whole(self):
+        """BUG-053: ~10 s segments are previews. The final utterance carries the audio
+        of the whole dictation, so its transcript is the answer; joining the previews
+        onto it repeated every sentence."""
         import numpy as np
         status = {"settings": {"speech": {}, "profiles": [], "projects": [], "favorites": []}, "sessions": []}
         parts = []
@@ -243,7 +249,9 @@ class OfflineTrimTests(unittest.TestCase):
             recognize_fn=fake_recognize, quiet=0.05)
         self.assertGreaterEqual(result["segments"], 2)
         self.assertFalse(result["truncated"])
-        self.assertEqual(result["transcript"], " ".join(parts))
+        self.assertEqual(result["previews"], parts[:-1])
+        self.assertEqual(result["transcript"], parts[-1])
+        self.assertGreaterEqual(len(result["blocks_sent"]), 450)  # all 45 s reach the final pass
 
     def test_offline_flags_truncated_dictation(self):
         import numpy as np
@@ -331,7 +339,7 @@ class PlaybackWakeGuardTests(unittest.TestCase):
     def setUp(self):
         import types
         self.saved = {name: getattr(voice, name) for name in
-                      ("rpc", "load_spotter", "load_recognizer", "CaptureBuffer",
+                      ("rpc", "load_spotter", "load_opening", "load_recognizer", "CaptureBuffer",
                        "pops_window", "pop_window", "state")}
         self.saved_sd = sys.modules.get("sounddevice")
         self.status = {"settings": {"microphone": True, "listening": "background",
@@ -344,7 +352,7 @@ class PlaybackWakeGuardTests(unittest.TestCase):
         outer = self
 
         class FakeCapture:
-            def __init__(self, spotter):
+            def __init__(self, spotter, opening=None):
                 self.events = list(outer.script)
 
             def feed(self, samples, quiet=False, overflow=False):
@@ -360,6 +368,9 @@ class PlaybackWakeGuardTests(unittest.TestCase):
                 pass
 
             def start_recording(self):
+                pass
+
+            def after_interrupt(self):
                 pass
 
         class FakeStream:
@@ -405,6 +416,7 @@ class PlaybackWakeGuardTests(unittest.TestCase):
         self.Commands = Commands
         voice.rpc = lambda op, params=None, timeout=90: outer.status
         voice.load_spotter = lambda speech: object()
+        voice.load_opening = lambda: None
         voice.load_recognizer = lambda speech: ("whistle", object())
         voice.CaptureBuffer = FakeCapture
         voice.pops_window = lambda status: False
@@ -559,6 +571,83 @@ class ConfirmWindowTests(unittest.TestCase):
             self.assertEqual(outcomes, [])
         finally:
             speech_config._speech_cache = old_seconds
+
+
+class ContinuedSentenceTests(unittest.TestCase):
+    """A pause mid-thought: speech that starts again before the text is sent
+    continues the sentence instead of being lost behind a half-sent command."""
+
+    class Snap:
+        @property
+        def value(self):
+            return {"settings": {"microphone": True, "listening": "background",
+                                 "speech": {}}, "gui_open": False}
+
+    def setUp(self):
+        import speech_config
+        from voice_stream import CaptureEvent, PendingUtterance
+        self.speech_config = speech_config
+        self.saved = (speech_config._speech_cache, voice.state)
+        voice.state = lambda status, **details: None
+        self.sent = []
+        test = self
+
+        class Commands:
+            def dispatch(self, text, speech, status=None):
+                test.sent.append(text)
+                return "deciding"
+
+        self.commands = Commands()
+        self.pending = PendingUtterance()
+        self.event = CaptureEvent("utterance", ("first half",))
+        self.pending.hold(self.event)
+
+    def tearDown(self):
+        self.speech_config._speech_cache, voice.state = self.saved
+
+    def handle(self, hold, text="can you open the project"):
+        self.speech_config._speech_cache = dict(self.speech_config.DEFAULTS, confirm_seconds=hold)
+        return voice._handle_transcript(text, "hex", {}, self.commands, {}, self.Snap(),
+                                        voice.Playback(), self.event, self.pending)
+
+    def test_speech_during_the_hold_sends_nothing_and_hands_back_the_audio(self):
+        import threading
+        outcome = []
+        thread = threading.Thread(target=lambda: outcome.append(self.handle(5)))
+        thread.start()
+        time.sleep(0.1)
+        self.assertIsNone(self.pending.resume(quiet=False))
+        self.assertIsNone(self.pending.resume(quiet=False))
+        self.assertEqual(self.pending.resume(quiet=False), ("first half",))
+        thread.join(timeout=2)
+        self.assertEqual(outcome, ["continued"])
+        self.assertEqual(self.sent, [])
+
+    def test_a_click_during_the_hold_is_not_carrying_on(self):
+        for quiet in (False, False, True, False, False, True):
+            self.assertIsNone(self.pending.resume(quiet=quiet))
+        self.assertEqual(self.handle(0.05), "deciding")
+        self.assertEqual(self.sent, ["can you open the project"])
+
+    def test_speech_after_the_command_left_starts_nothing(self):
+        self.assertEqual(self.handle(0.05), "deciding")
+        for _ in range(10):
+            self.assertIsNone(self.pending.resume(quiet=False))
+        self.assertEqual(self.sent, ["can you open the project"])
+
+    def test_a_resumed_utterance_is_never_sent_by_a_late_transcript(self):
+        """The first half's transcript arrives after the speaker carried on."""
+        for _ in range(3):
+            self.pending.resume(quiet=False)
+        self.assertEqual(self.handle(0), "continued")
+        self.assertEqual(self.handle(0.05), "continued")
+        self.assertEqual(self.sent, [])
+
+    def test_stop_is_sent_without_a_hold(self):
+        started = time.monotonic()
+        self.assertEqual(self.handle(5, text="stop"), "deciding")
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(self.sent, ["stop"])
 
 
 class FatalExitTests(unittest.TestCase):

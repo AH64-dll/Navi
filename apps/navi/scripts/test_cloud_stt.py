@@ -233,6 +233,20 @@ class TestChain(unittest.TestCase):
         self.assertEqual(seen["language"], "fr")
         self.assertEqual(seen["wav_riff"], b"RIFF")
 
+    def test_a_long_dictation_gets_a_longer_timeout(self):
+        """A flat 3 s cannot upload and transcribe a minute of speech."""
+        seen = []
+        def spy(wav, language, timeout, keywords=None):
+            seen.append(timeout)
+            return "ok"
+        cloud_stt.PROVIDERS["groq"] = spy
+        cloud_stt.provider_available = lambda n: True
+        speech_config.timeout_seconds = lambda: 3.0
+        cloud_stt.transcribe(b"\x00\x00" * 16000 * 2, order=["groq"])    # 2 s
+        cloud_stt.transcribe(b"\x00\x00" * 16000 * 60, order=["groq"])   # 60 s
+        self.assertAlmostEqual(seen[0], 3.4, places=2)
+        self.assertAlmostEqual(seen[1], 15.0, places=2)
+
     def test_keywords_reach_providers_that_support_them(self):
         """BUG-058: the hotword list is forwarded, capped at 20 terms."""
         seen = {}

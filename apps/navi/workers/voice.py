@@ -24,7 +24,8 @@ import speech_config
 import speech_out
 import tts
 from voice_stream import (AdaptiveVad, CaptureBuffer, CommandRouter, MicWatchdog,
-                          SilenceWatch, SpeechVad, SttQueue, StatusSnapshot, agc)
+                          PendingUtterance, SilenceWatch, SpeechVad, SttQueue, StatusSnapshot,
+                          agc)
 
 CANCEL_FILE = RUNTIME / "voice.cancel"
 # BUG-056: one settlement per capture. The daemon creates `voice.claim` for a
@@ -248,13 +249,52 @@ def _wake_variants():
         words = keyword.replace("▁", " ").split()
         names.add("".join(words))
     names.discard("")
-    mishearings = ("navy", "nadi", "nabi", "nave")
-    alternates = "|".join(sorted(names | set(mishearings), key=len, reverse=True))
+    alternates = "|".join(sorted(names | NAME_SPELLINGS, key=len, reverse=True))
     return alternates or "navi"
 
 
+# How recognizers spell the name, measured on 12 accented voices. Hex writes
+# Navi, Navy or Nevi; the small models also write the rest.
+NAME_SPELLINGS = frozenset({
+    "navi", "navy", "nevi", "nabi", "nadi", "nave", "novi", "navee", "navvy", "navie",
+    "nevie", "nevy", "naby", "nabby"})
+# What can come before the name in a call: "hey Navi", "okay Navi", "so, Navi".
+_LEAD_INS = frozenset({"hey", "hay", "hi", "ok", "okay", "hello", "yo", "so", "um", "uh",
+                       "oh", "well", "and", "a"})
+# Once the keyword spotter has fired, a first word of this shape is the name
+# misheard ("nappy", "maybe", "nuffy", "inavi"), not evidence of another sentence.
+_NAME_SHAPE = re.compile(r"^(?:[aei]n?)?[nm][aeiouy]+[wr]?[vbpfdt]+[aeiouy]*$")
+
+
+def opening_verdict(text, spotted):
+    """What the first words of an utterance say about a call. See CaptureBuffer.
+
+    `spotted` is whether the keyword spotter fired. Without it only a known
+    spelling of the name counts, so ordinary talk cannot wake Navi by itself.
+    Returns "name", "name_only", "stop", "other", or None for no words.
+    """
+    words = re.findall(r"[a-z']+", (text or "").casefold())
+    while words and words[0] in _LEAD_INS:
+        words.pop(0)
+    if not words:
+        return None
+
+    def is_name(word):
+        return word in NAME_SPELLINGS or (spotted and bool(_NAME_SHAPE.match(word)))
+
+    if is_name(words[0]):
+        rest = words[1:]
+    elif len(words) > 1 and is_name(words[0] + words[1]):  # "no bee", "now be"
+        rest = words[2:]
+    else:
+        return "other"
+    if not rest:
+        return "name_only"
+    return "stop" if " ".join(rest) in STOP_WORDS else "name"
+
+
 _STRIP_RE = re.compile(
-    rf"^(?:h(?:ey|ay)[\s,.!?]+)?(?:{_wake_variants()})\b[\s,.!?]*",
+    rf"^(?:(?:h(?:ey|ay|i)|ok(?:ay)?|hello)[\s,.!?]+)?(?:{_wake_variants()})\b[\s,.!?]*",
     flags=re.IGNORECASE)
 
 
@@ -593,6 +633,43 @@ def load_spotter(speech, data=DATA):
     )
 
 
+OPENING_FOLDER = Path("models/moonshine/sherpa-onnx-moonshine-tiny-en-quantized-2026-02-27")
+
+
+def load_opening(data=DATA):
+    """The check CaptureBuffer runs on the first words of an utterance, or None.
+
+    Moonshine tiny reads two seconds of audio in about 30 ms on one core, so it
+    runs on the capture thread. Its text is only used to decide whether a call
+    opens the utterance; the command itself is transcribed by the real engine.
+    """
+    folder = Path(data) / OPENING_FOLDER
+    try:
+        import numpy as np
+        import sherpa_onnx
+        recognizer = sherpa_onnx.OfflineRecognizer.from_moonshine_v2(
+            encoder=str(folder / "encoder_model.ort"),
+            decoder=str(folder / "decoder_model_merged.ort"),
+            tokens=str(folder / "tokens.txt"),
+            num_threads=2,
+        )
+    except Exception as error:  # noqa: BLE001 - optional model; the old cut still works
+        log(f"opening check unavailable ({error}); commands start where the wake word fired")
+        return None
+
+    def opening(blocks, spotted):
+        samples = np.concatenate(blocks).astype(np.float32)
+        level = float(np.sqrt(np.mean(np.square(samples))))
+        if level > 0:
+            samples = samples * min(0.1 / level, 12.0) if level < 0.1 else samples
+        stream = recognizer.create_stream()
+        stream.accept_waveform(16000, samples)
+        recognizer.decode_stream(stream)
+        return opening_verdict(stream.result.text, spotted)
+
+    return opening
+
+
 def load_vad(data=DATA):
     """The speech gate: Silero when installed, else the energy gate, which a quiet
     microphone can end mid-sentence, so that fallback is reported."""
@@ -655,6 +732,12 @@ def pcm16(blocks):
     return (np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes()
 
 
+# Whisper-family engines label a capture with no speech instead of returning
+# nothing, sometimes cut short ("[BLANK_AUD"). Sent on, it reached the assistant
+# as a command.
+_NOT_SPEECH = re.compile(r"^\s*[\[(][^\])]*[\])]?[\s.]*$")
+
+
 def recognize(blocks, engine, recognizer, status, cloud=True, *,
               wake_triggered=True, language=None, keywords=None):
     """Cloud first when credentials exist, then Hex, then the loaded engine.
@@ -708,6 +791,8 @@ def recognize(blocks, engine, recognizer, status, cloud=True, *,
             utterance.accept_waveform(16000, np.concatenate(blocks))
             recognizer.decode_stream(utterance)
             raw = utterance.result.text
+    if _NOT_SPEECH.match(raw or ""):
+        raw = ""  # "[BLANK_AUDIO]", "[ Silence ]": the engine's label for noise
     meta["raw"] = raw
     meta["language"] = language
     return command_for(raw, wake_triggered), source, meta
@@ -715,7 +800,7 @@ def recognize(blocks, engine, recognizer, status, cloud=True, *,
 
 def offline(samples, spotter, recognizer, engine, status=None, *, assume_wake=False,
             dispatch=None, quiet=.008, tail_blocks=45, vad=None, language=None,
-            recognize_fn=None):
+            recognize_fn=None, opening=None):
     """Run the live wake/endpoint/STT path over recorded float32 samples.
 
     `samples` is mono 16 kHz float32. `tail_blocks` of silence flush the last
@@ -729,7 +814,7 @@ def offline(samples, spotter, recognizer, engine, status=None, *, assume_wake=Fa
     status = status or {"settings": {"speech": {}, "profiles": [], "projects": [], "favorites": [], "sessions": []}}
     vad = vad or AdaptiveVad(floor=quiet)
     recognize_fn = recognize_fn or recognize
-    capture = CaptureBuffer(spotter)
+    capture = CaptureBuffer(spotter, opening=opening)
     if assume_wake:
         capture.start_recording()
         # assume_wake is a fired wake (no wake audio in the fixture), not a
@@ -776,8 +861,11 @@ def offline(samples, spotter, recognizer, engine, status=None, *, assume_wake=Fa
             event.blocks, engine, recognizer, status,
             wake_triggered=True, language=language)
         result["timings"]["stt"] = result["timings"].get("stt", 0) + time.monotonic() - stt_started
-        text = " ".join(part for part in segments + [transcript] if part)
+        # As in the live loop: segments are previews, and the final utterance holds
+        # the audio of the whole command. Joining both said every sentence twice.
+        text = transcript
         result["transcript"], result["source"], result["meta"] = text, source, meta
+        result["previews"] = segments
         if dispatch is not None and text:
             dispatch(text)
         break
@@ -927,15 +1015,20 @@ def main():
 
 
 def _handle_transcript(transcript, source, meta, commands, loaded_speech,
-                       snapshot, playback, event=None):
+                       snapshot, playback, event=None, pending=None):
     """Harness route (BUG-065), confirm hold (BUG-056), then dispatch.
 
     The confirm window gives the UI speech_config.confirm_seconds() to show
     the transcript in the composer before it runs. Exactly one side dispatches
     it: the UI's Enter claims `voice.claim` first and this hold claims it at
     the deadline otherwise; a cancel (or a new wake) sends nothing at all.
-    Returns the outcome string for voice_state.
+    With `pending`, the speaker carrying on before the text is sent wins over
+    all of them: nothing is sent and "continued" is returned (see
+    PendingUtterance). Returns the outcome string for voice_state.
     """
+    def sendable():
+        return pending is None or pending.take(event)
+
     clear_confirm()
     try:
         status = snapshot.value
@@ -948,12 +1041,16 @@ def _handle_transcript(transcript, source, meta, commands, loaded_speech,
             return "discarded"
         route = harness_target(transcript, status)
         if route is not None:
+            if not sendable():
+                return "continued"
             try:
                 rpc("prompt", {"id": route["id"], "text": route["text"]}, timeout=2)
                 return f"sent to {route['name']}"
             except (OSError, RuntimeError):
                 return "session unreachable"
-        hold = speech_config.confirm_seconds()
+        # "Stop" is never held for confirmation: every second of the hold is a
+        # second of the thing the user asked to stop.
+        hold = 0 if is_stop(transcript) else speech_config.confirm_seconds()
         confidence = (meta or {}).get("confidence")
         # BUG-059: low-confidence text is confirmed, not silently executed —
         # it gets a tripled window flagged unsure so a wake can still veto it.
@@ -969,6 +1066,8 @@ def _handle_transcript(transcript, source, meta, commands, loaded_speech,
             state("confirming", confirm_seconds=hold, **details)
             deadline = time.monotonic() + hold
             while time.monotonic() < deadline:
+                if pending is not None and not pending.waiting(event):
+                    return "continued"
                 if playback.confirm_interrupted:
                     return "interrupted"
                 signal = confirm_signal()
@@ -979,10 +1078,14 @@ def _handle_transcript(transcript, source, meta, commands, loaded_speech,
                     # here would run the command twice (BUG-056).
                     return "confirmed by UI"
                 time.sleep(.025)
+            if not sendable():
+                return "continued"
             # Nobody accepted it: only the side that wins the O_EXCL claim may
             # run it, so an accept racing this deadline cannot double-run it.
             if not claim_dispatch():
                 return "confirmed by UI"
+        elif not sendable():
+            return "continued"
         outcome = commands.dispatch(transcript, loaded_speech, status=status)
         if outcome == "queued":
             state("queued", **details)
@@ -997,6 +1100,8 @@ def _handle_transcript(transcript, source, meta, commands, loaded_speech,
         # second time (BUG-056); the stale-claim test covers the next capture.
         if not CLAIM_FILE.exists():
             clear_confirm()
+        if pending is not None:
+            pending.take(event)  # sent, withdrawn or interrupted: no longer resumable
 
 
 def listen(commands, playback=None, snapshot=None):
@@ -1004,13 +1109,14 @@ def listen(commands, playback=None, snapshot=None):
     owns_snapshot = snapshot is None
     snapshot = snapshot or StatusSnapshot(rpc)
     # Do not load speech libraries or open the microphone while disabled.
-    spotter = recognizer = None
+    spotter = recognizer = opening = None
     engine = "whistle"
     language = "en"
     loaded_speech = None
     stt_queue = None
     capture = None
     called_again = threading.Event()
+    pending = PendingUtterance()
     watchdog = MicWatchdog()
     stop_watchdog = threading.Event()
     threading.Thread(target=watch_microphone, args=(watchdog, stop_watchdog),
@@ -1036,6 +1142,8 @@ def listen(commands, playback=None, snapshot=None):
                       capturing=capture is not None and capture.recording is not None)
             return
         if not transcript:
+            if not pending.take(event):
+                return  # the speaker carried on; the capture loop has it
             # Only a call came through: they are still waiting to be heard, so
             # the capture loop answers and takes the request without another wake.
             if event.kind == "utterance" and only_wake(meta.get("raw")):
@@ -1049,7 +1157,9 @@ def listen(commands, playback=None, snapshot=None):
             state("recording limit reached — text may be incomplete")
         outcome = _handle_transcript(
             transcript, source, meta, commands, loaded_speech, snapshot,
-            playback, event)
+            playback, event, pending)
+        if outcome == "continued":
+            return  # the capture loop is recording the rest of the sentence
         state("chief busy; say Navi, stop" if outcome == "busy" else outcome,
               transcript=transcript, source=source,
               confidence=meta.get("confidence"))
@@ -1070,6 +1180,7 @@ def listen(commands, playback=None, snapshot=None):
                 if spotter is None or speech != loaded_speech:
                     state("loading speech")
                     spotter = load_spotter(speech)
+                    opening = load_opening()
                     engine, recognizer = load_recognizer(speech)
                     loaded_speech = speech.copy()
                     language = speech.get("language") or speech_config.language()
@@ -1083,7 +1194,7 @@ def listen(commands, playback=None, snapshot=None):
 
                     stt_queue = SttQueue(stt_job, on_result=on_stt)
                 vad = load_vad()
-                capture = CaptureBuffer(spotter)
+                capture = CaptureBuffer(spotter, opening=opening)
                 stop_detector = StopDetector()
                 silence = SilenceWatch()
                 barge_in = False
@@ -1162,11 +1273,10 @@ def listen(commands, playback=None, snapshot=None):
                             continue
                         wake_hits = 0
                         if barge_in:
-                            # Drop Navi's trailing output, then take the rest
-                            # of the user's command without another wake word.
+                            # Take the user's command without another wake word:
+                            # what they said since calling, or from now on.
                             barge_in = False
-                            capture.reset()
-                            capture.start_recording()
+                            capture.after_interrupt()
                             continue
                         if was_speaking:
                             was_speaking = False
@@ -1193,6 +1303,17 @@ def listen(commands, playback=None, snapshot=None):
                         if event is None:
                             event = capture.feed(samples, quiet=quiet_now, overflow=overflow)
                         if event is None:
+                            if capture.recording is None and not playback.recently_spoke():
+                                prior = pending.resume(quiet_now)
+                                if prior is not None:
+                                    # Said before the last sentence was sent: it is
+                                    # the rest of that sentence, not a new one.
+                                    log("speech resumed before the command was sent; still listening")
+                                    if stt_queue is not None:
+                                        stt_queue.cancel_pending()
+                                    capture.resume(prior)
+                                    clear_confirm()
+                                    state("hearing command", continued=True)
                             continue
                         if event.kind == "overflow":
                             # Pre-wake hiccup: pre-roll dropped, keep listening.
@@ -1203,10 +1324,13 @@ def listen(commands, playback=None, snapshot=None):
                             state("audio gap; still listening")
                         elif event.kind == "no_command":
                             state("listening", wake_word="Navi")
+                        elif event.kind == "mention":
+                            log("name heard inside a sentence, not at its start; ignored")
                         elif event.kind == "wake":
                             log("wake heard")
                             acknowledge_wake()
                             playback.confirm_interrupted = True
+                            pending.drop()
                             # A new capture starts unclaimed (BUG-056).
                             clear_confirm()
                             if stt_queue is not None:
@@ -1223,6 +1347,7 @@ def listen(commands, playback=None, snapshot=None):
                             # BUG-054: STT runs on its worker; the mic never stops.
                             log(capture_report(event))
                             state("transcribing", vad=vad.state())
+                            pending.hold(event)
                             if stt_queue is not None:
                                 stt_queue.submit(event)
                             else:

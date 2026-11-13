@@ -63,7 +63,7 @@ class CaptureTests(unittest.TestCase):
     def test_no_utterance_without_wake_and_pre_roll_is_bounded(self):
         for _ in range(500):
             self.assertIsNone(self.feed())
-        self.assertEqual(len(self.capture.pre_roll), 30)
+        self.assertEqual(len(self.capture.pre_roll), self.capture.pre_roll_blocks)
         self.assertIsNone(self.capture.recording)
 
     def test_wake_and_pause_audio_never_reach_the_utterance(self):
@@ -281,6 +281,210 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(values[:15], [3] + [7] * 14)
         self.assertEqual(len(event.blocks), 15 + self.capture.tail_blocks)
         self.assertIsNone(self.capture.recording)
+
+
+class OpeningTests(unittest.TestCase):
+    """With an opening check the command starts at the first word of the utterance
+    the name was said in. Block values label the audio: 1.. is the caller's speech,
+    0 is silence, -1 is the block where the keyword spotter fires."""
+
+    def setUp(self):
+        self.verdicts = []
+        self.asked = []
+        self.capture = CaptureBuffer(WakeSpotter(), opening=self.opening)
+        self.capture.ack_blocks = 0
+
+    def opening(self, blocks, spotted):
+        self.asked.append(([block[0] for block in blocks], spotted))
+        return self.verdicts.pop(0) if self.verdicts else None
+
+    def feed(self, value=0, *, quiet=False):
+        return self.capture.feed([value] * 1600, quiet=quiet)
+
+    def silence(self, blocks):
+        for _ in range(blocks):
+            self.assertIsNone(self.feed(quiet=True))
+
+    def finish(self):
+        """Feed silence until the utterance commits; returns its block labels."""
+        for _ in range(self.capture.quiet_blocks + 5):
+            event = self.feed(quiet=True)
+            if event is not None:
+                self.assertEqual(event.kind, "utterance")
+                return [block[0] for block in event.blocks]
+        self.fail("no utterance")
+
+    def test_words_said_before_the_spotter_fired_are_kept(self):
+        """"Navi, open the settings": the spotter fires while "open" is being said.
+        Cutting there sent "the settings"; the whole sentence must be sent."""
+        self.silence(10)
+        self.verdicts = ["name"]
+        for value in (1, 2, 3, 4, 5, 6):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        self.assertEqual(self.asked[0][1], True)
+        for value in (8, 9, 10):
+            self.assertIsNone(self.feed(value))
+        heard = self.finish()
+        self.assertEqual([value for value in heard if value], [1, 2, 3, 4, 5, 6, -1, 8, 9, 10])
+
+    def test_a_name_inside_a_sentence_is_not_a_call(self):
+        """"The meeting moved because the navigation team...": the spotter fires 2 s
+        into a sentence that opens with other words. Nothing is captured."""
+        self.silence(10)
+        self.verdicts = ["other", "other"]  # the 1.2 s look, then the spotter's hit
+        for value in range(1, 21):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "mention")
+        self.assertIsNone(self.capture.recording)
+        for value in range(30, 40):
+            self.assertIsNone(self.feed(value))
+        self.silence(60)
+        self.assertIsNone(self.capture.recording)
+
+    def test_a_call_the_spotter_missed_is_still_heard(self):
+        """The spotter stays silent; the first words read as the name. The call is
+        taken 1.2 s in, with every word since the start of the utterance."""
+        self.silence(10)
+        self.verdicts = ["name"]
+        event = None
+        for value in range(1, 13):
+            event = self.feed(value)
+        self.assertEqual(event.kind, "wake")
+        self.assertEqual(self.asked, [([0, 0] + list(range(1, 13)), False)])
+        self.assertIsNone(self.feed(13))
+        heard = self.finish()
+        self.assertEqual([value for value in heard if value], list(range(1, 14)))
+
+    def test_ordinary_talk_is_looked_at_once_and_never_wakes(self):
+        self.silence(10)
+        self.verdicts = ["other"]
+        for value in range(1, 60):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(len(self.asked), 1)
+        self.silence(10)
+        self.assertIsNone(self.capture.recording)
+
+    def test_a_late_spotter_hit_recovers_the_whole_sentence(self):
+        """"Navi, I want a new session in the Navi project so the old context can
+        leave": the spotter misses the first name and fires on the second. The
+        utterance opens with the name, so it is kept from its first word."""
+        self.silence(10)
+        self.verdicts = [None, "name"]  # the 1.2 s look could not tell
+        for value in range(1, 31):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        for value in range(40, 45):
+            self.assertIsNone(self.feed(value))
+        heard = [value for value in self.finish() if value]
+        self.assertEqual(heard, list(range(1, 31)) + [-1] + list(range(40, 45)))
+
+    def test_only_the_name_then_a_pause_waits_for_the_request(self):
+        """"Navi." ... "open the settings": the name is left out of the command."""
+        self.silence(10)
+        self.verdicts = ["name_only", "name_only"]  # at the hit, then at the first pause
+        for value in (1, 2, 3, 4):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        self.silence(15)
+        self.assertTrue(self.capture.awaiting_speech)
+        for value in (20, 21, 22):
+            self.assertIsNone(self.feed(value))
+        heard = [value for value in self.finish() if value]
+        self.assertEqual(heard, [20, 21, 22])
+
+    def test_only_the_name_and_then_nothing_ends_without_a_command(self):
+        self.silence(10)
+        self.verdicts = ["name_only", "name_only"]
+        for value in (1, 2, 3, 4):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        events = [self.feed(quiet=True) for _ in range(self.capture.wake_grace_blocks)]
+        self.assertEqual([event.kind for event in events if event], ["no_command"])
+
+    def test_navi_stop_is_sent_at_the_first_pause(self):
+        """Stop must not wait four seconds for the usual end of a sentence."""
+        self.silence(10)
+        self.verdicts = ["name", "stop"]
+        for value in (1, 2, 3, 4, 5):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        self.assertIsNone(self.feed(7))
+        events = [self.feed(quiet=True) for _ in range(self.capture.burst_gap_blocks)]
+        self.assertEqual([event.kind for event in events if event], ["utterance"])
+        self.assertEqual([block[0] for block in events[-1].blocks if block[0]], [1, 2, 3, 4, 5, -1, 7])
+
+    def test_a_misheard_name_right_at_the_start_is_still_a_call(self):
+        """The spotter fired 0.5 s into the utterance: there was no room for other
+        words before the name, whatever the small recognizer wrote."""
+        self.silence(10)
+        self.verdicts = ["other"]
+        for value in (1, 2, 3, 4):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+
+    def test_a_failing_check_never_loses_a_call(self):
+        def broken(blocks, spotted):
+            raise RuntimeError("model crashed")
+        self.capture.opening = broken
+        self.silence(10)
+        for value in range(1, 20):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+
+    def test_a_hit_with_nothing_being_said_cuts_at_the_hit_as_before(self):
+        self.silence(10)
+        self.assertEqual(self.feed(-1, quiet=True).kind, "wake")
+        self.assertTrue(self.capture.awaiting_speech)
+        self.assertEqual(self.asked, [])
+
+    def test_carrying_on_joins_the_new_speech_to_the_utterance_already_captured(self):
+        """"Can you open the project" (long pause) "and run the tests": the second
+        half continues the first, and one utterance holds both."""
+        self.silence(10)
+        self.verdicts = ["name"]
+        for value in (1, 2, 3, 4):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        first = self.finish()
+        self.assertIsNone(self.capture.recording)
+        self.silence(8)
+        for value in (50, 51, 52):
+            self.assertIsNone(self.feed(value))
+        self.capture.resume(tuple([value] * 1600 for value in first))
+        for value in (53, 54):
+            self.assertIsNone(self.feed(value))
+        whole = [value for value in self.finish() if value]
+        self.assertEqual(whole, [1, 2, 3, 4, -1, 50, 51, 52, 53, 54])
+
+    def test_a_call_over_navis_reply_keeps_the_request(self):
+        """"Navi, open the settings" said while Navi talks: once Navi goes quiet the
+        capture carries on with the request instead of starting again from nothing."""
+        self.silence(10)
+        self.verdicts = ["name"]
+        for value in (1, 2, 3, 4, 5):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        self.assertIsNone(self.feed(7))
+        self.capture.after_interrupt()
+        self.assertIsNone(self.feed(8))
+        self.assertEqual([value for value in self.finish() if value], [1, 2, 3, 4, 5, -1, 7, 8])
+
+    def test_a_call_cut_at_the_hit_still_starts_again_after_navis_reply(self):
+        self.silence(10)
+        self.assertEqual(self.feed(-1, quiet=True).kind, "wake")
+        self.capture.after_interrupt()
+        self.assertTrue(self.capture.barge_in)
+        self.assertFalse(self.capture.awaiting_speech)
+
+    def test_a_room_that_never_pauses_cuts_at_the_hit_as_before(self):
+        """Music or a video keeps the speech gate open. The start of the "utterance"
+        is long gone, so the call is taken the old way instead of being refused."""
+        self.verdicts = ["other"]
+        for value in range(1, self.capture.pre_roll_blocks + 20):
+            self.assertIsNone(self.feed(value))
+        self.assertEqual(self.feed(-1).kind, "wake")
+        self.assertTrue(self.capture.awaiting_speech)
 
 
 class TrimTests(unittest.TestCase):

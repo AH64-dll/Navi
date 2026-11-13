@@ -43,6 +43,9 @@ CF_STT_URL = os.environ.get(
 GEMINI_URL = os.environ.get(
     "NAVI_GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta/interactions")
 
+# Extra timeout per second of audio, on top of speech.json's timeout_seconds.
+LONG_AUDIO_ALLOWANCE = 0.2
+
 # name -> monotonic timestamp until which the provider is disabled.
 _BREAKERS = {}
 # name -> consecutive failure count; the breaker opens at breaker_failures.
@@ -246,7 +249,11 @@ def transcribe_result(audio_bytes, sample_rate=16000, language=None,
     if not audio_bytes:
         return None, None
     wav = pcm16_to_wav(audio_bytes, sample_rate)
-    timeout = speech_config.timeout_seconds()
+    # The configured timeout fits a two-second command. A minute of dictation is
+    # 2 MB to upload and longer to transcribe, and with a flat 3 s every long
+    # command fell through to the weaker local engines.
+    seconds = max(0, len(wav) - 44) / (2 * int(sample_rate))
+    timeout = speech_config.timeout_seconds() + seconds * LONG_AUDIO_ALLOWANCE
     retries = speech_config.retry_attempts()
     for name in (order or speech_config.provider_order("stt")):
         provider = PROVIDERS.get(name)
