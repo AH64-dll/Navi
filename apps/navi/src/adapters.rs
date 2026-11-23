@@ -36,6 +36,10 @@ const EXTERNAL_ROW_LIMIT: usize = 50;
 
 #[derive(Clone, Copy, Default)]
 pub struct Caps {
+    /// Transport: "opencode", "acp", or "tmux".
+    pub transport: &'static str,
+    /// ACP launch command when transport == "acp".
+    pub acp_cmd: &'static [&'static str],
     /// Harness accepts a caller-chosen conversation id before launch.
     pub preseed_id: bool,
     /// Harness can resume an explicit conversation id or name.
@@ -45,6 +49,10 @@ pub struct Caps {
     /// A documented structured prompt channel exists (unused for tmux panes;
     /// bracketed paste remains the transport).
     pub structured_prompt: bool,
+    pub fork: bool,
+    pub cancel: bool,
+    pub approvals: bool,
+    pub models: bool,
     /// Unknown behaviours are marked instead of assumed.
     pub unknowns: &'static [&'static str],
 }
@@ -52,10 +60,16 @@ pub struct Caps {
 impl Caps {
     pub fn json(&self) -> Value {
         json!({
+            "transport": self.transport,
+            "acp_cmd": self.acp_cmd,
             "preseed_id": self.preseed_id,
             "resume_id": self.resume_id,
             "resume_last": self.resume_last,
             "structured_prompt": self.structured_prompt,
+            "fork": self.fork,
+            "cancel": self.cancel,
+            "approvals": self.approvals,
+            "models": self.models,
             "unknowns": self.unknowns,
         })
     }
@@ -88,47 +102,78 @@ pub fn adapter_for(harness: &str) -> &'static str {
 pub fn caps(harness: &str) -> Caps {
     match adapter_for(harness) {
         "claude" => Caps {
+            transport: "acp",
+            acp_cmd: &["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
             preseed_id: true,
             resume_id: true,
             resume_last: true,
-            structured_prompt: false,
+            structured_prompt: true,
+            fork: false,
+            cancel: true,
+            approvals: true,
+            models: false,
             unknowns: &[],
         },
         "codex" => Caps {
+            transport: "acp",
+            acp_cmd: &["npx", "-y", "@agentclientprotocol/codex-acp"],
             preseed_id: false,
             resume_id: true,
             resume_last: true,
             structured_prompt: true,
+            fork: false,
+            cancel: true,
+            approvals: true,
+            models: false,
             unknowns: &[
                 "no documented id preseed; native id scraped from rollout jsonl",
-                "structured prompt channel probed, not used over tmux",
             ],
         },
         "agy" => Caps {
+            transport: "tmux",
+            acp_cmd: &[],
             preseed_id: false,
             resume_id: true,
             resume_last: true,
             structured_prompt: true,
+            fork: false,
+            cancel: true,
+            approvals: false,
+            models: false,
             unknowns: &[
                 "conversation id approximated from last_conversations.json",
                 "structured prompt channel probed, not used over tmux",
             ],
         },
         "pi" => Caps {
+            transport: "acp",
+            acp_cmd: &["npx", "-y", "pi-acp"],
             preseed_id: false,
             resume_id: true,
             resume_last: true,
-            structured_prompt: false,
+            structured_prompt: true,
+            fork: false,
+            cancel: true,
+            approvals: true,
+            models: false,
             unknowns: &["native id not captured; resume by session file or id prefix"],
         },
         "opencode" => Caps {
+            transport: "opencode",
+            acp_cmd: &[],
             preseed_id: false,
             resume_id: true,
             resume_last: true,
-            structured_prompt: false,
+            structured_prompt: true,
+            fork: true,
+            cancel: true,
+            approvals: true,
+            models: true,
             unknowns: &["native id not captured; resume uses --continue or --session"],
         },
         _ => Caps {
+            transport: "tmux",
+            acp_cmd: &[],
             unknowns: &["generic harness: only the tmux fallback applies"],
             ..Caps::default()
         },

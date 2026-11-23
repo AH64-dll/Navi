@@ -1012,6 +1012,147 @@ impl App {
         project_id: Option<&str>,
         directory: Option<&str>,
     ) -> std::result::Result<Value, GatewayFailure> {
+        // Phase 4: try the long-lived opencode_bridge.py Unix socket first;
+        // fall back to spawning opencode_gateway.py if the socket is absent.
+        if let Some((op, bridge_args)) = cli_to_bridge_op(&args.iter().map(String::as_str).collect::<Vec<_>>(), true)
+            && let Ok(mut sock) = std::os::unix::net::UnixStream::connect(self.runtime.join("opencode.sock"))
+        {
+            let _ = sock.set_read_timeout(Some(Duration::from_secs(2)));
+            let req = json!({"id":"1","op":op,"args":bridge_args}).to_string() + "\n";
+            if sock.write_all(req.as_bytes()).is_ok() {
+                let (sender, receiver) = std::sync::mpsc::channel::<String>();
+                std::thread::spawn(move || {
+                    let mut reader = BufReader::new(sock);
+                    loop {
+                        let mut line = String::new();
+                        match reader.read_line(&mut line) {
+                            Ok(0) => break,
+                            Ok(_) => {
+                                let trimmed = line.trim().to_string();
+                                if !trimmed.is_empty() && sender.send(trimmed).is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => continue,
+                            Err(_) => break,
+                        }
+                    }
+                });
+                let deadline = now() + 1_810_000;
+                let turn_id = self.begin_turn();
+                let mut turn = GatewayTurn::default();
+                let mut done: Option<Value> = None;
+                let mut unflushed = 0_usize;
+                let mut flushed_at = now();
+                loop {
+                    if self.generation.load(Ordering::SeqCst) != generation {
+                        let interrupted = self.gateway_interrupt();
+                        self.turn_finish(&turn_id, &turn.accumulated);
+                        return Err(GatewayFailure::new("stopped", interrupted));
+                    }
+                    if now() > deadline {
+                        let interrupted = self.gateway_interrupt();
+                        self.turn_finish(&turn_id, &turn.accumulated);
+                        return Err(GatewayFailure::new(
+                            format!("The assistant took too long to answer (interrupted: {interrupted})"),
+                            interrupted,
+                        ));
+                    }
+                    match receiver.recv_timeout(Duration::from_millis(50)) {
+                        Ok(raw) => {
+                            if let Ok(msg) = serde_json::from_str::<Value>(&raw) {
+                                if !msg["stream"].is_null() {
+                                    let Some(mut event) = map_gateway_line(&msg["stream"].to_string()) else {
+                                        continue;
+                                    };
+                                    if !turn.record(&mut event) {
+                                        continue;
+                                    }
+                                    if !matches!(event, GatewayLine::Delta(_)) && unflushed > 0 {
+                                        self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
+                                        unflushed = 0;
+                                        flushed_at = now();
+                                    }
+                                    match event {
+                                        GatewayLine::Delta(text) => {
+                                            unflushed += text.chars().count();
+                                            if unflushed >= 16 || now().saturating_sub(flushed_at) >= 120 {
+                                                self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
+                                                unflushed = 0;
+                                                flushed_at = now();
+                                            }
+                                        }
+                                        GatewayLine::Reasoning(text, first) => {
+                                            if first {
+                                                self.event_for(project_id, None, "thinking", "Thinking", json!({"reasoning":true}));
+                                            }
+                                            self.event_for(project_id, None, "reasoning", &text, json!({"text":text}));
+                                        }
+                                        GatewayLine::ToolStatus { id, name, input, progress } => {
+                                            self.event_for(project_id, None, "tool_use", name.as_deref().unwrap_or("tool"),
+                                                json!({"id":id,"name":name,"status":"running","input":input,"progress":progress,"final":false}));
+                                        }
+                                        GatewayLine::ToolFinal { id, name, status, input, output, exit } => {
+                                            self.event_for(project_id, None, "tool_use", name.as_deref().unwrap_or("tool"),
+                                                json!({"id":id,"name":name,"status":status,"input":input,"output":output,"exit":exit,"final":true}));
+                                        }
+                                        GatewayLine::Permission { id, tool, input } => {
+                                            self.event_for(project_id, None, "approval",
+                                                &format!("{} needs approval", tool.as_deref().unwrap_or("A tool")),
+                                                json!({"id":id,"tool":tool,"input":input}));
+                                        }
+                                        GatewayLine::Form { id, session, title, fields, metadata } => {
+                                            self.event_for(project_id, session.as_deref(), "form",
+                                                title.as_deref().unwrap_or("Question"),
+                                                json!({"id":id,"session":session,"title":title,"fields":fields,"metadata":metadata}));
+                                        }
+                                        GatewayLine::FormSettled { id, outcome } => {
+                                            self.event_for(project_id, None, "form_settled",
+                                                outcome.as_deref().unwrap_or("Question answered"),
+                                                json!({"id":id,"outcome":outcome}));
+                                        }
+                                        GatewayLine::Warning(text) => {
+                                            self.event_for(project_id, None, "warning", &text, json!({"text":text}));
+                                        }
+                                        GatewayLine::Error(text) => {
+                                            self.turn_finish(&turn_id, &turn.accumulated);
+                                            return Err(GatewayFailure::new(text, false));
+                                        }
+                                        GatewayLine::Done(value) => done = Some(*value),
+                                    }
+                                } else if msg["id"] == "1" {
+                                    if msg["ok"].as_bool() == Some(true) {
+                                        done = Some(msg["result"].clone());
+                                        break;
+                                    } else {
+                                        let err = msg["error"].as_str().unwrap_or("OpenCode bridge error").to_string();
+                                        self.turn_finish(&turn_id, &turn.accumulated);
+                                        return Err(GatewayFailure::new(err, false));
+                                    }
+                                }
+                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            if unflushed > 0 && now().saturating_sub(flushed_at) >= 120 {
+                                self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
+                                unflushed = 0;
+                                flushed_at = now();
+                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+                if unflushed > 0 {
+                    self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
+                }
+                if let Some(done) = done {
+                    self.turn_finish(&turn_id, &turn.accumulated);
+                    return Ok(self.finish_turn(done, &mut turn));
+                }
+                self.turn_finish(&turn_id, &turn.accumulated);
+                return Err(GatewayFailure::new("OpenCode bridge closed unexpectedly", false));
+            }
+        }
         let mut child = Command::new(self.python())
             .arg(self.root.join("workers/opencode_gateway.py"))
             .args(args)
@@ -1143,6 +1284,30 @@ impl App {
                                 json!({"id":id,"tool":tool,"input":input}),
                             );
                         }
+                        GatewayLine::Form {
+                            id,
+                            session,
+                            title,
+                            fields,
+                            metadata,
+                        } => {
+                            self.event_for(
+                                project_id,
+                                session.as_deref(),
+                                "form",
+                                title.as_deref().unwrap_or("Question"),
+                                json!({"id":id,"session":session,"title":title,"fields":fields,"metadata":metadata}),
+                            );
+                        }
+                        GatewayLine::FormSettled { id, outcome } => {
+                            self.event_for(
+                                project_id,
+                                None,
+                                "form_settled",
+                                outcome.as_deref().unwrap_or("Question answered"),
+                                json!({"id":id,"outcome":outcome}),
+                            );
+                        }
                         GatewayLine::Warning(text) => {
                             self.event_for(
                                 project_id,
@@ -1211,6 +1376,11 @@ impl App {
     }
 
     pub fn gateway_op(&self, args: &[&str]) -> Result<Value> {
+        if let Some((op, bridge_args)) = cli_to_bridge_op(args, false)
+            && let Some(res) = self.bridge_request(op, &bridge_args)
+        {
+            return res;
+        }
         // Bound the gateway call: an unreachable OpenCode must fail fast, not
         // pin the UI request that asked for its catalog.
         let mut child = Command::new(self.python())
@@ -1266,9 +1436,14 @@ impl App {
     }
 
     /// POST a permission decision for a gated tool (BUG-006).
-    pub fn permission_reply(&self, permission_id: &str, decision: &str) -> Result<Value> {
-        if !matches!(decision, "allow" | "deny") {
-            return Err("Permission decision must be allow or deny".into());
+    pub fn permission_reply(
+        &self,
+        permission_id: &str,
+        decision: &str,
+        session_id: Option<&str>,
+    ) -> Result<Value> {
+        if !matches!(decision, "allow" | "always" | "deny") {
+            return Err("Permission decision must be allow, always, or deny".into());
         }
         if permission_id.is_empty() || permission_id.chars().any(char::is_control) {
             return Err("Invalid permission id".into());
@@ -1281,6 +1456,10 @@ impl App {
             "--decision",
             decision,
         ];
+        if let Some(session) = session_id.filter(|s| !s.is_empty() && !s.chars().any(char::is_control)) {
+            args.push("--session");
+            args.push(session);
+        }
         if let Some(directory) = directory.as_deref() {
             args.push("--directory");
             args.push(directory);
@@ -1298,6 +1477,445 @@ impl App {
         }
         Ok(reply)
     }
+
+    pub fn form_reply(&self, form_id: &str, answer: &Value, session_id: Option<&str>) -> Result<Value> {
+        if form_id.is_empty() || form_id.chars().any(char::is_control) {
+            return Err("Invalid form id".into());
+        }
+        if !answer.is_object() {
+            return Err("Form answer must be an object".into());
+        }
+        let answer_json = answer.to_string();
+        let directory = self.assistant_dir.lock().unwrap().clone();
+        let mut args = vec!["form", "--id", form_id, "--answer", &answer_json];
+        if let Some(session) = session_id.filter(|s| !s.is_empty() && !s.chars().any(char::is_control)) {
+            args.push("--session");
+            args.push(session);
+        }
+        if let Some(directory) = directory.as_deref() {
+            args.push("--directory");
+            args.push(directory);
+        }
+        let reply = self.gateway_op(&args)?;
+        let refusal = reply["error"].as_str().unwrap_or_default().trim();
+        if reply["replied"].as_bool() != Some(true) || !refusal.is_empty() {
+            return Err(if refusal.is_empty() {
+                "OpenCode did not accept the form answer".into()
+            } else {
+                refusal.to_string()
+            });
+        }
+        Ok(reply)
+    }
+
+    pub fn form_cancel(&self, form_id: &str, session_id: Option<&str>) -> Result<Value> {
+        if form_id.is_empty() || form_id.chars().any(char::is_control) {
+            return Err("Invalid form id".into());
+        }
+        let directory = self.assistant_dir.lock().unwrap().clone();
+        let mut args = vec!["form_cancel", "--id", form_id];
+        if let Some(session) = session_id.filter(|s| !s.is_empty() && !s.chars().any(char::is_control)) {
+            args.push("--session");
+            args.push(session);
+        }
+        if let Some(directory) = directory.as_deref() {
+            args.push("--directory");
+            args.push(directory);
+        }
+        self.gateway_op(&args)
+    }
+
+    fn valid_oc_id(id: &str) -> Result<&str> {
+        if id.is_empty() || id.chars().any(char::is_control) {
+            return Err("Invalid OpenCode id".into());
+        }
+        Ok(id)
+    }
+
+    pub fn oc_sessions(&self, p: &Value) -> Result<Value> {
+        let dir = if let Some(d) = p["directory"].as_str().filter(|s| !s.is_empty()) {
+            d.to_string()
+        } else {
+            self.assistant_project(p["project_id"].as_str())?["path"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        };
+        let mut args = vec!["sessions".to_string()];
+        if !dir.is_empty() {
+            args.push("--directory".into());
+            args.push(dir);
+        }
+        if let Some(search) = p["search"].as_str().filter(|s| !s.is_empty()) {
+            args.push("--search".into());
+            args.push(search.to_string());
+        }
+        if let Some(archived) = p["archived"].as_bool() {
+            args.push("--archived".into());
+            args.push(if archived { "true" } else { "false" }.into());
+        }
+        if let Some(limit) = p["limit"].as_u64() {
+            args.push("--limit".into());
+            args.push(limit.to_string());
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.gateway_op(&refs)
+    }
+
+    pub fn oc_session_get(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        self.gateway_op(&["session_get", "--session", id])
+    }
+
+    pub fn oc_session_messages(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        let mut args = vec!["session_messages".to_string(), "--session".into(), id.to_string()];
+        if let Some(limit) = p["limit"].as_u64() {
+            args.push("--limit".into());
+            args.push(limit.to_string());
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.gateway_op(&refs)
+    }
+
+    pub fn oc_session_select(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        let project = self.assistant_project(p["project_id"].as_str())?;
+        let project_id = project["id"].as_str().unwrap_or_default();
+        let directory = project["path"].as_str().unwrap_or_default();
+        let res = self.gateway_op(&["session_select", "--session", id, "--directory", directory])?;
+        let (model, agent) = {
+            let (_, m, a) = self.assistant_target();
+            (m, a)
+        };
+        let _ = self.record_assistant_session(project_id, id, &model, &agent);
+        Ok(json!({"session": res["session"], "project_id": project_id, "directory": directory}))
+    }
+
+    pub fn oc_session_rename(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        let title = p["title"].as_str().ok_or("Missing title")?.trim();
+        if title.is_empty() {
+            return Err("Title cannot be empty".into());
+        }
+        self.gateway_op(&["session_rename", "--session", id, title])
+    }
+
+    pub fn oc_session_fork(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        if let Some(before) = p["before"].as_str().filter(|s| !s.is_empty()) {
+            self.gateway_op(&["session_fork", "--session", id, "--before", before])
+        } else {
+            self.gateway_op(&["session_fork", "--session", id])
+        }
+    }
+
+    pub fn oc_session_archive(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        let archived = p["archived"].as_bool().unwrap_or(true);
+        self.gateway_op(&["session_archive", "--session", id, "--archived", if archived { "true" } else { "false" }])
+    }
+
+    pub fn oc_session_delete(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        let res = self.gateway_op(&["session_delete", "--session", id])?;
+        let state = self.state.lock().unwrap();
+        let _ = state.db.execute("DELETE FROM assistant_sessions WHERE session_id=?1", [id]);
+        Ok(res)
+    }
+
+    pub fn oc_session_compact(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing session id")?)?;
+        self.gateway_op(&["session_compact", "--session", id])
+    }
+
+    pub fn oc_catalog(&self, p: &Value) -> Result<Value> {
+        let name = p["name"].as_str().ok_or("Missing catalog name")?;
+        let force = p["force"].as_bool().unwrap_or(false);
+        if !force {
+            let cache = self.oc_catalog_cache.lock().unwrap();
+            if let Some((at, value)) = cache.get(name)
+                && now().saturating_sub(*at) < 30_000
+            {
+                return Ok(value.clone());
+            }
+        }
+        let value = self.gateway_op(&["catalog", name])?;
+        self.oc_catalog_cache.lock().unwrap().insert(name.to_string(), (now(), value.clone()));
+        Ok(value)
+    }
+
+    fn invalidate_catalog(&self, names: &[&str]) {
+        let mut cache = self.oc_catalog_cache.lock().unwrap();
+        for name in names {
+            cache.remove(*name);
+        }
+    }
+
+    pub fn oc_switch_model(&self, p: &Value) -> Result<Value> {
+        let model = p["model"].as_str().ok_or("Missing model")?;
+        let mut args = vec!["switch_model".to_string(), "--model".into(), model.to_string()];
+        if let Some(session) = p["session"].as_str().filter(|s| !s.is_empty()) {
+            args.push("--session".into());
+            args.push(session.to_string());
+        } else if let Ok(project) = self.assistant_project(p["project_id"].as_str())
+            && let Some(path) = project["path"].as_str()
+        {
+            args.push("--directory".into());
+            args.push(path.to_string());
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let res = self.gateway_op(&refs)?;
+        self.invalidate_catalog(&["models", "model_default"]);
+        Ok(res)
+    }
+
+    pub fn oc_switch_agent(&self, p: &Value) -> Result<Value> {
+        let agent = p["agent"].as_str().ok_or("Missing agent")?;
+        let mut args = vec!["switch_agent".to_string(), "--agent".into(), agent.to_string()];
+        if let Some(session) = p["session"].as_str().filter(|s| !s.is_empty()) {
+            args.push("--session".into());
+            args.push(session.to_string());
+        } else if let Ok(project) = self.assistant_project(p["project_id"].as_str())
+            && let Some(path) = project["path"].as_str()
+        {
+            args.push("--directory".into());
+            args.push(path.to_string());
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let res = self.gateway_op(&refs)?;
+        self.invalidate_catalog(&["agents"]);
+        Ok(res)
+    }
+
+    pub fn oc_mcp_add(&self, p: &Value) -> Result<Value> {
+        let name = Self::valid_oc_id(p["name"].as_str().ok_or("Missing MCP server name")?)?;
+        let payload = p["config"].to_string();
+        let res = self.gateway_op(&["mcp_add", "--name", name, "--payload", &payload])?;
+        self.invalidate_catalog(&["mcp"]);
+        Ok(res)
+    }
+
+    pub fn oc_mcp_remove(&self, p: &Value) -> Result<Value> {
+        let name = Self::valid_oc_id(p["name"].as_str().ok_or("Missing MCP server name")?)?;
+        let res = self.gateway_op(&["mcp_remove", "--name", name])?;
+        self.invalidate_catalog(&["mcp"]);
+        Ok(res)
+    }
+
+    pub fn oc_mcp_connect(&self, p: &Value) -> Result<Value> {
+        let name = Self::valid_oc_id(p["name"].as_str().ok_or("Missing MCP server name")?)?;
+        let res = self.gateway_op(&["mcp_connect", "--name", name])?;
+        self.invalidate_catalog(&["mcp"]);
+        Ok(res)
+    }
+
+    pub fn oc_mcp_disconnect(&self, p: &Value) -> Result<Value> {
+        let name = Self::valid_oc_id(p["name"].as_str().ok_or("Missing MCP server name")?)?;
+        let res = self.gateway_op(&["mcp_disconnect", "--name", name])?;
+        self.invalidate_catalog(&["mcp"]);
+        Ok(res)
+    }
+
+    pub fn oc_permission_saved_remove(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing saved permission id")?)?;
+        let res = self.gateway_op(&["permission_saved_remove", "--id", id])?;
+        self.invalidate_catalog(&["permissions_saved"]);
+        Ok(res)
+    }
+
+    pub fn oc_credential_activate(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing credential id")?)?;
+        let res = self.gateway_op(&["credential_activate", "--id", id])?;
+        self.invalidate_catalog(&["credentials", "providers", "integrations"]);
+        Ok(res)
+    }
+
+    pub fn oc_integration_oauth_connect(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing integration id")?)?;
+        let payload = p["payload"].to_string();
+        self.gateway_op(&["integration_oauth_connect", "--id", id, "--payload", &payload])
+    }
+
+    pub fn oc_integration_oauth_status(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing integration id")?)?;
+        let attempt = Self::valid_oc_id(p["attempt"].as_str().ok_or("Missing attempt id")?)?;
+        let res = self.gateway_op(&["integration_oauth_status", "--id", id, "--attempt", attempt])?;
+        self.invalidate_catalog(&["integrations", "credentials", "providers"]);
+        Ok(res)
+    }
+
+    pub fn oc_integration_oauth_complete(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing integration id")?)?;
+        let attempt = Self::valid_oc_id(p["attempt"].as_str().ok_or("Missing attempt id")?)?;
+        let payload = p["payload"].to_string();
+        let res = self.gateway_op(&["integration_oauth_complete", "--id", id, "--attempt", attempt, "--payload", &payload])?;
+        self.invalidate_catalog(&["integrations", "credentials", "providers"]);
+        Ok(res)
+    }
+
+    pub fn oc_integration_connect_key(&self, p: &Value) -> Result<Value> {
+        let id = Self::valid_oc_id(p["id"].as_str().ok_or("Missing integration id")?)?;
+        let payload = p["payload"].to_string();
+        let res = self.gateway_op(&["integration_connect_key", "--id", id, "--payload", &payload])?;
+        self.invalidate_catalog(&["integrations", "credentials", "providers"]);
+        Ok(res)
+    }
+    fn bridge_request(&self, op: &str, args: &Value) -> Option<Result<Value>> {
+        let sock_path = self.runtime.join("opencode.sock");
+        let mut sock = std::os::unix::net::UnixStream::connect(sock_path).ok()?;
+        let _ = sock.set_read_timeout(Some(Duration::from_secs(15)));
+        let _ = sock.set_write_timeout(Some(Duration::from_secs(5)));
+        let req = json!({"id":"1","op":op,"args":args}).to_string() + "\n";
+        if sock.write_all(req.as_bytes()).is_err() {
+            return None;
+        }
+        let mut reader = BufReader::new(sock);
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) | Err(_) => None,
+            Ok(_) => {
+                let val: Value = match serde_json::from_str(line.trim()) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e.to_string())),
+                };
+                if val["ok"].as_bool() == Some(true) {
+                    Some(Ok(val["result"].clone()))
+                } else {
+                    Some(Err(val["error"].as_str().unwrap_or("OpenCode bridge error").to_string()))
+                }
+            }
+        }
+    }
+
+    pub fn oc_contract_check(&self) -> Result<Value> {
+        let res = self.bridge_request("contract_check", &json!({}))
+            .unwrap_or_else(|| {
+                let out = Command::new(self.python())
+                    .arg(self.root.join("workers/opencode_contract.py"))
+                    .arg("check")
+                    .output()
+                    .map_err(|e| e.to_string())?;
+                serde_json::from_slice::<Value>(&out.stdout).map_err(|e| e.to_string())
+            })?;
+        *self.oc_contract.lock().unwrap() = res.clone();
+        self.event("oc_contract", "OpenCode contract checked", res.clone());
+        Ok(res)
+    }
+
+    pub fn bridge_supervisor_loop(self: std::sync::Arc<Self>) {
+        let mut backoff_ms = 1000_u64;
+        while !self.shutting_down.load(Ordering::SeqCst) {
+            let child = Command::new(self.python())
+                .arg(self.root.join("workers/opencode_bridge.py"))
+                .env("NAVI_RUNTIME_DIR", &self.runtime)
+                .env("NAVI_DATA_DIR", &self.data)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+            let Ok(child) = child else {
+                std::thread::sleep(Duration::from_millis(backoff_ms));
+                backoff_ms = (backoff_ms * 2).min(30_000);
+                continue;
+            };
+            *self.bridge_child.lock().unwrap() = Some(child);
+            let sock_path = self.runtime.join("opencode.sock");
+            for _ in 0..50 {
+                if sock_path.exists() || self.shutting_down.load(Ordering::SeqCst) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            if self.shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+            if let Ok(mut sub) = std::os::unix::net::UnixStream::connect(&sock_path) {
+                backoff_ms = 1000;
+                let _ = sub.set_read_timeout(Some(Duration::from_secs(2)));
+                let _ = sub.write_all(b"{\"id\":\"sub\",\"op\":\"subscribe\"}\n");
+                let mut reader = BufReader::new(sub);
+                let mut line = String::new();
+                while !self.shutting_down.load(Ordering::SeqCst) {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            if let Ok(msg) = serde_json::from_str::<Value>(line.trim())
+                                && let Some(ev) = msg["event"].as_str()
+                            {
+                                self.handle_bridge_event(ev, &msg["data"]);
+                            }
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                            let mut guard = self.bridge_child.lock().unwrap();
+                            if let Some(c) = guard.as_mut()
+                                && c.try_wait().ok().flatten().is_some()
+                            {
+                                *guard = None;
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+            if let Some(mut c) = self.bridge_child.lock().unwrap().take() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            if self.shutting_down.load(Ordering::SeqCst) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(backoff_ms));
+            backoff_ms = (backoff_ms * 2).min(30_000);
+        }
+    }
+
+    fn handle_bridge_event(&self, kind: &str, data: &Value) {
+        if kind == "bridge.reconnected" {
+            self.oc_catalog_cache.lock().unwrap().clear();
+            self.event("oc_sync", "OpenCode synced", json!({"reason":"reconnected"}));
+            if !self.isolated {
+                let me = self.me.clone();
+                std::thread::spawn(move || {
+                    if let Some(app) = me.upgrade() {
+                        let _ = app.oc_contract_check();
+                    }
+                });
+            }
+            return;
+        }
+        if kind == "installation.updated" || kind == "installation.update-available" {
+            let me = self.me.clone();
+            std::thread::spawn(move || {
+                if let Some(app) = me.upgrade() {
+                    let _ = app.oc_contract_check();
+                }
+            });
+        }
+        if kind.ends_with(".updated") || kind == "mcp.status.changed" {
+            let mut cache = self.oc_catalog_cache.lock().unwrap();
+            let prefix = kind.split('.').next().unwrap_or("");
+            match prefix {
+                "model" => { cache.remove("models"); cache.remove("model_default"); }
+                "agent" => { cache.remove("agents"); }
+                "command" => { cache.remove("commands"); }
+                "skill" => { cache.remove("skills"); }
+                "config" => { cache.remove("config"); }
+                "provider" | "credential" | "integration" => {
+                    cache.remove("providers"); cache.remove("credentials"); cache.remove("integrations");
+                }
+                "mcp" => { cache.remove("mcp"); }
+                "plugin" => { cache.remove("plugins"); }
+                _ => {}
+            }
+        }
+        if kind.starts_with("session.") || kind.ends_with(".updated") || kind == "mcp.status.changed" {
+            self.event("oc_event", kind, json!({"type":kind,"data":data}));
+        }
+    }
+
 
     /// Run a validated command/slash request under the command lock. Queued
     /// items call this from the drain thread; both paths resolve the project,
@@ -1475,6 +2093,115 @@ impl App {
             }
             Err(failure) => Err(failure.message),
         }
+    }
+
+    /// Phase 6: run one turn against an ACP-speaking harness via `workers/acp_client.py`.
+    fn converse_acp(&self, harness: &str, text: &str, turn: &AssistantTurn, generation: u64) -> Result<Value> {
+        let caps = crate::adapters::caps(harness);
+        let env_key = format!("NAVI_ACP_CMD_{}", harness.to_uppercase());
+        let cmd_parts: Vec<String> = if let Ok(override_cmd) = std::env::var(&env_key) {
+            override_cmd.split_whitespace().map(str::to_string).collect()
+        } else {
+            caps.acp_cmd.iter().map(|s| s.to_string()).collect()
+        };
+        if cmd_parts.is_empty() {
+            return Err(format!("Harness {harness} does not support ACP").into());
+        }
+        let prompt = if turn.context.is_empty() {
+            text.to_string()
+        } else {
+            format!("{}\n\n{}", turn.context, text)
+        };
+        let mut child = Command::new(self.python())
+            .arg(self.root.join("workers/acp_client.py"))
+            .arg("--cwd")
+            .arg(&turn.path)
+            .arg("--prompt")
+            .arg(&prompt)
+            .arg("--")
+            .args(&cmd_parts)
+            .env("NAVI_RUNTIME_DIR", &self.runtime)
+            .env("NAVI_DATA_DIR", &self.data)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to start ACP client: {e}"))?;
+        let stdout = child.stdout.take().ok_or("ACP client has no stdout")?;
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(std::result::Result::ok) {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let turn_id = self.begin_turn();
+        let mut turn_acc = GatewayTurn::default();
+        let mut done: Option<Value> = None;
+        loop {
+            if self.generation.load(Ordering::SeqCst) != generation {
+                let _ = child.kill();
+                let _ = child.wait();
+                self.turn_finish(&turn_id, &turn_acc.accumulated);
+                let reply = json!({"text":"Conversation stopped.","persona":harness,"source":"stopped","stopped":true});
+                self.event_for(Some(turn.id.as_str()), None, "reply", "Conversation stopped.", reply.clone());
+                return Ok(reply);
+            }
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(line) => {
+                    let Some(mut event) = map_gateway_line(&line) else { continue };
+                    if !turn_acc.record(&mut event) { continue; }
+                    match event {
+                        GatewayLine::Delta(_) => {
+                            self.turn_flush(&turn_id, &turn_acc.accumulated, harness, Some(turn.id.as_str()));
+                        }
+                        GatewayLine::Reasoning(r, first) => {
+                            if first {
+                                self.event_for(Some(turn.id.as_str()), None, "thinking", "Thinking", json!({"reasoning":true}));
+                            }
+                            self.event_for(Some(turn.id.as_str()), None, "reasoning", &r, json!({"text":r}));
+                        }
+                        GatewayLine::ToolStatus { id, name, input, progress } => {
+                            self.event_for(Some(turn.id.as_str()), None, "tool_use", name.as_deref().unwrap_or("tool"),
+                                json!({"id":id,"name":name,"status":"running","input":input,"progress":progress,"final":false}));
+                        }
+                        GatewayLine::ToolFinal { id, name, status, input, output, exit } => {
+                            self.event_for(Some(turn.id.as_str()), None, "tool_use", name.as_deref().unwrap_or("tool"),
+                                json!({"id":id,"name":name,"status":status,"input":input,"output":output,"exit":exit,"final":true}));
+                        }
+                        GatewayLine::Permission { id, tool, input } => {
+                            self.event_for(Some(turn.id.as_str()), None, "approval",
+                                &format!("{} needs approval", tool.as_deref().unwrap_or("A tool")),
+                                json!({"id":id,"tool":tool,"input":input}));
+                        }
+                        GatewayLine::Error(err) => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            self.turn_finish(&turn_id, &turn_acc.accumulated);
+                            return Err(err);
+                        }
+                        GatewayLine::Done(val) => {
+                            done = Some(*val);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        let _ = child.wait();
+        self.turn_finish(&turn_id, &turn_acc.accumulated);
+        let done_val = self.finish_turn(done.unwrap_or_else(|| json!({})), &mut turn_acc);
+        let reply = json!({
+            "text": done_val["text"], "persona": harness, "source": format!("acp:{harness}"),
+            "session": done_val["session"], "project_id": turn.id,
+        });
+        self.event_for(Some(turn.id.as_str()), done_val["session"].as_str(), "reply",
+            reply["text"].as_str().unwrap_or("No reply"), reply.clone());
+        Ok(reply)
     }
 
     /// Slash messages are OpenCode commands, not chief decisions. They join the
@@ -3921,7 +4648,11 @@ impl App {
             let kind = action["kind"].as_str().unwrap_or("");
             let result = if routes_to_conversation(kind) {
                 let turn = self.assistant_turn(&scope)?;
-                let reply = self.converse(&conversational_text(clause), &turn, generation)?;
+                let reply = if let Some(harness) = params["harness"].as_str().filter(|h| !h.is_empty() && *h != "opencode") {
+                    self.converse_acp(harness, &conversational_text(clause), &turn, generation)?
+                } else {
+                    self.converse(&conversational_text(clause), &turn, generation)?
+                };
                 json!({"message":"No action requested","reply":reply})
             } else {
                 match kind {
@@ -4082,6 +4813,17 @@ enum GatewayLine {
         tool: Option<String>,
         input: Value,
     },
+    Form {
+        id: Value,
+        session: Option<String>,
+        title: Option<String>,
+        fields: Value,
+        metadata: Value,
+    },
+    FormSettled {
+        id: Value,
+        outcome: Option<String>,
+    },
     Warning(String),
     Error(String),
     Done(Box<Value>),
@@ -4147,6 +4889,17 @@ fn map_gateway_line(line: &str) -> Option<GatewayLine> {
             tool: value["tool"].as_str().map(str::to_string),
             input: value["input"].clone(),
         }),
+        "form" => Some(GatewayLine::Form {
+            id: value["id"].clone(),
+            session: value["session"].as_str().map(str::to_string),
+            title: value["title"].as_str().map(str::to_string),
+            fields: value["fields"].clone(),
+            metadata: value["metadata"].clone(),
+        }),
+        "form_settled" => Some(GatewayLine::FormSettled {
+            id: value["id"].clone(),
+            outcome: value["outcome"].as_str().map(str::to_string),
+        }),
         "warning" => Some(GatewayLine::Warning(value["text"].as_str()?.to_string())),
         "error" => Some(GatewayLine::Error(
             value["text"].as_str().unwrap_or("Assistant error").to_string(),
@@ -4154,6 +4907,95 @@ fn map_gateway_line(line: &str) -> Option<GatewayLine> {
         "done" => Some(GatewayLine::Done(Box::new(value))),
         _ => None,
     }
+}
+fn cli_to_bridge_op(args: &[&str], stream: bool) -> Option<(&'static str, Value)> {
+    let mode = *args.first()?;
+    let mut map = serde_json::Map::new();
+    if stream {
+        map.insert("stream".into(), json!(true));
+    }
+    let mut i = 1;
+    while i < args.len() {
+        let k = args[i];
+        if k == "--stream" {
+            map.insert("stream".into(), json!(true));
+            i += 1;
+            continue;
+        }
+        if let Some(flag) = k.strip_prefix("--")
+            && i + 1 < args.len()
+        {
+            let v = args[i + 1];
+            if flag == "attachment" {
+                let entry = map.entry("attachments").or_insert_with(|| json!([]));
+                if let Some(arr) = entry.as_array_mut() {
+                    arr.push(json!(v));
+                }
+            } else if flag == "archived" {
+                map.insert("archived".into(), json!(v == "true"));
+            } else if flag == "limit" {
+                if let Ok(n) = v.parse::<u64>() {
+                    map.insert("limit".into(), json!(n));
+                }
+            } else if flag == "answer" || flag == "payload" {
+                if let Ok(parsed) = serde_json::from_str::<Value>(v) {
+                    map.insert(flag.into(), parsed);
+                }
+            } else {
+                map.insert(flag.into(), json!(v));
+            }
+            i += 2;
+            continue;
+        }
+        if !map.contains_key("text") {
+            if mode == "catalog" {
+                map.insert("name".into(), json!(k));
+            } else if mode == "session_rename" {
+                map.insert("title".into(), json!(k));
+            } else {
+                map.insert("text".into(), json!(k));
+            }
+        }
+        i += 1;
+    }
+    let op = match mode {
+        "ask" => "ask",
+        "slash" => "slash",
+        "status" => "status",
+        "models" => "models",
+        "agents" => "agents",
+        "commands" => "commands",
+        "new" => "new",
+        "interrupt" => "interrupt",
+        "permission" => "permission",
+        "form" => "form",
+        "form_cancel" => "form_cancel",
+        "sessions" => "sessions",
+        "session_get" => "session_get",
+        "session_messages" => "session_messages",
+        "session_select" => "session_select",
+        "session_rename" => "session_rename",
+        "session_fork" => "session_fork",
+        "session_archive" => "session_archive",
+        "session_delete" => "session_delete",
+        "session_compact" => "session_compact",
+        "catalog" => "catalog",
+        "switch_model" => "switch_model",
+        "switch_agent" => "switch_agent",
+        "mcp_add" => "mcp_add",
+        "mcp_remove" => "mcp_remove",
+        "mcp_connect" => "mcp_connect",
+        "mcp_disconnect" => "mcp_disconnect",
+        "permission_saved_remove" => "permission_saved_remove",
+        "credential_activate" => "credential_activate",
+        "integration_oauth_connect" => "integration_oauth_connect",
+        "integration_oauth_status" => "integration_oauth_status",
+        "integration_oauth_complete" => "integration_oauth_complete",
+        "integration_connect_key" => "integration_connect_key",
+        "server_info" => "server_info",
+        _ => return None,
+    };
+    Some((op, Value::Object(map)))
 }
 
 /// Shape/size checks shared by `command` and `prompt` before a request may be
