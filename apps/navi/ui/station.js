@@ -32,6 +32,13 @@ const budgets={status:15000,ping:10000,window_state:10000,settings:20000,create:
   command:1830000,prompt:20000,cancel:10000,select:10000,attach:10000,
   voice_start:20000,voice_stop:20000,desktop_start:20000,desktop_stop:20000,
   oc_models:30000,oc_agents:30000,oc_commands:30000,oc_new:30000,
+  oc_sessions:30000,oc_session_get:20000,oc_session_messages:30000,oc_session_select:20000,
+  oc_session_rename:20000,oc_session_fork:30000,oc_session_archive:20000,oc_session_delete:20000,oc_session_compact:30000,
+  oc_catalog:30000,oc_switch_model:20000,oc_switch_agent:20000,
+  oc_mcp_add:30000,oc_mcp_remove:20000,oc_mcp_connect:20000,oc_mcp_disconnect:20000,
+  oc_permission_saved_remove:20000,oc_credential_activate:20000,
+  oc_integration_oauth_connect:30000,oc_integration_oauth_status:20000,oc_integration_oauth_complete:30000,oc_integration_connect_key:30000,
+  permission_reply:20000,form_reply:20000,form_cancel:20000,browser_agent_start:20000,safety_check:20000,
   mail_connect:45000,mail_disconnect:10000,mail_status:10000,desk:45000};
 const DEFAULT_BUDGET=15000, PENDING_LIMIT=64, SWEEP_INTERVAL=5000, DIAGNOSTIC_LIMIT=200;
 const diagnostics=[];
@@ -762,11 +769,11 @@ function approvalRow(message,part) {
     : (part.approval.tool||'This tool')+' needs approval';
   box.append(label);
   if (!part.approval.decision) {
-    for (const decision of ['allow','deny']) {
+    for (const [decision,caption] of [['allow','Allow'],['always','Always allow'],['deny','Deny']]) {
       const button=document.createElement('button');
       button.type='button';
       button.className='approval-'+decision;
-      button.textContent=decision==='allow'?'Allow':'Deny';
+      button.textContent=caption;
       button.onclick=event=>{
         event.preventDefault();
         answerApproval(message,part,decision);
@@ -778,11 +785,11 @@ function approvalRow(message,part) {
 }
 function answerApproval(message,part,decision) {
   const id=part.approval.id;
+  const session=part.approval.session||undefined;
   /* BUG-006: the daemon answers `{ok:false,error}` when it refuses the decision,
    * and a transport failure rejects; either way the refusal is one failure surface
    * with the daemon's own text — never a silent success, and never a second row. */
-  rpc('permission_reply',{id,decision}).then(result=>{
-    const refused=result&&(result.ok===false||result.replied===false);
+  rpc('permission_reply',{id,decision,session}).then(result=>{
     if (refused) {
       surfaceFailure(String(result.error||'The permission reply was not accepted'));
       return;
@@ -852,6 +859,162 @@ function errorPart(message,part) {
   }
   return box;
 }
+function whenMatches(field,values) {
+  const rules=Array.isArray(field.when)?field.when:[];
+  return rules.every(rule=>{
+    const cur=values[rule.key];
+    return rule.op==='neq'?cur!==rule.value:cur===rule.value;
+  });
+}
+function formPart(message,part) {
+  const form=part.form||{};
+  const box=document.createElement('div');
+  box.className='form-card';
+  box.dataset.formId=String(form.id||'');
+  const title=document.createElement('div');
+  title.className='form-card-title';
+  title.textContent=form.title||'Question';
+  box.append(title);
+  if (form.outcome) {
+    const done=document.createElement('p');
+    done.className='hint';
+    done.textContent='Answered ('+form.outcome+')';
+    box.append(done);
+    return box;
+  }
+  const fields=Array.isArray(form.fields)?form.fields:[];
+  const values=form.values||(form.values={});
+  const fieldNodes=[];
+  const syncVisibility=()=>{
+    for (const entry of fieldNodes) {
+      entry.wrap.hidden=!whenMatches(entry.field,values);
+    }
+  };
+  for (const field of fields) {
+    const key=String(field.key||field.name||'');
+    const kind=String(field.kind||field.type||'string');
+    const wrap=document.createElement('div');
+    wrap.className='form-field';
+    const label=document.createElement('label');
+    label.textContent=(field.label||key)+(field.required?' *':'');
+    wrap.append(label);
+    if (kind==='external'&&field.url) {
+      const link=document.createElement('a');
+      link.href=String(field.url);
+      link.target='_blank';
+      link.rel='noopener noreferrer';
+      link.textContent=field.linkText||String(field.url);
+      wrap.append(link);
+    } else if (kind==='boolean') {
+      const input=document.createElement('input');
+      input.type='checkbox';
+      input.checked=Boolean(values[key]??field.default??false);
+      values[key]=input.checked;
+      input.onchange=()=>{ values[key]=input.checked; syncVisibility(); };
+      wrap.append(input);
+    } else if (kind==='multiselect') {
+      const group=document.createElement('div');
+      group.className='form-multi';
+      const selected=new Set(Array.isArray(values[key])?values[key]:[]);
+      values[key]=[...selected];
+      for (const opt of (field.options||[])) {
+        const optVal=typeof opt==='object'?opt.value:opt;
+        const optLabel=typeof opt==='object'?(opt.label||opt.value):opt;
+        const lbl=document.createElement('label');
+        const cb=document.createElement('input');
+        cb.type='checkbox';
+        cb.checked=selected.has(optVal);
+        cb.onchange=()=>{
+          if (cb.checked) selected.add(optVal); else selected.delete(optVal);
+          values[key]=[...selected];
+          syncVisibility();
+        };
+        lbl.append(cb,document.createTextNode(String(optLabel)));
+        group.append(lbl);
+      }
+      wrap.append(group);
+    } else if (Array.isArray(field.options)&&field.options.length) {
+      const sel=document.createElement('select');
+      if (!field.required) {
+        const emptyOpt=document.createElement('option');
+        emptyOpt.value=''; emptyOpt.textContent='Select…';
+        sel.append(emptyOpt);
+      }
+      for (const opt of field.options) {
+        const optVal=typeof opt==='object'?opt.value:opt;
+        const optLabel=typeof opt==='object'?(opt.label||opt.value):opt;
+        const o=document.createElement('option');
+        o.value=String(optVal); o.textContent=String(optLabel);
+        sel.append(o);
+      }
+      if (values[key]!==undefined) sel.value=String(values[key]);
+      else if (sel.options.length&&field.required) values[key]=sel.options[0].value;
+      sel.onchange=()=>{ values[key]=sel.value; syncVisibility(); };
+      wrap.append(sel);
+    } else if (kind==='number'||kind==='integer') {
+      const input=document.createElement('input');
+      input.type='number';
+      if (kind==='integer') input.step='1';
+      if (field.placeholder) input.placeholder=String(field.placeholder);
+      if (values[key]!==undefined) input.value=String(values[key]);
+      input.oninput=()=>{
+        const n=kind==='integer'?parseInt(input.value,10):parseFloat(input.value);
+        if (Number.isFinite(n)) values[key]=n; else delete values[key];
+        syncVisibility();
+      };
+      wrap.append(input);
+    } else {
+      const input=document.createElement('input');
+      input.type=field.format==='password'?'password':(field.format==='email'?'email':(field.format==='url'?'url':'text'));
+      if (field.placeholder) input.placeholder=String(field.placeholder);
+      if (values[key]!==undefined) input.value=String(values[key]);
+      input.oninput=()=>{ values[key]=input.value; syncVisibility(); };
+      wrap.append(input);
+    }
+    fieldNodes.push({field,wrap});
+    box.append(wrap);
+  }
+  syncVisibility();
+  const actions=document.createElement('div');
+  actions.className='form-actions';
+  const cancelBtn=document.createElement('button');
+  cancelBtn.type='button';
+  cancelBtn.textContent='Cancel';
+  cancelBtn.onclick=async()=>{
+    cancelBtn.disabled=true;
+    try {
+      await rpc('form_cancel',{id:String(form.id),session:form.session||undefined});
+      form.outcome='cancelled';
+      bump(message);
+    } catch (error) { cancelBtn.disabled=false; surfaceFailure(error.message); }
+  };
+  const submitBtn=document.createElement('button');
+  submitBtn.type='button';
+  submitBtn.className='primary';
+  submitBtn.textContent='Submit';
+  submitBtn.onclick=async()=>{
+    const answer={};
+    for (const {field} of fieldNodes) {
+      if (!whenMatches(field,values)) continue;
+      const key=String(field.key||field.name||'');
+      const val=values[key];
+      if (field.required&&(val===undefined||val===''||(Array.isArray(val)&&!val.length))) {
+        surfaceFailure('Please fill required field: '+(field.label||key));
+        return;
+      }
+      if (val!==undefined) answer[key]=val;
+    }
+    submitBtn.disabled=true; cancelBtn.disabled=true;
+    try {
+      await rpc('form_reply',{id:String(form.id),session:form.session||undefined,answer});
+      form.outcome='submitted';
+      bump(message);
+    } catch (error) { submitBtn.disabled=false; cancelBtn.disabled=false; surfaceFailure(error.message); }
+  };
+  actions.append(cancelBtn,submitBtn);
+  box.append(actions);
+  return box;
+}
 /* A turn of many steps is one line above the answer it leads to: "Reasoning and 13
  * tools". What is happening now shows in that line, and opening it shows every step,
  * with the short sentences the model says between them ("Got it. Next one.").
@@ -910,6 +1073,7 @@ function renderPart(message,part) {
     case 'tool': return toolPart(message,part);
     case 'diff': return diffPart(part);
     case 'error': return errorPart(message,part);
+    case 'form': return formPart(message,part);
     default: return textPart(part);
   }
 }
@@ -1384,13 +1548,44 @@ function approvalEvent(event) {
     part={
       type:'tool', id:'approval-'+permissionId, name:details.tool||details.name||'Tool',
       status:'awaiting approval', input:details.input,
-      approval:{id:permissionId,tool:details.tool||details.name||'',decision:null},
+      approval:{id:permissionId,tool:details.tool||details.name||'',session:details.session||event.session_id||undefined,decision:null},
     };
     message.parts.push(part);
   }
   setBusy(true);
   setTurnLabel('Approval needed');
   bump(message);
+}
+function formEvent(event) {
+  if (settledRow(requestOf(event))) return;
+  const details=event.details||{};
+  const message=assistantMessage(event);
+  const formId=details.id===undefined||details.id===null?uid('form'):String(details.id);
+  let part=message.parts.find(entry=>entry.type==='form'&&entry.form&&String(entry.form.id)===formId);
+  if (!part) {
+    part={
+      type:'form', id:'form-'+formId,
+      form:{id:formId,session:details.session||event.session_id||undefined,
+        title:details.title||'Question',fields:details.fields||[],metadata:details.metadata||{},outcome:null,values:{}},
+    };
+    message.parts.push(part);
+  }
+  setBusy(true);
+  setTurnLabel('Question');
+  bump(message);
+}
+function formSettledEvent(event) {
+  const details=event.details||{};
+  const formId=details.id===undefined||details.id===null?null:String(details.id);
+  if (!formId) return;
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.type==='form'&&part.form&&String(part.form.id)===formId) {
+        part.form.outcome=details.outcome||'settled';
+        bump(message);
+      }
+    }
+  }
 }
 function failedEvent(event) {
   const details=event.details||{};
@@ -1572,6 +1767,16 @@ function handleEvent(event) {
     case 'reply': replyDone(event); break;
     case 'tool_use': toolUse(event); break;
     case 'approval': approvalEvent(event); break;
+    case 'form': formEvent(event); break;
+    case 'form_settled': formSettledEvent(event); break;
+    case 'oc_event':
+    case 'oc_sync':
+      if (ocSessionsDrawer&&!ocSessionsDrawer.hidden) loadOcSessions();
+      invalidateCatalogs();
+      break;
+    case 'oc_contract':
+      renderContractBanner(event.details);
+      break;
     /* The feed replays from the start on every boot; a row that only narrates
      * (a warning, a queue note, a launch, a progress report) is drawn for live
      * events only, or each restart would re-append the whole history. */
@@ -2166,7 +2371,14 @@ async function dispatch(text,options={}) {
   try {
     /* The turn resolves this project's directory and its own assistant
      * session, so a switch changes what "this project" means (BUG-088/090). */
-    const params={text:value,project_id:activeProjectId()||undefined,request_id:requestId};
+    const chosenHarness=element('chat-harness')?.value||'opencode';
+    let sendText=value;
+    if (handoffSummary&&chosenHarness!=='opencode') {
+      sendText='[Context handoff from previous harness:\n'+handoffSummary+']\n\n'+value;
+      handoffSummary='';
+    }
+    const params={text:sendText,project_id:activeProjectId()||undefined,request_id:requestId,
+      harness:chosenHarness!=='opencode'?chosenHarness:undefined};
     if (Array.isArray(options.attachments)&&options.attachments.length) {
       params.attachments=options.attachments;
     }
@@ -2319,7 +2531,42 @@ async function useConfirm() {
     toast('That transcript was already sent by the voice worker');
     return;
   }
-  if (text) dispatch(text,{source:'voice'});
+  if (text&&!tryVoiceCardAnswer(text)) dispatch(text,{source:'voice'});
+}
+function tryVoiceCardAnswer(text) {
+  const norm=String(text||'').trim().toLowerCase().replace(/[.!?,]+$/,'');
+  if (!norm) return false;
+  for (let i=messages.length-1;i>=0;i-=1) {
+    const msg=messages[i];
+    for (let j=msg.parts.length-1;j>=0;j-=1) {
+      const part=msg.parts[j];
+      if (part.type==='tool'&&part.approval&&!part.approval.decision) {
+        let decision=null;
+        if (/^(yes|allow|approve|ok|okay)$/.test(norm)) decision='allow';
+        else if (/^(always|always allow)$/.test(norm)) decision='always';
+        else if (/^(no|deny|reject|cancel|stop)$/.test(norm)) decision='deny';
+        if (decision) { answerApproval(msg,part,decision); return true; }
+      }
+      if (part.type==='form'&&part.form&&!part.form.outcome) {
+        const fields=Array.isArray(part.form.fields)?part.form.fields:[];
+        if (fields.length===1&&Array.isArray(fields[0].options)&&fields[0].options.length) {
+          const match=fields[0].options.find(opt=>{
+            const lbl=String(typeof opt==='object'?(opt.label||opt.value):opt).trim().toLowerCase();
+            return lbl===norm;
+          });
+          if (match!==undefined) {
+            const val=typeof match==='object'?match.value:match;
+            const key=String(fields[0].key||fields[0].name||'');
+            rpc('form_reply',{id:String(part.form.id),session:part.form.session||undefined,answer:{[key]:val}})
+              .then(()=>{ part.form.outcome='submitted'; bump(msg); })
+              .catch(error=>surfaceFailure(error.message));
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
 }
 function editConfirm() {
   const input=commandInput();
@@ -2578,6 +2825,7 @@ function update(value) {
   reconcileFeed(payload);
   if (typeof payload.busy==='boolean') applyServerBusy(payload.busy);
   surfaceSettings(payload);
+  if (payload.oc_contract) renderContractBanner(payload.oc_contract);
   renderSessions(payload.sessions||[]);
   renderProjectSwitcher();
   updateProjectLine();
@@ -2828,6 +3076,42 @@ if (attachButton&&attachInput) {
     attachFiles(files);
   };
 }
+
+/* A copied screenshot reaches the same path as the paperclip: Ctrl+V anywhere in
+ * the station turns the clipboard's images into attachments, so a picture can be
+ * sent without saving it to disk first. Limits stay those of BUG-005 (four files,
+ * 2 MiB each, images or text). The terminal pane keeps the browser's own paste,
+ * because a harness there needs the text and never an attachment; and when the
+ * clipboard carries text into a text field, the text wins, so copying rich content
+ * never turns into a picture. */
+function clipboardImages(data) {
+  const files=[];
+  for (const item of [...(data?.items||[])]) {
+    if (item.kind!=='file'||!String(item.type||'').startsWith('image/')) continue;
+    const file=item.getAsFile();
+    if (!file) continue;
+    if (!attachmentNameOk(file.name)) {
+      const ext=(String(file.type||'').split('/')[1]||'png').replace('jpeg','jpg');
+      const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\..*/,'');
+      files.push(new File([file],'pasted-'+stamp+'.'+ext,{type:file.type}));
+      continue;
+    }
+    files.push(file);
+  }
+  return files;
+}
+addEventListener('paste',event=>{
+  if (event.defaultPrevented) return;
+  const target=event.target instanceof Element?event.target:null;
+  if (target&&target.closest('#terminal-pane')) return;
+  const data=event.clipboardData;
+  if (!data) return;
+  const files=clipboardImages(data);
+  if (!files.length) return;
+  if (String(data.getData('text/plain')||'')&&target&&target.closest('input,textarea,[contenteditable]')) return;
+  event.preventDefault();
+  attachFiles(files);
+});
 
 element('stop').onclick=async()=>{
   try {
@@ -5057,6 +5341,291 @@ element('account-links').onclick=async event=>{
 };
 element('settings-button').onclick=()=>openSettings();
 element('settings-cancel').onclick=()=>dialog.close();
+const ocSessionsBtn=element('oc-sessions-btn');
+const ocSessionsDrawer=element('oc-sessions-drawer');
+const ocSessionsList=element('oc-sessions-list');
+let currentOcSessionId=null;
+function relTime(ms) {
+  if (!ms) return '';
+  const sec=Math.max(0,Math.floor((Date.now()-ms)/1000));
+  if (sec<60) return sec+'s';
+  const min=Math.floor(sec/60);
+  if (min<60) return min+'m';
+  const hr=Math.floor(min/60);
+  if (hr<24) return hr+'h';
+  return Math.floor(hr/24)+'d';
+}
+async function loadOcSessions() {
+  if (!ocSessionsList) return;
+  ocSessionsList.replaceChildren();
+  const search=element('oc-sessions-search')?.value.trim()||undefined;
+  const archived=element('oc-sessions-archived')?.checked||false;
+  try {
+    const data=await rpc('oc_sessions',{project_id:activeProjectId()||undefined,search,archived,limit:40});
+    const list=Array.isArray(data?.sessions)?data.sessions:[];
+    const activeMap=data?.active&&typeof data.active==='object'?data.active:{};
+    if (!list.length) {
+      const empty=document.createElement('li');
+      empty.className='hint';
+      empty.textContent='No sessions found for this project.';
+      ocSessionsList.append(empty);
+      return;
+    }
+    for (const ses of list) {
+      const li=document.createElement('li');
+      li.className='oc-session-row';
+      if (ses.id===currentOcSessionId) li.setAttribute('aria-current','true');
+      const dot=document.createElement('span');
+      dot.className='oc-session-dot'+(activeMap[ses.id]?' running':'');
+      const main=document.createElement('div');
+      main.className='oc-session-main';
+      const title=document.createElement('span');
+      title.className='oc-session-title';
+      title.textContent=ses.title||ses.id;
+      const meta=document.createElement('span');
+      meta.className='oc-session-meta';
+      const updated=ses.time?.updated||ses.time?.created||0;
+      const cost=typeof ses.cost==='number'?'$'+ses.cost.toFixed(4):'';
+      meta.textContent=[relTime(updated),cost,ses.archived?'archived':''].filter(Boolean).join(' · ');
+      main.append(title,meta);
+      main.onclick=()=>selectOcSession(ses.id,ses.title||ses.id);
+      const actions=document.createElement('div');
+      actions.className='oc-session-actions';
+      const mkBtn=(txt,tip,fn)=>{
+        const b=document.createElement('button');
+        b.type='button'; b.textContent=txt; b.title=tip;
+        b.onclick=ev=>{ ev.stopPropagation(); fn(); };
+        return b;
+      };
+      actions.append(
+        mkBtn('Rename','Rename session',async()=>{
+          const next=prompt('Session title:',ses.title||'');
+          if (!next||!next.trim()) return;
+          await rpc('oc_session_rename',{id:ses.id,title:next.trim()});
+          loadOcSessions();
+        }),
+        mkBtn('Fork','Fork session',async()=>{
+          const forked=await rpc('oc_session_fork',{id:ses.id});
+          toast('Forked session');
+          if (forked?.id) await selectOcSession(forked.id,forked.title||forked.id);
+          loadOcSessions();
+        }),
+        mkBtn(ses.archived?'Restore':'Archive',ses.archived?'Unarchive':'Archive',async()=>{
+          await rpc('oc_session_archive',{id:ses.id,archived:!ses.archived});
+          loadOcSessions();
+        }),
+        mkBtn('Del','Delete session',async()=>{
+          if (!confirm('Delete session "'+(ses.title||ses.id)+'"?')) return;
+          await rpc('oc_session_delete',{id:ses.id});
+          if (currentOcSessionId===ses.id) currentOcSessionId=null;
+          loadOcSessions();
+        })
+      );
+      li.append(dot,main,actions);
+      ocSessionsList.append(li);
+    }
+  } catch (error) {
+    const err=document.createElement('li');
+    err.className='hint';
+    err.textContent='Sessions unavailable: '+error.message;
+    ocSessionsList.append(err);
+  }
+}
+async function selectOcSession(id,label) {
+  try {
+    await rpc('oc_session_select',{id,project_id:activeProjectId()||undefined});
+    currentOcSessionId=id;
+    if (ocSessionsBtn) ocSessionsBtn.textContent=label?label.slice(0,22):'Sessions';
+    const msgs=await rpc('oc_session_messages',{id,limit:100});
+    if (Array.isArray(msgs)) {
+      resetChat();
+      for (const m of msgs) {
+        const role=m.role==='user'?'user':'assistant';
+        const parts=[];
+        for (const p of (m.content||m.parts||[])) {
+          if (p.type==='text'&&p.text) parts.push({type:'text',text:p.text});
+          else if (p.type==='reasoning'&&p.text) parts.push({type:'reasoning',text:p.text});
+        }
+        if (parts.length) addMessage({id:m.id||uid('ocm'),role,time:m.time?.created||Date.now(),status:'complete',parts});
+      }
+    }
+    toast('Selected session');
+    if (ocSessionsDrawer&&!ocSessionsDrawer.hidden) loadOcSessions();
+  } catch (error) { surfaceFailure(error.message); }
+}
+if (ocSessionsBtn&&ocSessionsDrawer) {
+  ocSessionsBtn.onclick=()=>{
+    const open=ocSessionsDrawer.hidden;
+    ocSessionsDrawer.hidden=!open;
+    ocSessionsBtn.setAttribute('aria-expanded',String(open));
+    if (open) loadOcSessions();
+  };
+  element('oc-sessions-close').onclick=()=>{ ocSessionsDrawer.hidden=true; ocSessionsBtn.setAttribute('aria-expanded','false'); };
+  element('oc-sessions-refresh').onclick=()=>loadOcSessions();
+  element('oc-sessions-search').oninput=()=>loadOcSessions();
+  element('oc-sessions-archived').onchange=()=>loadOcSessions();
+  element('oc-sessions-new').onclick=async()=>{
+    try {
+      const res=await rpc('oc_new',{project_id:activeProjectId()||undefined});
+      if (res?.session) currentOcSessionId=res.session;
+      invalidateCatalogs();
+      loadOcSessions();
+    } catch (error) { surfaceFailure(error.message); }
+  };
+}
+const tabGeneral=element('tab-general');
+const tabOpenCode=element('tab-opencode');
+const panelGeneral=element('settings-panel-general');
+const panelOpenCode=element('settings-panel-opencode');
+function switchSettingsTab(which) {
+  const isOc=which==='opencode';
+  if (tabGeneral) { tabGeneral.classList.toggle('active',!isOc); tabGeneral.setAttribute('aria-selected',String(!isOc)); }
+  if (tabOpenCode) { tabOpenCode.classList.toggle('active',isOc); tabOpenCode.setAttribute('aria-selected',String(isOc)); }
+  if (panelGeneral) panelGeneral.hidden=isOc;
+  if (panelOpenCode) panelOpenCode.hidden=!isOc;
+  if (isOc) fillOpenCodeSettings();
+}
+if (tabGeneral) tabGeneral.onclick=()=>switchSettingsTab('general');
+if (tabOpenCode) tabOpenCode.onclick=()=>switchSettingsTab('opencode');
+if (element('oc-settings-refresh')) element('oc-settings-refresh').onclick=()=>fillOpenCodeSettings(true);
+async function fillOpenCodeSettings(force=false) {
+  const body=element('oc-settings-body');
+  const status=element('oc-settings-status');
+  if (!body) return;
+  body.replaceChildren();
+  if (status) status.textContent='Loading OpenCode configuration…';
+  const cats=[
+    ['models','Models'],['agents','Agents'],['providers','Providers'],
+    ['credentials','Credentials'],['integrations','Integrations'],
+    ['commands','Commands'],['skills','Skills'],['mcp','MCP Servers'],
+    ['permissions_saved','Saved Approvals'],['config','Config'],
+    ['plugins','Plugins'],['usage_limits','Usage Limits'],
+  ];
+  const loaded={};
+  await Promise.all(cats.map(async([key])=>{
+    try { loaded[key]=await rpc('oc_catalog',{name:key,force}); }
+    catch (error) { loaded[key]={__error:error.message}; }
+  }));
+  if (status) status.textContent='OpenCode configuration (live)';
+  const mkSection=(titleText)=>{
+    const sec=document.createElement('section');
+    sec.className='oc-section';
+    const h=document.createElement('h3'); h.textContent=titleText;
+    const list=document.createElement('div'); list.className='oc-item-list';
+    sec.append(h,list);
+    body.append(sec);
+    return list;
+  };
+  const mkRow=(leftText,btnText,onClick)=>{
+    const row=document.createElement('div'); row.className='oc-item-row';
+    const span=document.createElement('span'); span.textContent=leftText;
+    row.append(span);
+    if (btnText&&onClick) {
+      const b=document.createElement('button'); b.type='button'; b.textContent=btnText;
+      b.onclick=onClick; row.append(b);
+    }
+    return row;
+  };
+  for (const [key,titleText] of cats) {
+    const list=mkSection(titleText);
+    const raw=loaded[key];
+    const val=(raw&&typeof raw==='object'&&!Array.isArray(raw)&&!raw.__error&&'items' in raw)?raw.items:raw;
+    if (raw&&raw.__error) { list.append(mkRow('Unavailable: '+raw.__error)); continue; }
+    if (key==='models'&&Array.isArray(val)) {
+      for (const m of val.slice(0,25)) {
+        const ref=(m.providerID||m.provider||'')+'/'+(m.id||'');
+        list.append(mkRow(m.name||ref,'Use for session',async()=>{
+          await rpc('oc_switch_model',{model:ref,project_id:activeProjectId()||undefined,session:currentOcSessionId||undefined});
+          toast('Session model set to '+ref);
+        }));
+      }
+    } else if (key==='agents'&&Array.isArray(val)) {
+      for (const a of val) {
+        list.append(mkRow((a.name||a.id)+(a.description?' — '+a.description:''),'Use for session',async()=>{
+          await rpc('oc_switch_agent',{agent:a.id,project_id:activeProjectId()||undefined,session:currentOcSessionId||undefined});
+          toast('Session agent set to '+a.id);
+        }));
+      }
+    } else if (key==='mcp') {
+      const entries=Array.isArray(val)?val:Object.entries(val||{}).map(([name,info])=>({name,...(info||{})}));
+      for (const srv of entries) {
+        const name=srv.name||srv.id||'server';
+        const st=srv.status||'';
+        list.append(mkRow(name+(st?' ('+st+')':''),'Remove',async()=>{
+          await rpc('oc_mcp_remove',{name});
+          fillOpenCodeSettings(true);
+        }));
+      }
+      const addRow=document.createElement('div'); addRow.className='oc-item-row';
+      const nameIn=document.createElement('input'); nameIn.placeholder='Server name';
+      const cmdIn=document.createElement('input'); cmdIn.placeholder='Command (e.g. npx -y ...)';
+      const addBtn=document.createElement('button'); addBtn.type='button'; addBtn.textContent='Add MCP';
+      addBtn.onclick=async()=>{
+        const name=nameIn.value.trim(); const cmd=cmdIn.value.trim().split(/\s+/).filter(Boolean);
+        if (!name||!cmd.length) return;
+        await rpc('oc_mcp_add',{name,config:{type:'local',command:cmd}});
+        fillOpenCodeSettings(true);
+      };
+      addRow.append(nameIn,cmdIn,addBtn);
+      list.append(addRow);
+    } else if (key==='permissions_saved'&&Array.isArray(val)) {
+      for (const perm of val) {
+        list.append(mkRow((perm.action||perm.tool||'rule')+' '+(perm.resource||''),'Remove',async()=>{
+          await rpc('oc_permission_saved_remove',{id:perm.id});
+          fillOpenCodeSettings(true);
+        }));
+      }
+    } else if (Array.isArray(val)) {
+      for (const item of val.slice(0,30)) {
+        list.append(mkRow(item.name||item.id||item.title||JSON.stringify(item)));
+      }
+      if (!val.length) list.append(mkRow('None'));
+    } else if (val&&typeof val==='object') {
+      list.append(mkRow(JSON.stringify(val).slice(0,220)));
+    } else {
+      list.append(mkRow('None'));
+    }
+  }
+}
+function renderContractBanner(info) {
+  const banner=element('oc-contract-banner');
+  if (!banner) return;
+  const problems=Array.isArray(info?.problems)?info.problems:[];
+  if (!problems.length) { banner.hidden=true; return; }
+  const ver=info?.opencode?('OpenCode '+info.opencode+' changed: '):'OpenCode changed: ';
+  banner.textContent=ver+problems[0]+(problems.length>1?(' (+'+(problems.length-1)+' more).'):'.')+' Some features may be degraded.';
+  banner.hidden=false;
+}
+let handoffSummary='';
+let lastChatHarness='opencode';
+const chatHarnessEl=element('chat-harness');
+if (chatHarnessEl) {
+  chatHarnessEl.onchange=()=>{
+    const next=chatHarnessEl.value||'opencode';
+    if (next!==lastChatHarness&&messages.length) {
+      const tail=messages.slice(-4).map(m=>(m.role==='user'?'User: ':'Assistant: ')+messageText(m).slice(0,180)).join('\n');
+      if (tail.trim()) handoffSummary=tail;
+      toast('Switched to '+next+' (context handoff ready)');
+    }
+    lastChatHarness=next;
+  };
+}
+if (element('browser-agent-start')) {
+  element('browser-agent-start').onclick=async()=>{
+    try {
+      const res=await rpc('browser_agent_start');
+      toast('Started Firefox navi-agent profile (pid '+(res?.pid||'?')+')');
+    } catch (error) { surfaceFailure(error.message); }
+  };
+}
+async function refreshSafetyCheck() {
+  const note=element('safety-check-note');
+  if (!note) return;
+  try {
+    const res=await rpc('safety_check');
+    note.textContent=res?.safe?'Send/post approvals protected':'Warning: auto-allow set on send/post';
+  } catch { note.textContent=''; }
+}
 element('settings-new').onclick=async()=>{
   try {
     await rpc('oc_new',{project_id:activeProjectId()||undefined});

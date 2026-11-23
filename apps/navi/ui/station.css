@@ -145,9 +145,47 @@
 .tool-empty{margin:0;font-size:11px;color:#93b2d6}
 .approval{display:flex;align-items:center;gap:8px;padding-top:4px;flex-wrap:wrap}
 .approval-label{font-size:11px;color:#ffe08a}
-.approval-allow,.approval-deny{font-size:10px;letter-spacing:.6px;padding:4px 10px}
+.approval-allow,.approval-always,.approval-deny{font-size:10px;letter-spacing:.6px;padding:4px 10px}
 .approval-allow{border-color:#8dffb0aa;color:#c8ffe0}
+.approval-always{border-color:#8dffe0aa;color:#d9fff6}
 .approval-deny{border-color:#ff9a9aaa;color:#ffd7d7}
+
+.form-card{display:flex;flex-direction:column;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid #8eaff355;background:#07123ecc}
+.form-card-title{font-size:12px;font-weight:600;color:#e2ecff}
+.form-field{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#b8d4f4}
+.form-field input,.form-field select{padding:6px 8px;font-size:12px}
+.form-multi{display:flex;flex-wrap:wrap;gap:8px}
+.form-multi label{display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer}
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+
+.oc-sessions-drawer{margin-bottom:8px;padding:8px 10px;border-radius:8px;border:1px solid #8eaff344;background:#050f38e8;max-height:220px;display:flex;flex-direction:column;gap:6px}
+.oc-sessions-head{display:flex;align-items:center;gap:6px}
+.oc-sessions-head input[type="search"],.oc-sessions-head input:not([type="checkbox"]){flex:1;min-width:0;padding:5px 8px;font-size:11px}
+.oc-sessions-arch{display:flex;align-items:center;gap:4px;font-size:10px;color:#93c6d6;white-space:nowrap}
+.oc-sessions-list{list-style:none;margin:0;padding:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.oc-session-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;border:1px solid transparent;background:#09184d88;cursor:pointer}
+.oc-session-row:hover,.oc-session-row[aria-current="true"]{border-color:#8dffe077;background:#0d2266cc}
+.oc-session-dot{width:7px;height:7px;border-radius:50%;background:#4a6699;flex-shrink:0}
+.oc-session-dot.running{background:#4fd8c0;box-shadow:0 0 8px #4fd8c0}
+.oc-session-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.oc-session-title{font-size:11.5px;color:#e2ecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oc-session-meta{font-size:9.5px;color:#8fb4d9}
+.oc-session-actions{display:flex;gap:4px}
+.oc-session-actions button{font-size:10px;padding:2px 6px}
+
+.settings-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.settings-head h2{margin:0}
+.settings-tabs{display:flex;gap:6px}
+.settings-tab{font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid #8cacd744;background:transparent;color:#93c6d6}
+.settings-tab.active{border-color:#8dffe0aa;color:#d9fff6;background:#0e2568aa}
+.oc-settings-panel{display:flex;flex-direction:column;gap:10px}
+.oc-settings-bar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.oc-settings-body{display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow:auto;padding-right:4px}
+.oc-section{border:1px solid #8cacd733;border-radius:6px;padding:8px 10px;background:#02092c66;display:flex;flex-direction:column;gap:6px}
+.oc-section h3{margin:0;font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:#7ec8d4}
+.oc-item-list{display:flex;flex-direction:column;gap:4px;font-size:11px}
+.oc-item-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px;border-radius:4px;background:#07134288}
+.oc-item-row button{font-size:10px;padding:3px 8px}
 
 /* A failure is a left rule, its reason, and Retry: never a confident answer. */
 .part.error{border-left:3px solid #ff8a8a;padding:6px 10px;border-radius:0 6px 6px 0;background:#2a0f1f59}

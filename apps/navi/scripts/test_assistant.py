@@ -34,7 +34,8 @@ def free_port():
 
 def push_events(server, events):
     with server.sse_condition:
-        server.pending_events.extend(events)
+        for queue in server.sse_queues:
+            queue.extend(events)
         server.sse_condition.notify_all()
 
 
@@ -54,7 +55,7 @@ class AssistantTests(unittest.TestCase):
         FakeOpenCode.parents = {}
         self.opencode = ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenCode)
         self.opencode.sse_condition = threading.Condition()
-        self.opencode.pending_events = []
+        self.opencode.sse_queues = []
         self.opencode.daemon_threads = True
         threading.Thread(target=self.opencode.serve_forever, daemon=True).start()
         self.chief = ThreadingHTTPServer(("127.0.0.1", 0), Fixture)
@@ -320,7 +321,7 @@ class AssistantTests(unittest.TestCase):
         self.assertTrue(reply["ok"], reply)
         self.assertTrue(reply["result"]["replied"])
         permissions = [e for e in FakeOpenCode.requests
-                       if "/permission" in e["path"]]
+                       if "/permission" in e["path"] and e["method"] == "POST"]
         self.assertEqual(len(permissions), 1)
         self.assertEqual(permissions[0]["body"], {"decision": "once"})
         self.assertEqual(permissions[0]["path"], "/api/session/ses_fake1/permission/per_1/reply")
@@ -358,6 +359,59 @@ class AssistantTests(unittest.TestCase):
                       if e["path"].endswith("/interrupt")]
         self.assertGreaterEqual(len(interrupts), 1,
                                 "no interrupt POST reached OpenCode")
+
+    def test_sessions_catalog_and_form_reply(self):
+        self.call("command", {"text": "hello"}, timeout=30)
+        sessions = self.call("oc_sessions", {})
+        self.assertTrue(sessions["ok"], sessions)
+        self.assertIn("sessions", sessions["result"])
+
+        sel = self.call("oc_session_select", {"id": "ses_fake1"})
+        self.assertTrue(sel["ok"], sel)
+        self.assertEqual(sel["result"]["session"], "ses_fake1")
+
+        ren = self.call("oc_session_rename", {"id": "ses_fake1", "title": "Renamed"})
+        self.assertTrue(ren["ok"], ren)
+
+        forked = self.call("oc_session_fork", {"id": "ses_fake1"})
+        self.assertTrue(forked["ok"], forked)
+
+        cat = self.call("oc_catalog", {"name": "agents"})
+        self.assertTrue(cat["ok"], cat)
+        self.assertIsInstance(cat["result"]["items"], list)
+
+        always = self.call("permission_reply", {"id": "per_3", "decision": "always", "session": "ses_sub"})
+        self.assertTrue(always["ok"], always)
+        self.assertEqual(self.posts("/api/session/ses_sub/permission/per_3/reply")[-1]["body"], {"decision": "always"})
+
+        FakeOpenCode.next_events = [
+            sse_event("form.created", "ses_fake1",
+                      id="frm_1", title="Need input",
+                      fields=[{"key": "choice", "kind": "string", "options": ["a", "b"]}]),
+            *turn_events("ses_fake1", "Thanks."),
+        ]
+        res = self.call("command", {"text": "ask me"}, timeout=30)
+        self.assertTrue(res["ok"], res)
+        forms = self.collect(want=lambda e: e["kind"] == "form", count=1, timeout=5)
+        self.assertTrue(forms, "form line did not become a chat event")
+        f_reply = self.call("form_reply", {"id": "frm_1", "session": "ses_fake1", "answer": {"choice": "a"}})
+        self.assertTrue(f_reply["ok"], f_reply)
+        self.assertTrue(f_reply["result"]["replied"])
+
+    def test_bridge_socket_active_and_fallback_works_if_bridge_killed(self):
+        sock = self.runtime / "opencode.sock"
+        for _ in range(50):
+            if sock.exists():
+                break
+            time.sleep(0.05)
+        self.assertTrue(sock.exists(), "opencode_bridge.py did not create opencode.sock")
+        res1 = self.call("oc_catalog", {"name": "agents"})
+        self.assertTrue(res1["ok"], res1)
+        # Simulate bridge loss mid-idle: unlink socket and turn must still succeed via fallback
+        sock.unlink(missing_ok=True)
+        res2 = self.call("command", {"text": "fallback turn"}, timeout=30)
+        self.assertTrue(res2["ok"], res2)
+        self.assertIn("echo:", res2["result"]["reply"]["text"])
 
 
 if __name__ == "__main__":

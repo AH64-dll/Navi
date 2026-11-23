@@ -132,7 +132,9 @@ DOM nodes only; model output is never parsed as HTML. Each row offers copy, retr
 edit-and-resend, its timestamp and, when the daemon reports them, the answering model,
 token count and cost. The paperclip attaches up to four files (2 MiB each, images or
 text) that travel base64 with the prompt; an oversized file is refused before sending
-and an unreadable one can be removed from its chip. The last 200 messages for the project are saved (`message_save`)
+and an unreadable one can be removed from its chip. A screenshot on the clipboard
+attaches the same way: paste anywhere in the station except the terminal pane, which
+keeps its own paste for the harness. The last 200 messages for the project are saved (`message_save`)
 and rehydrated (`messages`) on boot; scrolling to the top asks for the page before the
 oldest loaded cursor (`messages {limit,before}`) and stops when the store answers
 `has_more:false`, so a page can never repeat or skip a row even when timestamps

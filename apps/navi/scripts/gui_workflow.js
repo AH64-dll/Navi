@@ -656,7 +656,14 @@
     await feed('approval', {id: 'permission-1', tool: 'shell', input: 'rm -rf build'}, 'shell needs approval');
     const approval = document.querySelector('#chat-log .part.tool[data-status="approval"]');
     assert(approval !== null, 'The approval row did not render');
-    assert(approval.querySelector('.approval-allow') && approval.querySelector('.approval-deny'), 'Allow/Deny are missing');
+    assert(approval.querySelector('.approval-allow') && approval.querySelector('.approval-always') && approval.querySelector('.approval-deny'), 'Allow/Always/Deny are missing');
+    await feed('form', {id: 'form-1', title: 'Pick mode', fields: [
+      {key: 'mode', kind: 'string', label: 'Mode', options: ['fast', 'safe'], required: true},
+      {key: 'note', kind: 'string', label: 'Note', when: [{key: 'mode', op: 'eq', value: 'safe'}]}
+    ]}, 'Pick mode');
+    await waitFor(() => document.querySelector('#chat-log .form-card[data-form-id="form-1"]') !== null, 'Form card did not render');
+    const formCard = document.querySelector('#chat-log .form-card[data-form-id="form-1"]');
+    assert(formCard.querySelector('select') && formCard.querySelector('.form-actions .primary'), 'Form controls missing');
     await feed('reply', {text: 'Ready to continue'}, 'Ready to continue');
     await waitFor(() => chip() === 'Ready', 'The approval turn did not close: ' + chip());
     const ops = inspect().rpcOps.length;
@@ -809,6 +816,26 @@
     assert(/larger than 2 MiB/.test(inspect().chat.lastFailure || ''),
       'The refusal was not surfaced: ' + inspect().chat.lastFailure);
     report.chat.attachments = {sent: 1, refused: true, names: attachedCommand.attachments};
+
+    /* A pasted screenshot becomes an attachment through the same path, and the
+       terminal pane keeps its own paste so a harness still receives text. */
+    window.navi.hooks.clearAttachments();
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'image.png', {type: 'image/png'}));
+    document.body.dispatchEvent(new ClipboardEvent('paste',
+      {clipboardData: transfer, bubbles: true, cancelable: true}));
+    await waitFor(() => inspect().chat.attachments.length === 1,
+      'A pasted image did not become an attachment');
+    const pastedChip = document.querySelector('#attachment-chips .attachment-name');
+    assert(pastedChip && pastedChip.textContent === 'image.png',
+      'The pasted image chip did not name the file: ' + (pastedChip && pastedChip.textContent));
+    const terminalPane = document.getElementById('terminal-pane');
+    terminalPane.dispatchEvent(new ClipboardEvent('paste',
+      {clipboardData: transfer, bubbles: true, cancelable: true}));
+    assert(inspect().chat.attachments.length === 1,
+      'A paste inside the terminal pane was stolen from the harness');
+    window.navi.hooks.clearAttachments();
+    report.chat.paste = {image: true, terminal: 'ignored'};
 
     report.chat.count = inspect().chat.count;
     report.chat.empty_final = inspect().chat.empty;

@@ -65,6 +65,17 @@
         <button type="button" id="voice-use" class="voice-action">Use</button>
         <button type="button" id="voice-edit" class="voice-action">Edit</button>
       </div>
+      <div id="oc-contract-banner" class="voice-banner" role="status" aria-live="polite" hidden></div>
+      <div id="oc-sessions-drawer" class="oc-sessions-drawer" hidden>
+        <div class="oc-sessions-head">
+          <input id="oc-sessions-search" placeholder="Filter sessions…" aria-label="Filter sessions">
+          <label class="oc-sessions-arch"><input type="checkbox" id="oc-sessions-archived"> Archived</label>
+          <button type="button" id="oc-sessions-new" title="New OpenCode session">New</button>
+          <button type="button" id="oc-sessions-refresh" title="Refresh sessions">↻</button>
+          <button type="button" id="oc-sessions-close" class="icon" aria-label="Close sessions">×</button>
+        </div>
+        <ul id="oc-sessions-list" class="oc-sessions-list" role="list" aria-label="OpenCode sessions"></ul>
+      </div>
       <div class="chat-log-wrap">
         <!-- First run: the three ways to act, and why the mic may be unavailable. It
              overlays an empty log, so it never steals height from the composer. -->
@@ -110,6 +121,13 @@
         <!-- Below 900 px there is no room for a rail or a drawer: the graph
              becomes a tab in the composer area (BUG-089). -->
         <button type="button" id="graph-tab" class="pill" title="Project progress" aria-pressed="false">Progress</button>
+        <button type="button" id="oc-sessions-btn" class="pill" title="OpenCode sessions" aria-expanded="false">Sessions</button>
+        <select id="chat-harness" class="pill" title="Conversation harness" aria-label="Conversation harness">
+          <option value="opencode">OpenCode</option>
+          <option value="claude">Claude (ACP)</option>
+          <option value="codex">Codex (ACP)</option>
+          <option value="pi">Pi (ACP)</option>
+        </select>
         <span id="chief-status"></span>
         <button type="button" id="settings-button" class="icon" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.1 7.1 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg></button>
       </div>
@@ -118,7 +136,14 @@
 
   <dialog id="settings-dialog" class="settings glass" aria-label="Settings">
     <form id="settings-form" method="dialog">
-      <h2>Settings</h2>
+      <div class="settings-head">
+        <h2>Settings</h2>
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+          <button type="button" role="tab" id="tab-general" class="settings-tab active" aria-selected="true">General</button>
+          <button type="button" role="tab" id="tab-opencode" class="settings-tab" aria-selected="false">OpenCode</button>
+        </div>
+      </div>
+      <div id="settings-panel-general">
       <div class="toggles">
         <label><input type="checkbox" id="setting-speak"> Speak replies</label>
         <label><input type="checkbox" id="setting-mic"> Microphone</label>
@@ -148,6 +173,10 @@
           <button type="button" data-open="open reddit">Reddit</button>
         </div>
         <p class="hint">Social accounts use your browser's own login. Navi opens pages and fills in posts; you press Post yourself.</p>
+        <div class="connection-row">
+          <button type="button" id="browser-agent-start">Start agent Firefox profile</button>
+          <span class="hint" id="safety-check-note"></span>
+        </div>
       </fieldset>
       <label class="field" for="setting-language">Speech language</label>
       <input id="setting-language" maxlength="12" autocomplete="off" spellcheck="false"
@@ -182,6 +211,14 @@
         <pre id="link-snippet" tabindex="0" aria-label="Setup snippet"></pre>
         <button type="button" id="link-copy" disabled>Copy</button>
       </details>
+      </div>
+      <div id="settings-panel-opencode" class="oc-settings-panel" hidden>
+        <div class="oc-settings-bar">
+          <span id="oc-settings-status" class="hint">OpenCode configuration</span>
+          <button type="button" id="oc-settings-refresh">Refresh</button>
+        </div>
+        <div id="oc-settings-body" class="oc-settings-body"></div>
+      </div>
       <div class="actions">
         <button type="button" id="settings-new" title="Start a fresh OpenCode conversation for the assistant">New assistant session</button>
         <span class="spacer"></span>
