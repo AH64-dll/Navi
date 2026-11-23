@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
@@ -87,6 +88,10 @@ class FakeOpenCode(BaseHTTPRequestHandler):
     contract_errors = []
     pending_permissions = []
     parents = {}
+    active_sessions = {}
+    session_list = []
+    saved_permissions = []
+    mcp_servers = {}
     # Event delivery is per HTTP-server instance (attached in setUp): a dead
     # server's lingering SSE handler must never steal another server's queue.
 
@@ -108,73 +113,145 @@ class FakeOpenCode(BaseHTTPRequestHandler):
     def record(self, entry):
         FakeOpenCode.requests.append(entry)
 
+    def route(self):
+        return self.path.split("?", 1)[0]
+
+    def checked(self, method):
+        """(body, ok): record the request, then reject a body OpenCode would drop."""
+        body = self.body() if method in ("POST", "PATCH", "PUT") else None
+        self.record({"path": self.path, "body": body, "method": method})
+        operation = operation_for(method, self.path)
+        errors = ([f"{method} {self.path} is not in the contract"] if operation is None
+                  else opencode_contract.validate(CONTRACT, operation, body))
+        if errors:
+            FakeOpenCode.contract_errors.extend(errors)
+            self.send_json({"error": errors}, 400)
+            return body, False
+        return body, True
+
     def push_events(self, events):
         with self.server.sse_condition:
-            self.server.pending_events.extend(events)
+            for queue in self.server.sse_queues:
+                queue.extend(events)
             self.server.sse_condition.notify_all()
 
     def serve_events(self):
-        """GET /api/event: hold the SSE stream, draining queued events."""
+        """GET /api/event: hold the SSE stream, draining this connection's queue.
+        A queue per connection, so a client that has died cannot steal the events
+        pushed for the next one."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
+        mine = []
+        with self.server.sse_condition:
+            self.server.sse_queues.append(mine)
         try:
             while True:
                 with self.server.sse_condition:
                     self.server.sse_condition.wait(timeout=0.2)
-                    batch, self.server.pending_events = self.server.pending_events, []
+                    batch, mine[:] = list(mine), []
                 for event in batch:
                     self.wfile.write(f"data: {json.dumps(event)}\n\n".encode())
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
+        finally:
+            with self.server.sse_condition:
+                self.server.sse_queues[:] = [queue for queue in self.server.sse_queues
+                                             if queue is not mine]
 
     def do_GET(self):
+        route = self.route()
+        self.record({"path": self.path, "body": None, "method": "GET"})
         if operation_for("GET", self.path) is None:
             FakeOpenCode.contract_errors.append(f"GET {self.path} is not in the contract")
-        if self.path.startswith("/api/event"):
+        if route == "/api/event":
             self.serve_events()
-        elif self.path.startswith("/api/permission/request"):
+        elif route == "/api/permission/request":
             self.send_json(FakeOpenCode.pending_permissions)
-        elif self.path.startswith("/api/agent"):
+        elif route == "/api/permission/saved":
+            self.send_json(FakeOpenCode.saved_permissions)
+        elif route == "/api/agent":
             self.send_json([
                 {"id": "build", "name": "Build", "mode": "primary", "hidden": False},
                 {"id": "general", "name": "General", "mode": "subagent", "hidden": False},
                 {"id": "navi", "name": "navi", "mode": "primary", "hidden": False},
             ])
-        elif self.path.startswith("/api/model"):
+        elif route.startswith("/api/agent/"):
+            self.send_json({"id": route.rsplit("/", 1)[-1], "name": "Build",
+                            "mode": "primary", "hidden": False})
+        elif route == "/api/model/default":
+            self.send_json({"id": "deepseek/deepseek-v4.1-flash",
+                            "modelID": "deepseek/deepseek-v4.1-flash",
+                            "providerID": "commandcode", "name": "DeepSeek", "type": "chat"})
+        elif route == "/api/model":
             self.send_json([
-                {"providerID": "opencode", "modelID": "glm-5.3-flash-free", "name": "GLM Free", "type": "chat"},
-                {"providerID": "commandcode", "modelID": "deepseek/deepseek-v4.1-flash", "name": "DeepSeek", "type": "chat"},
-                {"providerID": "x", "modelID": "embed", "name": "Embed", "type": "embedding"},
+                {"providerID": "opencode", "modelID": "glm-5.3-flash-free", "name": "GLM Free",
+                 "type": "chat", "settings": {"apiKey": "public"}},
+                {"providerID": "commandcode", "modelID": "deepseek/deepseek-v4.1-flash",
+                 "name": "DeepSeek", "type": "chat", "settings": {"apiKey": "sk-model"}},
+                {"providerID": "x", "modelID": "embed", "name": "Embed", "type": "embedding",
+                 "settings": {"apiKey": "sk-embed"}},
             ])
-        elif self.path.startswith("/api/command"):
+        elif route == "/api/command":
             self.send_json([{"name": "review", "description": "review changes"},
                             {"name": "init", "description": "guided AGENTS.md setup"}])
-        elif re.match(r"^/api/session/[^/]+/message", self.path):
-            session = self.path.split("/")[3]
+        elif route == "/api/skill":
+            self.send_json([{"id": "opencode", "name": "OpenCode", "description": "about OpenCode"}])
+        elif route == "/api/provider":
+            self.send_json([{"id": "commandcode", "name": "CommandCode", "activation": "enabled",
+                             "settings": {"apiKey": "sk-plaintext"}}])
+        elif route == "/api/credential":
+            self.send_json([{"id": "cred_1", "integrationID": "commandcode", "label": "CommandCode",
+                             "active": True, "value": {"type": "key", "key": "user-plaintext"}}])
+        elif route == "/api/integration":
+            self.send_json([{"id": "commandcode", "name": "CommandCode",
+                             "methods": [{"type": "key"}], "connections": []}])
+        elif re.match(r"^/api/integration/[^/]+/connect/oauth/[^/]+$", route):
+            self.send_json({"status": "pending", "time": {"created": 1, "expires": 2}})
+        elif route == "/api/mcp":
+            self.send_json([{"name": "brain-memory", "status": {"status": "connected"}}])
+        elif route == "/api/config":
+            self.send_json([{"type": "document", "path": "/home/fake/opencode.json",
+                             "info": {"provider": {"apiKey": "sk-plaintext"}}}])
+        elif route == "/api/plugin":
+            self.send_json([{"id": "opencode.config.mcp", "source": {"type": "builtin"},
+                             "features": {"server": True}, "state": {"status": "active"}}])
+        elif route == "/api/experimental/usage/limits":
+            self.send_json({"limits": []})
+        elif route == "/api/experimental/session/stats":
+            self.send_json({"sessions": 3})
+        elif route == "/api/info":
+            self.send_json({"version": "2.2.5", "pid": 1, "urls": [],
+                            "paths": {"tmp": "/tmp/opencode"}})
+        elif route == "/api/session/active":
+            self.send_json(FakeOpenCode.active_sessions)
+        elif route == "/api/session":
+            self.send_json(FakeOpenCode.session_list)
+        elif re.match(r"^/api/session/[^/]+/message$", route):
+            session = route.split("/")[3]
             reply = FakeOpenCode.replies.get(session)
             messages = [] if not reply else [{
                 "id": f"msg_{session}_{reply['n']}", "time": {"completed": True},
                 "content": [{"type": "text", "text": reply["text"]}],
             }]
             self.send_json(messages)
-        elif re.match(r"^/api/session/[^/]+$", self.path):
-            session = self.path.rsplit("/", 1)[-1]
-            self.send_json({"id": session, "parentID": FakeOpenCode.parents.get(session)})
+        elif re.match(r"^/api/session/[^/]+$", route):
+            session = route.rsplit("/", 1)[-1]
+            self.send_json({"id": session, "parentID": FakeOpenCode.parents.get(session),
+                            "agent": "build",
+                            "model": {"providerID": "opencode", "id": "glm-5.3-flash-free",
+                                      "variant": "default"},
+                            "cost": 0.5, "tokens": {"input": 1, "output": 1},
+                            "time": {"created": 1, "updated": 2},
+                            "location": {"directory": FakeOpenCode.last_directory or "/home/fake"}})
         else:
             self.send_json(None, 404)
 
     def do_POST(self):
         path = self.path
-        body = self.body()
-        self.record({"path": path, "body": body})
-        operation = operation_for("POST", path)
-        errors = ([f"POST {path} is not in the contract"] if operation is None
-                  else opencode_contract.validate(CONTRACT, operation, body))
-        if errors:
-            FakeOpenCode.contract_errors.extend(errors)
-            self.send_json({"error": errors}, 400)
+        body, ok = self.checked("POST")
+        if not ok:
             return
         if path == "/api/session":
             FakeOpenCode.session_counter += 1
@@ -221,6 +298,74 @@ class FakeOpenCode(BaseHTTPRequestHandler):
             self.send_json(None)
         elif re.match(r"^/api/session/[^/]+/(permission|form)/[^/]+/reply$", path):
             self.send_json(None)
+        elif re.match(r"^/api/session/[^/]+/fork$", path):
+            FakeOpenCode.session_counter += 1
+            self.send_json({"id": f"ses_fork{FakeOpenCode.session_counter}",
+                            "title": "forked", "agent": "build",
+                            "model": {"providerID": "opencode", "id": "glm-5.3-flash-free"},
+                            "cost": 0, "tokens": {"input": 0, "output": 0},
+                            "time": {"created": 1, "updated": 2},
+                            "location": {"directory": "/home/fake"}})
+        elif re.match(r"^/api/session/[^/]+/compact$", path):
+            self.send_json({"id": "msg_compact", "sessionID": path.split("/")[3],
+                            "type": "compaction"})
+        elif re.match(r"^/api/credential/[^/]+/activate$", path):
+            self.send_json(None)
+        elif re.match(r"^/api/integration/[^/]+/connect/oauth$", path):
+            self.send_json({"attemptID": "att_1", "url": "https://example.test/oauth",
+                            "instructions": "Sign in", "mode": "auto",
+                            "time": {"created": 1, "expires": 2}})
+        elif re.match(r"^/api/integration/[^/]+/connect/oauth/[^/]+/complete$", path):
+            self.send_json(None)
+        elif re.match(r"^/api/integration/[^/]+/connect/key$", path):
+            self.send_json(None)
+        elif re.match(r"^/api/experimental/mcp/[^/]+/(connect|disconnect)$", path):
+            self.send_json(None)
+        elif path == "/api/plugin/update":
+            self.send_json(None)
+        else:
+            self.send_json(None, 404)
+
+    def do_PATCH(self):
+        body, ok = self.checked("PATCH")
+        if not ok:
+            return
+        route = self.route()
+        if re.match(r"^/api/session/[^/]+$", route):
+            self.send_json(None)
+        elif re.match(r"^/api/permission/saved/[^/]+$", route):
+            self.send_json({"id": route.rsplit("/", 1)[-1], "projectID": "p",
+                            "action": (body or {}).get("action") or "bash",
+                            "resource": (body or {}).get("resource") or "ls",
+                            "time": {"created": 1, "updated": 2}})
+        else:
+            self.send_json(None, 404)
+
+    def do_PUT(self):
+        body, ok = self.checked("PUT")
+        if not ok:
+            return
+        route = self.route()
+        if re.match(r"^/api/experimental/mcp/[^/]+$", route):
+            FakeOpenCode.mcp_servers[route.rsplit("/", 1)[-1]] = body
+            self.send_json(None)
+        else:
+            self.send_json(None, 404)
+
+    def do_DELETE(self):
+        _, ok = self.checked("DELETE")
+        if not ok:
+            return
+        route = self.route()
+        if re.match(r"^/api/session/[^/]+/form/[^/]+$", route):
+            self.send_json(None)
+        elif re.match(r"^/api/session/[^/]+$", route):
+            self.send_json(None)
+        elif re.match(r"^/api/experimental/mcp/[^/]+$", route):
+            FakeOpenCode.mcp_servers.pop(route.rsplit("/", 1)[-1], None)
+            self.send_json(None)
+        elif re.match(r"^/api/permission/saved/[^/]+$", route):
+            self.send_json(None)
         else:
             self.send_json(None, 404)
 
@@ -239,9 +384,22 @@ class GatewayTests(unittest.TestCase):
         FakeOpenCode.contract_errors = []
         FakeOpenCode.pending_permissions = []
         FakeOpenCode.parents = {}
+        FakeOpenCode.active_sessions = {}
+        FakeOpenCode.session_list = [
+            {"id": "ses_list1", "title": "Navi · projA", "cost": 0.5,
+             "tokens": {"input": 1, "output": 1}, "time": {"created": 1, "updated": 2},
+             "location": {"directory": "/home/fake"}},
+            {"id": "ses_list2", "title": "Older", "cost": 0.1,
+             "tokens": {"input": 1, "output": 1}, "time": {"created": 1, "updated": 1},
+             "location": {"directory": "/home/fake"}},
+        ]
+        FakeOpenCode.saved_permissions = [
+            {"id": "psv_1", "projectID": "p", "action": "bash", "resource": "ls",
+             "time": {"created": 1, "updated": 2}}]
+        FakeOpenCode.mcp_servers = {}
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenCode)
         self.server.sse_condition = threading.Condition()
-        self.server.pending_events = []
+        self.server.sse_queues = []
         self.server.daemon_threads = True
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.folder = tempfile.TemporaryDirectory()
@@ -261,7 +419,8 @@ class GatewayTests(unittest.TestCase):
                 if suffix is None or entry["path"].endswith(suffix)]
 
     def posts(self, suffix):
-        return [entry for entry in FakeOpenCode.requests if entry["path"].endswith(suffix)]
+        return [entry for entry in FakeOpenCode.requests
+                if entry["path"].endswith(suffix) and entry.get("method", "POST") == "POST"]
 
     def session_map(self):
         return json.loads(Path(self.session_file).read_text())
@@ -272,10 +431,9 @@ class GatewayTests(unittest.TestCase):
         reply = self.gateway.ask("hello")
         self.assertEqual(reply, "echo: hello")
         self.assertIn("/api/session/ses_fake1/model", self.paths())
-        model = next(entry for entry in FakeOpenCode.requests if entry["path"].endswith("/model"))
-        self.assertEqual(model["body"], {"model": {"providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash"}})
-        agent = next(entry for entry in FakeOpenCode.requests if entry["path"].endswith("/agent"))
-        self.assertEqual(agent["body"], {"agent": "navi"})
+        self.assertEqual(self.posts("/model")[0]["body"],
+                         {"model": {"providerID": "commandcode", "id": "deepseek/deepseek-v4.1-flash"}})
+        self.assertEqual(self.posts("/agent")[0]["body"], {"agent": "navi"})
         self.assertEqual(self.session_map()["default"]["id"], "ses_fake1")
 
     def test_second_gateway_reuses_the_session_file(self):
@@ -631,6 +789,264 @@ class GatewayTests(unittest.TestCase):
         self.assertTrue(result["replied"], result)
         self.assertEqual(self.posts("/form/frm_1/reply")[0]["body"], {"answer": {"target": "a"}})
 
+    # -- Phase 1: sessions --------------------------------------------------------
+
+    def test_sessions_lists_the_projects_sessions_and_the_running_ones(self):
+        FakeOpenCode.active_sessions = {"ses_list2": {"type": "running"}}
+        directory = str(Path(self.folder.name) / "projA")
+        gateway = Gateway(base_url=self.gateway.base_url, password="pw",
+                          session_file=self.session_file, directory=directory)
+        listing = gateway.sessions(search="navi", archived=False, limit=5)
+        self.assertEqual([item["id"] for item in listing["sessions"]],
+                         ["ses_list1", "ses_list2"])
+        self.assertEqual(listing["active"], {"ses_list2": {"type": "running"}})
+        query = next(entry["path"] for entry in FakeOpenCode.requests
+                     if entry["path"].startswith("/api/session?"))
+        self.assertIn("order=desc", query)
+        self.assertIn("search=navi", query)
+        self.assertIn("archived=false", query)
+        self.assertIn("limit=5", query)
+        self.assertIn(urllib.parse.urlencode({"directory": os.path.abspath(directory)}), query)
+
+    def test_sessions_asks_for_no_archive_filter_by_default(self):
+        self.gateway.sessions()
+        query = next(entry["path"] for entry in FakeOpenCode.requests
+                     if entry["path"].startswith("/api/session?"))
+        self.assertNotIn("archived", query)
+        self.assertNotIn("search", query)
+
+    def test_session_get_returns_the_session(self):
+        info = self.gateway.session_info("ses_list1")
+        self.assertEqual(info["id"], "ses_list1")
+        self.assertEqual(info["agent"], "build")
+
+    def test_session_messages_come_in_conversation_order(self):
+        FakeOpenCode.replies["ses_list1"] = {"n": 1, "text": "hello"}
+        messages = self.gateway.session_messages("ses_list1", limit=20)
+        self.assertEqual(messages[0]["content"][0]["text"], "hello")
+        path = next(entry["path"] for entry in FakeOpenCode.requests if "/message" in entry["path"])
+        self.assertIn("order=asc", path)
+        self.assertIn("limit=20", path)
+
+    def test_session_select_stores_it_and_adopts_what_it_runs(self):
+        directory = str(Path(self.folder.name) / "projA")
+        gateway = Gateway(base_url=self.gateway.base_url, password="pw",
+                          session_file=self.session_file, directory=directory)
+        self.assertEqual(gateway.select_session("ses_list1"), "ses_list1")
+        stored = self.session_map()[os.path.abspath(directory)]
+        self.assertEqual(stored["id"], "ses_list1")
+        self.assertEqual(stored["model"], "opencode/glm-5.3-flash-free")
+        self.assertEqual(stored["agent"], "build")
+        mark = len(FakeOpenCode.requests)
+        gateway.ask("hello")
+        self.assertEqual([entry["path"] for entry in FakeOpenCode.requests[mark:]
+                          if entry["path"].endswith("/prompt")],
+                         ["/api/session/ses_list1/prompt"])
+        # Continuing a session must not silently reconfigure it.
+        self.assertEqual([entry["path"] for entry in FakeOpenCode.requests[mark:]
+                          if entry["path"].endswith(("/model", "/agent"))
+                          and entry["method"] == "POST"], [])
+
+    def test_session_select_refuses_an_id_the_server_does_not_know(self):
+        with self.assertRaises(gateway_module.GatewayError):
+            self.gateway.select_session("not-a-session")
+
+    def test_session_rename_patches_the_title(self):
+        self.assertEqual(self.gateway.session_rename("Renamed", "ses_list1"),
+                         {"session": "ses_list1", "title": "Renamed"})
+        patch = FakeOpenCode.requests[-1]
+        self.assertEqual((patch["method"], patch["path"]), ("PATCH", "/api/session/ses_list1"))
+        self.assertEqual(patch["body"], {"title": "Renamed"})
+
+    def test_session_fork_sends_before_only_when_asked(self):
+        forked = self.gateway.session_fork("ses_list1")
+        self.assertTrue(forked["id"].startswith("ses_fork"))
+        self.assertEqual(FakeOpenCode.requests[-1]["body"], {})
+        self.gateway.session_fork("ses_list1", before="msg_9")
+        self.assertEqual(FakeOpenCode.requests[-1]["body"], {"before": "msg_9"})
+
+    def test_session_archive_patches_the_flag(self):
+        self.gateway.session_archive(True, "ses_list1")
+        self.assertEqual(FakeOpenCode.requests[-1]["body"], {"archived": True})
+        self.gateway.session_archive(False, "ses_list1")
+        self.assertEqual(FakeOpenCode.requests[-1]["body"], {"archived": False})
+
+    def test_session_delete_forgets_the_stored_id(self):
+        session = self.gateway.ensure_session()
+        self.assertEqual(self.session_map()["default"]["id"], session)
+        self.assertEqual(self.gateway.session_delete(session),
+                         {"deleted": session, "forgotten": True})
+        self.assertEqual((FakeOpenCode.requests[-1]["method"],
+                          FakeOpenCode.requests[-1]["path"]), ("DELETE", f"/api/session/{session}"))
+        self.assertEqual(self.session_map(), {})
+        self.assertIsNone(self.gateway.session_id)
+
+    def test_session_compact_posts_an_empty_body(self):
+        self.gateway.session_compact("ses_list1")
+        compact = FakeOpenCode.requests[-1]
+        self.assertEqual(compact["path"], "/api/session/ses_list1/compact")
+        self.assertEqual(compact["body"], {})
+
+    # -- Phase 2: settings --------------------------------------------------------
+
+    def test_catalog_serves_every_allowlisted_name(self):
+        for name in sorted(gateway_module.CATALOG):
+            listing = self.gateway.catalog(name)
+            self.assertEqual(listing["catalog"], name)
+            self.assertIn("items", listing)
+
+    def test_catalog_redacts_credentials_providers_and_config(self):
+        self.assertEqual(self.gateway.catalog("credentials")["items"][0]["value"]["key"],
+                         "[redacted]")
+        self.assertEqual(self.gateway.catalog("providers")["items"][0]["settings"]["apiKey"],
+                         "[redacted]")
+        self.assertEqual(self.gateway.catalog("config")["items"][0]["info"]["provider"]["apiKey"],
+                         "[redacted]")
+        # A model's own settings can hold a key for a custom provider.
+        models = self.gateway.catalog("models")["items"]
+        self.assertEqual([item["settings"]["apiKey"] for item in models],
+                         ["[redacted]", "[redacted]", "[redacted]"])
+        # A list with nothing secret is passed through untouched.
+        self.assertEqual(self.gateway.catalog("mcp")["items"][0]["name"], "brain-memory")
+
+    def test_catalog_rejects_a_name_outside_the_allowlist(self):
+        with self.assertRaisesRegex(gateway_module.GatewayError, "unknown catalog"):
+            self.gateway.catalog("/api/agent")
+
+    def test_catalog_scopes_project_lists_by_directory(self):
+        directory = str(Path(self.folder.name) / "projA")
+        gateway = Gateway(base_url=self.gateway.base_url, password="pw",
+                          session_file=self.session_file, directory=directory)
+        gateway.catalog("agents")
+        path = FakeOpenCode.requests[-1]["path"]
+        self.assertIn(urllib.parse.urlencode({"location[directory]": os.path.abspath(directory)}),
+                      path)
+
+    def test_switch_model_and_agent_target_the_session(self):
+        self.gateway.ensure_session()
+        mark = len(FakeOpenCode.requests)
+        self.assertEqual(self.gateway.switch_model("opencode/glm-5.3-flash-free")["model"],
+                         {"providerID": "opencode", "id": "glm-5.3-flash-free"})
+        self.assertEqual(FakeOpenCode.requests[-1]["path"], "/api/session/ses_fake1/model")
+        self.assertEqual(self.gateway.switch_agent("build"),
+                         {"session": "ses_fake1", "agent": "build"})
+        self.assertEqual(FakeOpenCode.requests[-1]["path"], "/api/session/ses_fake1/agent")
+        stored = self.session_map()["default"]
+        self.assertEqual((stored["model"], stored["agent"]),
+                         ("opencode/glm-5.3-flash-free", "build"))
+        # The next turn does not re-send what the user just chose.
+        self.gateway.ask("hello")
+        self.assertEqual([entry["path"] for entry in FakeOpenCode.requests[mark:]
+                          if entry["path"].endswith(("/model", "/agent"))
+                          and entry["method"] == "POST"],
+                         ["/api/session/ses_fake1/model", "/api/session/ses_fake1/agent"])
+
+    def test_mcp_add_puts_the_config_and_remove_deletes_it(self):
+        config = {"type": "local", "command": ["npx", "-y", "server"]}
+        self.assertEqual(self.gateway.mcp_add("firefox", config),
+                         {"server": "firefox", "added": True})
+        put = FakeOpenCode.requests[-1]
+        self.assertEqual((put["method"], put["path"]), ("PUT", "/api/experimental/mcp/firefox"))
+        self.assertEqual(put["body"], {"config": config})
+        self.assertEqual(FakeOpenCode.mcp_servers["firefox"], {"config": config})
+        self.assertEqual(self.gateway.mcp_remove("firefox"),
+                         {"server": "firefox", "removed": True})
+        self.assertEqual(FakeOpenCode.requests[-1]["method"], "DELETE")
+        self.assertNotIn("firefox", FakeOpenCode.mcp_servers)
+
+    def test_mcp_add_without_a_config_says_what_it_needs(self):
+        with self.assertRaisesRegex(gateway_module.GatewayError, "config object"):
+            self.gateway.mcp_add("firefox", None)
+
+    def test_mcp_connect_and_disconnect(self):
+        self.assertEqual(self.gateway.mcp_connect("firefox")["connected"], True)
+        self.assertEqual(FakeOpenCode.requests[-1]["path"],
+                         "/api/experimental/mcp/firefox/connect")
+        self.assertEqual(self.gateway.mcp_connect("firefox", connect=False)["connected"], False)
+        self.assertEqual(FakeOpenCode.requests[-1]["path"],
+                         "/api/experimental/mcp/firefox/disconnect")
+
+    def test_accounts_and_saved_approvals(self):
+        self.assertEqual(self.gateway.credential_activate("cred_1")["activated"], True)
+        self.assertEqual(FakeOpenCode.requests[-1]["path"], "/api/credential/cred_1/activate")
+        self.assertEqual(self.gateway.permission_saved_remove("psv_1"), {"removed": "psv_1"})
+        self.assertEqual(FakeOpenCode.requests[-1]["path"], "/api/permission/saved/psv_1")
+        attempt = self.gateway.integration_oauth_connect("commandcode", {"methodID": "key"})
+        self.assertEqual(attempt["attemptID"], "att_1")
+        self.assertEqual(FakeOpenCode.requests[-1]["path"],
+                         "/api/integration/commandcode/connect/oauth")
+        status = self.gateway.integration_oauth_status("commandcode", "att_1")
+        self.assertEqual(status["status"], "pending")
+        self.assertTrue(self.gateway.integration_oauth_complete(
+            "commandcode", "att_1", {"code": "123"})["completed"])
+        self.assertEqual(FakeOpenCode.requests[-1]["body"], {"code": "123"})
+        self.assertTrue(self.gateway.integration_connect_key(
+            "commandcode", {"key": "sk-live"})["connected"])
+        self.assertEqual(FakeOpenCode.requests[-1]["body"], {"key": "sk-live"})
+        self.assertEqual(self.gateway.server_info()["version"], "2.2.5")
+
+    def test_an_oauth_connect_without_a_method_says_what_it_needs(self):
+        with self.assertRaisesRegex(gateway_module.GatewayError, "methodID"):
+            self.gateway.integration_oauth_connect("commandcode", {})
+        with self.assertRaisesRegex(gateway_module.GatewayError, '"key"'):
+            self.gateway.integration_connect_key("commandcode", {})
+
+    # -- Phase 3: approvals and questions -----------------------------------------
+
+    def test_form_cancel_deletes_the_form_and_forgets_it(self):
+        self.gateway.ensure_session()
+        self.gateway._forms["frm_1"] = {"id": "frm_1"}
+        self.assertEqual(self.gateway.form_cancel("frm_1"),
+                         {"cancelled": "frm_1", "session": "ses_fake1"})
+        self.assertEqual((FakeOpenCode.requests[-1]["method"], FakeOpenCode.requests[-1]["path"]),
+                         ("DELETE", "/api/session/ses_fake1/form/frm_1"))
+        self.assertEqual(self.gateway._forms, {})
+
+    def test_a_pending_form_outlasts_the_silence_limit(self):
+        """The turn waits for the user, so silence is not a failure while a form is open."""
+        self.gateway._turn_started = self.gateway._last_activity = time.time()
+        self.gateway._busy = True
+        self.gateway._events_alive = True
+        self.gateway.session_id = "ses"
+        self.gateway._forms = {"frm_1": {"id": "frm_1"}}
+        self.gateway._latest_reply = lambda previous: None
+        outcome = {}
+
+        def wait():
+            try:
+                outcome["reply"] = self.gateway._wait_reply(set(), timeout=0.4)
+            except gateway_module.GatewayError as error:
+                outcome["error"] = str(error)
+
+        thread = threading.Thread(target=wait)
+        thread.start()
+        try:
+            time.sleep(1.2)  # three times the silence limit
+            self.assertTrue(thread.is_alive(), "the turn was interrupted while a form waited")
+            self.assertNotIn("error", outcome)
+        finally:
+            self.gateway._handle_event("form.replied", {"sessionID": "ses", "id": "frm_1"})
+            self.gateway._ended_texts = ["answered"]
+            self.gateway._busy = False
+            thread.join(timeout=5)
+        self.assertEqual(outcome.get("reply"), "answered")
+
+    def test_a_pending_approval_is_work_until_it_is_replied_to(self):
+        self.gateway._permissions = [{"id": "per_1"}]
+        self.assertTrue(self.gateway._tool_running())
+        self.gateway._handle_event("permission.replied", {"sessionID": "ses", "id": "per_1"})
+        self.assertEqual(self.gateway._permissions, [])
+        self.assertFalse(self.gateway._tool_running())
+
+    def test_a_form_settled_event_clears_the_pending_form(self):
+        self.gateway._forms["frm_2"] = {"id": "frm_2"}
+        records = []
+        self.gateway._emit = records.append
+        self.gateway._handle_event("form.settled", {"sessionID": "ses", "id": "frm_2",
+                                                    "outcome": "expired"})
+        self.assertEqual(self.gateway._forms, {})
+        self.assertEqual(records, [{"type": "form_settled", "id": "frm_2", "outcome": "expired"}])
+
     # -- contract: every body matches the pinned OpenCode spec ------------------------
 
     def test_the_fake_rejects_a_field_opencode_would_drop(self):
@@ -642,13 +1058,22 @@ class GatewayTests(unittest.TestCase):
             CONTRACT, "session.create", {"title": "x", "location": {"directory": "/tmp"}}), [])
 
     def test_every_operation_the_gateway_calls_is_pinned(self):
+        """Every /api path the gateway names is a pinned operation. The fake server
+        rejects an unpinned request at runtime; this catches a path no test reaches."""
         source = (WORKERS / "opencode_gateway.py").read_text()
-        called = set(re.findall(r'_(?:get|post)\(\s*f?"(/api/[^"?]*)', source))
-        pinned = [re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", entry["path"]) + "$")
-                  for entry in CONTRACT["operations"].values()]
-        for path in called:
-            concrete = re.sub(r"\{[^}]+\}", "x", path)
-            self.assertTrue(any(pattern.match(concrete) for pattern in pinned), path)
+        called = set(re.findall(r'"(/api/[^"]*)"', source))
+        self.assertTrue(called)
+
+        def shape(path):
+            return re.sub(r"\{[^}]*\}", "x", path.split("?")[0]).rstrip("/")
+
+        pinned = {shape(entry["path"]) for entry in CONTRACT["operations"].values()}
+        for path in sorted(called):
+            wanted = shape(path)
+            self.assertTrue(
+                any(candidate == wanted or candidate.startswith(wanted + "/")
+                    for candidate in pinned),
+                f"{path} is not a pinned operation")
         self.assertEqual(set(CONTRACT["operations"]), set(opencode_contract.OPERATIONS))
         self.assertEqual(opencode_contract.problems({"paths": {}, "components": {}})[0][:9], "operation")
 
@@ -780,7 +1205,7 @@ class GatewayTests(unittest.TestCase):
         self.server.server_close()
         replacement = ThreadingHTTPServer(("127.0.0.1", port), FakeOpenCode)
         replacement.sse_condition = threading.Condition()
-        replacement.pending_events = []
+        replacement.sse_queues = []
         replacement.daemon_threads = True
         threading.Thread(target=replacement.serve_forever, daemon=True).start()
         try:
@@ -793,7 +1218,7 @@ class GatewayTests(unittest.TestCase):
             replacement.server_close()
             self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenCode)
             self.server.sse_condition = threading.Condition()
-            self.server.pending_events = []
+            self.server.sse_queues = []
             self.server.daemon_threads = True
             threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
@@ -810,9 +1235,17 @@ class CliTests(unittest.TestCase):
         FakeOpenCode.contract_errors = []
         FakeOpenCode.pending_permissions = []
         FakeOpenCode.parents = {}
+        FakeOpenCode.active_sessions = {}
+        FakeOpenCode.session_list = [
+            {"id": "ses_list1", "title": "Navi · projA", "cost": 0.5,
+             "tokens": {"input": 1, "output": 1}, "time": {"created": 1, "updated": 2},
+             "location": {"directory": "/home/fake"}},
+        ]
+        FakeOpenCode.saved_permissions = []
+        FakeOpenCode.mcp_servers = {}
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenCode)
         cls.server.sse_condition = threading.Condition()
-        cls.server.pending_events = []
+        cls.server.sse_queues = []
         cls.server.daemon_threads = True
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
 
@@ -917,6 +1350,51 @@ class CliTests(unittest.TestCase):
         self.assertTrue(json.loads(result.stdout)["replied"])
         posted = [entry for entry in FakeOpenCode.requests if entry["path"].endswith("/form/frm_2/reply")]
         self.assertEqual(posted[-1]["body"], {"answer": {"target": "b"}})
+
+    def test_ask_cli_with_session_continues_that_session(self):
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_cli("ask", "hi", "--session", "ses_list1", data_dir=folder)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["session"], "ses_list1")
+            stored = json.loads((Path(folder) / "opencode-session").read_text())
+            self.assertEqual(stored["default"]["id"], "ses_list1")
+        prompts = [entry for entry in FakeOpenCode.requests if entry["path"].endswith("/prompt")]
+        self.assertEqual(prompts[-1]["path"], "/api/session/ses_list1/prompt")
+
+    def test_sessions_cli_prints_one_json_object(self):
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_cli("sessions", "--limit", "5", data_dir=folder)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual([item["id"] for item in payload["sessions"]], ["ses_list1"])
+
+    def test_catalog_cli_prints_the_list(self):
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_cli("catalog", "agents", data_dir=folder)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["catalog"], "agents")
+        self.assertEqual([item["id"] for item in payload["items"]], ["build", "general", "navi"])
+
+    def test_mcp_add_cli_takes_the_config_object(self):
+        config = {"type": "local", "command": ["npx", "-y", "server"]}
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_cli("mcp_add", "--name", "firefox",
+                                  "--payload", json.dumps(config), data_dir=folder)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"server": "firefox", "added": True})
+        puts = [entry for entry in FakeOpenCode.requests
+                if entry["method"] == "PUT" and entry["path"] == "/api/experimental/mcp/firefox"]
+        self.assertEqual(puts[-1]["body"], {"config": config})
+
+    def test_form_cancel_cli(self):
+        with tempfile.TemporaryDirectory() as folder:
+            result = self.run_cli("form_cancel", "--id", "frm_3", "--session", "ses_list1",
+                                  data_dir=folder)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["cancelled"], "frm_3")
+        self.assertEqual(FakeOpenCode.requests[-1]["path"],
+                         "/api/session/ses_list1/form/frm_3")
 
     def test_directory_flag_scopes_sessions(self):
         with tempfile.TemporaryDirectory() as folder:

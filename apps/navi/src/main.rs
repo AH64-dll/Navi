@@ -107,6 +107,13 @@ pub struct App {
     status_cache: sessions::StatusCache,
     /// Post-prompt tail sampling schedule (BUG-087); one plan at a time.
     tail_plan: Mutex<Option<sessions::TailPlan>>,
+    /// 30 s cache for OpenCode catalog reads (Phase 2; replaced by events in Phase 4).
+    /// Latest OpenCode contract check result (Phase 5).
+    oc_contract: Mutex<Value>,
+    /// Supervised opencode_bridge.py child process (Phase 4).
+    bridge_child: Mutex<Option<Child>>,
+    shutting_down: std::sync::atomic::AtomicBool,
+    oc_catalog_cache: Mutex<HashMap<String, (u64, Value)>>,
 }
 
 pub fn now() -> u64 {
@@ -429,6 +436,10 @@ impl App {
             state_marks: Mutex::new(HashMap::new()),
             status_cache: sessions::StatusCache::default(),
             tail_plan: Mutex::new(None),
+            oc_catalog_cache: Mutex::new(HashMap::new()),
+            oc_contract: Mutex::new(json!(null)),
+            bridge_child: Mutex::new(None),
+            shutting_down: std::sync::atomic::AtomicBool::new(false),
         });
         let warm = Arc::clone(&app);
         std::thread::spawn(move || warm.warm_launch());
@@ -437,6 +448,12 @@ impl App {
         // (BUG-087).
         let sampler = Arc::clone(&app);
         std::thread::spawn(move || sampler.tail_sampler_loop());
+        if (!app.isolated || std::env::var("NAVI_OPENCODE_URL").is_ok())
+            && std::env::var("NAVI_OPENCODE_BRIDGE").as_deref() != Ok("0")
+        {
+            let bridge = Arc::clone(&app);
+            std::thread::spawn(move || bridge.bridge_supervisor_loop());
+        }
         app.event("ready", "Rust orchestration service ready", json!({}));
         if !app.isolated {
             // Ensure a fresh install still has the Navi agent OpenCode loads.
@@ -906,9 +923,7 @@ impl App {
         fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
         let target = directory.join(AGENT_FILE);
         let text = format!(
-            // `question` waits for a click in a dialog Navi does not have, so one call
-            // hung the turn until it timed out. Denied, the model asks in its reply.
-            "---\ndescription: Navi, the coding agent persona for the Navi desktop app\nmode: primary\npermission:\n  question: deny\n---\n{}\n",
+            "---\ndescription: Navi, the coding agent persona for the Navi desktop app\nmode: primary\n---\n{}\n",
             prompt.trim()
         );
         // Rewrite only when the stored prompt actually changed: the file is
@@ -1171,6 +1186,11 @@ impl App {
 
     /// Stop every child we own and clear its pid file. Called on SIGTERM/INT.
     pub fn shutdown(&self) {
+        self.shutting_down.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(mut child) = self.bridge_child.lock().unwrap().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
         let mut workers = self.workers.lock().unwrap();
         for (_name, mut child) in workers.drain(..) {
             let _ = child.kill();
@@ -1396,6 +1416,7 @@ impl App {
                 payload.insert("browser_connected".into(), json!(browser_connected));
                 payload.insert("turn_state".into(), turn_state);
                 payload.insert("busy".into(), json!(busy));
+                payload.insert("oc_contract".into(), self.oc_contract.lock().unwrap().clone());
                 payload.insert("events".into(), Value::Array(events));
                 payload.insert("versions".into(), Value::Object(versions));
                 Ok(Value::Object(payload))
@@ -1573,6 +1594,55 @@ impl App {
                 let path = project["path"].as_str().unwrap_or_default();
                 self.gateway_op(&["new", "--directory", path])
             }
+            "oc_sessions" => self.oc_sessions(p),
+            "oc_session_get" => self.oc_session_get(p),
+            "oc_session_messages" => self.oc_session_messages(p),
+            "oc_session_select" => self.oc_session_select(p),
+            "oc_session_rename" => self.oc_session_rename(p),
+            "oc_session_fork" => self.oc_session_fork(p),
+            "oc_session_archive" => self.oc_session_archive(p),
+            "oc_session_delete" => self.oc_session_delete(p),
+            "oc_session_compact" => self.oc_session_compact(p),
+            "oc_catalog" => self.oc_catalog(p),
+            "oc_switch_model" => self.oc_switch_model(p),
+            "oc_switch_agent" => self.oc_switch_agent(p),
+            "oc_mcp_add" => self.oc_mcp_add(p),
+            "oc_mcp_remove" => self.oc_mcp_remove(p),
+            "oc_mcp_connect" => self.oc_mcp_connect(p),
+            "oc_mcp_disconnect" => self.oc_mcp_disconnect(p),
+            "oc_permission_saved_remove" => self.oc_permission_saved_remove(p),
+            "oc_credential_activate" => self.oc_credential_activate(p),
+            "oc_integration_oauth_connect" => self.oc_integration_oauth_connect(p),
+            "oc_integration_oauth_status" => self.oc_integration_oauth_status(p),
+            "oc_integration_oauth_complete" => self.oc_integration_oauth_complete(p),
+            "oc_integration_connect_key" => self.oc_integration_connect_key(p),
+            "oc_contract_check" => self.oc_contract_check(),
+            "browser_agent_start" => {
+                let _ = Command::new("firefox")
+                    .args(["-CreateProfile", "navi-agent"])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+                let child = Command::new("firefox")
+                    .args(["-P", "navi-agent", "--no-remote", "--marionette", "--remote-debugging-port"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .map_err(|e| format!("Could not start Firefox navi-agent profile: {e}"))?;
+                Ok(json!({"started":true,"pid":child.id(),"profile":"navi-agent"}))
+            }
+            "safety_check" => {
+                let saved = self.oc_catalog(&json!({"name":"permissions_saved"})).unwrap_or_else(|_| json!({"items":[]}));
+                let items = saved["items"].as_array().cloned().unwrap_or_default();
+                let risky: Vec<Value> = items.into_iter().filter(|item| {
+                    let action = item["action"].as_str().unwrap_or("").to_lowercase();
+                    let res = item["resource"].as_str().unwrap_or("").to_lowercase();
+                    (action.contains("send") || action.contains("post") || action.contains("mail") || action.contains("firefox"))
+                        && !res.is_empty()
+                }).collect();
+                Ok(json!({"safe":risky.is_empty(),"risky":risky}))
+            }
             // The assistant session follows the project switcher (BUG-090):
             // the next turn, interrupt, and permission reply all use this
             // directory, without starting a turn or a new session.
@@ -1581,7 +1651,15 @@ impl App {
             "permission_reply" => {
                 let id = p["id"].as_str().ok_or("Missing permission id")?;
                 let decision = p["decision"].as_str().ok_or("Missing decision")?;
-                self.permission_reply(id, decision)
+                self.permission_reply(id, decision, p["session"].as_str())
+            }
+            "form_reply" => {
+                let id = p["id"].as_str().ok_or("Missing form id")?;
+                self.form_reply(id, &p["answer"], p["session"].as_str())
+            }
+            "form_cancel" => {
+                let id = p["id"].as_str().ok_or("Missing form id")?;
+                self.form_cancel(id, p["session"].as_str())
             }
             "voice_start" => self.spawn_worker("voice"),
             "desktop_start" => self.spawn_worker("desktop"),

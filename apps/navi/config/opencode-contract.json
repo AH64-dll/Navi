@@ -30,6 +30,11 @@
  ],
  "opencode": "2.2.5",
  "operations": {
+  "agent.get": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/agent/{agentID}"
+  },
   "agent.list": {
    "body": null,
    "method": "GET",
@@ -40,10 +45,192 @@
    "method": "GET",
    "path": "/api/command"
   },
+  "config.get": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/config"
+  },
+  "credential.activate": {
+   "body": null,
+   "method": "POST",
+   "path": "/api/credential/{credentialID}/activate"
+  },
+  "credential.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/credential"
+  },
   "event.subscribe": {
    "body": null,
    "method": "GET",
    "path": "/api/event"
+  },
+  "experimental.config.update": {
+   "body": {
+    "$ref": "#/components/schemas/Config.Patch"
+   },
+   "method": "PATCH",
+   "path": "/api/experimental/config"
+  },
+  "experimental.mcp.add": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "config": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Mcp.LocalConfigEncoded"
+       },
+       {
+        "$ref": "#/components/schemas/Mcp.RemoteConfigEncoded"
+       }
+      ]
+     }
+    },
+    "required": [
+     "config"
+    ],
+    "type": "object"
+   },
+   "method": "PUT",
+   "path": "/api/experimental/mcp/{server}"
+  },
+  "experimental.mcp.connect": {
+   "body": null,
+   "method": "POST",
+   "path": "/api/experimental/mcp/{server}/connect"
+  },
+  "experimental.mcp.disconnect": {
+   "body": null,
+   "method": "POST",
+   "path": "/api/experimental/mcp/{server}/disconnect"
+  },
+  "experimental.mcp.remove": {
+   "body": null,
+   "method": "DELETE",
+   "path": "/api/experimental/mcp/{server}"
+  },
+  "experimental.session.stats": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/experimental/session/stats"
+  },
+  "experimental.usage.limits": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/experimental/usage/limits"
+  },
+  "integration.connect.key": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "answer": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Form.Answer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "key": {
+      "type": "string"
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "required": [
+     "key"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/integration/{integrationID}/connect/key"
+  },
+  "integration.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/integration"
+  },
+  "integration.oauth.complete": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/integration/{integrationID}/connect/oauth/{attemptID}/complete"
+  },
+  "integration.oauth.connect": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "answer": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Form.Answer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "label": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "methodID": {
+      "$ref": "#/components/schemas/Integration.MethodID"
+     }
+    },
+    "required": [
+     "methodID"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/integration/{integrationID}/connect/oauth"
+  },
+  "integration.oauth.status": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/integration/{integrationID}/connect/oauth/{attemptID}"
+  },
+  "mcp.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/mcp"
+  },
+  "model.default": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/model/default"
   },
   "model.list": {
    "body": null,
@@ -55,10 +242,84 @@
    "method": "GET",
    "path": "/api/permission/request"
   },
+  "permission.saved.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/permission/saved"
+  },
+  "permission.saved.remove": {
+   "body": null,
+   "method": "DELETE",
+   "path": "/api/permission/saved/{id}"
+  },
+  "permission.saved.update": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "action": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "resource": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "method": "PATCH",
+   "path": "/api/permission/saved/{id}"
+  },
+  "plugin.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/plugin"
+  },
+  "plugin.update": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "targets": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     }
+    },
+    "required": [
+     "targets"
+    ],
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/plugin/update"
+  },
+  "provider.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/provider"
+  },
   "server.info": {
    "body": null,
    "method": "GET",
    "path": "/api/info"
+  },
+  "session.active": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/session/active"
   },
   "session.command": {
    "body": {
@@ -107,6 +368,36 @@
    },
    "method": "POST",
    "path": "/api/session/{sessionID}/command"
+  },
+  "session.compact": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "delivery": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Inbox.Delivery"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "id": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Message.ID"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/compact"
   },
   "session.create": {
    "body": {
@@ -198,6 +489,31 @@
    "method": "POST",
    "path": "/api/session"
   },
+  "session.fork": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "before": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Message.ID"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "method": "POST",
+   "path": "/api/session/{sessionID}/fork"
+  },
+  "session.form.cancel": {
+   "body": null,
+   "method": "DELETE",
+   "path": "/api/session/{sessionID}/form/{formID}"
+  },
   "session.form.reply": {
    "body": {
     "$ref": "#/components/schemas/Form.Reply"
@@ -214,6 +530,11 @@
    "body": null,
    "method": "POST",
    "path": "/api/session/{sessionID}/interrupt"
+  },
+  "session.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/session"
   },
   "session.message.list": {
    "body": null,
@@ -313,6 +634,11 @@
    "method": "POST",
    "path": "/api/session/{sessionID}/prompt"
   },
+  "session.remove": {
+   "body": null,
+   "method": "DELETE",
+   "path": "/api/session/{sessionID}"
+  },
   "session.switchAgent": {
    "body": {
     "additionalProperties": false,
@@ -344,6 +670,62 @@
    },
    "method": "POST",
    "path": "/api/session/{sessionID}/model"
+  },
+  "session.update": {
+   "body": {
+    "additionalProperties": false,
+    "properties": {
+     "archived": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Archive the session with true or restore it with false. Repeating the current state is a no-op."
+     },
+     "metadata": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Session.Metadata"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "permissions": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Permission.Ruleset"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object"
+   },
+   "method": "PATCH",
+   "path": "/api/session/{sessionID}"
+  },
+  "skill.list": {
+   "body": null,
+   "method": "GET",
+   "path": "/api/skill"
   }
  },
  "schemas": {
@@ -352,6 +734,25 @@
   },
   "Agent.ID": {
    "type": "string"
+  },
+  "Config.Patch": {
+   "additionalProperties": false,
+   "properties": {
+    "shell": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "shell"
+   ],
+   "type": "object"
   },
   "Form.Answer": {
    "additionalProperties": {
@@ -398,6 +799,9 @@
     }
    ]
   },
+  "Integration.MethodID": {
+   "type": "string"
+  },
   "Location.PublicRef": {
    "additionalProperties": false,
    "properties": {
@@ -407,6 +811,170 @@
    },
    "required": [
     "directory"
+   ],
+   "type": "object"
+  },
+  "Mcp.LocalConfigEncoded": {
+   "additionalProperties": false,
+   "properties": {
+    "codemode": {
+     "type": "boolean"
+    },
+    "command": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "cwd": {
+     "type": "string"
+    },
+    "disabled": {
+     "type": "boolean"
+    },
+    "environment": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "type": "object"
+    },
+    "protocol": {
+     "$ref": "#/components/schemas/Mcp.Protocol"
+    },
+    "timeout": {
+     "additionalProperties": false,
+     "properties": {
+      "catalog": {
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991,
+       "type": "integer"
+      },
+      "execution": {
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991,
+       "type": "integer"
+      },
+      "startup": {
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    "type": {
+     "enum": [
+      "local"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [
+    "type",
+    "command"
+   ],
+   "type": "object"
+  },
+  "Mcp.OAuthConfigEncoded": {
+   "additionalProperties": false,
+   "properties": {
+    "auth_server_metadata_url": {
+     "type": "string"
+    },
+    "callback_port": {
+     "maximum": 65535,
+     "minimum": 1,
+     "type": "integer"
+    },
+    "client_id": {
+     "type": "string"
+    },
+    "client_secret": {
+     "type": "string"
+    },
+    "redirect_uri": {
+     "type": "string"
+    },
+    "scope": {
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "Mcp.Protocol": {
+   "description": "MCP protocol negotiation. \"legacy\" (default) opens with the initialize handshake and speaks protocol revisions up to 2025-11-25. \"auto\" probes for the 2026-07-28 revision and falls back to legacy when the server does not support it. \"2026-07-28\" requires that revision and fails otherwise.",
+   "enum": [
+    "legacy",
+    "auto",
+    "2026-07-28"
+   ],
+   "type": "string"
+  },
+  "Mcp.RemoteConfigEncoded": {
+   "additionalProperties": false,
+   "properties": {
+    "codemode": {
+     "type": "boolean"
+    },
+    "disabled": {
+     "type": "boolean"
+    },
+    "headers": {
+     "additionalProperties": {
+      "type": "string"
+     },
+     "type": "object"
+    },
+    "oauth": {
+     "anyOf": [
+      {
+       "$ref": "#/components/schemas/Mcp.OAuthConfigEncoded"
+      },
+      {
+       "enum": [
+        false
+       ],
+       "type": "boolean"
+      }
+     ]
+    },
+    "protocol": {
+     "$ref": "#/components/schemas/Mcp.Protocol"
+    },
+    "timeout": {
+     "additionalProperties": false,
+     "properties": {
+      "catalog": {
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991,
+       "type": "integer"
+      },
+      "execution": {
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991,
+       "type": "integer"
+      },
+      "startup": {
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    "type": {
+     "enum": [
+      "remote"
+     ],
+     "type": "string"
+    },
+    "url": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "type",
+    "url"
    ],
    "type": "object"
   },
