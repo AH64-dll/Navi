@@ -21,17 +21,17 @@
       "opacity": "0"
     },
     "art": {
-      "x": 437.1,
-      "y": 105.4,
-      "w": 517.8,
-      "h": 464.4,
-      "scale": 0.48,
+      "x": 430.7,
+      "y": 95.1,
+      "w": 530.5,
+      "h": 475.7,
+      "scale": 0.485,
       "settled": true,
       "cell": {
         "x": 12,
-        "y": 71,
+        "y": 59,
         "w": 1368,
-        "h": 515.4
+        "h": 527.4
       }
     },
     "devtools": false,
@@ -40,7 +40,7 @@
     "pendingOps": [],
     "pendingStale": 0,
     "pendingOldestMs": 0,
-    "cursor": 1837054736688137,
+    "cursor": 1837641057681420,
     "polls": 2,
     "pollFailures": 0,
     "offline": false,
@@ -49,7 +49,7 @@
     "dropped": 0,
     "unknownReplies": 0,
     "daemon": {
-      "pid": 703904,
+      "pid": 348116,
       "version": "0.1.0"
     },
     "workers": {
@@ -59,25 +59,31 @@
     "errors": [
       {
         "type": "log",
-        "at": "2026-11-06T20:59:34.800Z",
+        "at": "2026-11-13T12:02:34.583Z",
         "level": "error",
         "message": "rpc permission_reply failed: OpenCode is not reachable"
       },
       {
         "type": "log",
-        "at": "2026-11-06T20:59:34.904Z",
+        "at": "2026-11-13T12:02:34.670Z",
         "level": "error",
         "message": "rpc permission_reply failed: Invalid permission id"
       },
       {
         "type": "log",
-        "at": "2026-11-06T20:59:35.163Z",
+        "at": "2026-11-13T12:02:34.949Z",
         "level": "error",
         "message": "rpc command failed: OpenCode is not running at http://127.0.0.1:49374"
       },
       {
         "type": "log",
-        "at": "2026-11-06T20:59:35.424Z",
+        "at": "2026-11-13T12:02:35.211Z",
+        "level": "error",
+        "message": "rpc command failed: OpenCode is not running at http://127.0.0.1:49374"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-13T12:02:36.815Z",
         "level": "error",
         "message": "rpc command failed: OpenCode is not running at http://127.0.0.1:49374"
       }
@@ -85,53 +91,59 @@
     "diagnostics": [
       {
         "type": "log",
-        "at": "2026-11-06T20:59:34.800Z",
+        "at": "2026-11-13T12:02:34.583Z",
         "level": "error",
         "message": "rpc permission_reply failed: OpenCode is not reachable"
       },
       {
         "type": "log",
-        "at": "2026-11-06T20:59:34.904Z",
+        "at": "2026-11-13T12:02:34.670Z",
         "level": "error",
         "message": "rpc permission_reply failed: Invalid permission id"
       },
       {
         "type": "log",
-        "at": "2026-11-06T20:59:35.163Z",
+        "at": "2026-11-13T12:02:34.949Z",
         "level": "error",
         "message": "rpc command failed: OpenCode is not running at http://127.0.0.1:49374"
       },
       {
         "type": "log",
-        "at": "2026-11-06T20:59:35.386Z",
+        "at": "2026-11-13T12:02:35.211Z",
+        "level": "error",
+        "message": "rpc command failed: OpenCode is not running at http://127.0.0.1:49374"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-13T12:02:36.815Z",
+        "level": "error",
+        "message": "rpc command failed: OpenCode is not running at http://127.0.0.1:49374"
+      },
+      {
+        "type": "log",
+        "at": "2026-11-13T12:02:36.918Z",
         "level": "warn",
         "message": "permission_reply failed: OpenCode is not reachable"
       },
       {
         "type": "log",
-        "at": "2026-11-06T20:59:35.386Z",
+        "at": "2026-11-13T12:02:36.918Z",
         "level": "warn",
         "message": "permission_reply failed: Invalid permission id"
-      },
-      {
-        "type": "log",
-        "at": "2026-11-06T20:59:35.424Z",
-        "level": "error",
-        "message": "rpc command failed: OpenCode is not running at http://127.0.0.1:49374"
       }
     ],
     "sessions": [
       {
         "active": false,
-        "created": 1793998766486,
-        "cwd": "/tmp/navi-isolated-a7h9ri6l",
+        "created": 1794571345474,
+        "cwd": "/tmp/navi-isolated-10f3r92e",
         "exit_status": null,
         "exited": null,
         "gen": 0,
         "harness": "bash",
-        "id": "navi-3ff3ae5c82ed7b36",
+        "id": "navi-74a4e0c14479002a",
         "label": "Chat probe",
-        "last_active": 1793998773540,
+        "last_active": 1794571352647,
         "last_launched": true,
         "launch_kind": "new",
         "name": "Chat probe",
@@ -139,7 +151,7 @@
         "native_name": null,
         "origin": "navi",
         "orphan": false,
-        "pid": 703977,
+        "pid": 348173,
         "profile": "terminal",
         "project_id": null,
         "replaced_by": null,
@@ -149,32 +161,40 @@
       }
     ],
     "title": "Navi",
-    "messages": 13,
+    "messages": 21,
     "chat": {
-      "count": 13,
-      "mounted": 13,
-      "rows": 13,
+      "count": 21,
+      "mounted": 21,
+      "rows": 21,
       "empty": false,
       "emptyVisible": false,
       "streaming": false,
       "turnDone": false,
-      "status": "attention",
-      "label": "Attention",
-      "failed": 3,
+      "status": "ready",
+      "label": "Ready",
+      "failed": 5,
       "ids": [
-        "m-mw5gjt3m-2",
-        "m-mw5gjt5q-3",
-        "m-mw5gjtdy-4",
-        "m-mw5gjthn-5",
-        "m-mw5gjtim-6",
+        "m-mwexg671-2",
+        "m-mwexg6ak-3",
+        "m-mwexg6ic-4",
+        "m-mwexg6sa-5",
+        "m-mwexg6vg-6",
+        "m-mwexg6wj-7",
         "fixed-message",
-        "m-mw5gjtn3-7",
-        "m-mw5gjtxv-9",
-        "m-mw5gju39-b",
-        "turn-req-mw5gju39-c-7mnv",
-        "m-mw5gjuae-d",
-        "m-mw5gjubz-f",
-        "turn-req-mw5gjuae-e-ol9i"
+        "m-mwexg70p-8",
+        "m-mwexg7bl-a",
+        "m-mwexg7gw-c",
+        "turn-req-mwexg7gw-d-ln5m",
+        "m-mwexg7o5-e",
+        "m-mwexg7pr-g",
+        "turn-req-mwexg7o5-f-tgbc",
+        "m-mwexg7so-h",
+        "turn-real-3",
+        "m-mwexg8g4-i",
+        "m-mwexg8uh-j",
+        "m-mwexg8wq-k",
+        "turn-req-mwexg8wq-l-qv0b",
+        "m-mwexg91o-m"
       ],
       "cursors": [
         4,
@@ -185,6 +205,14 @@
         9,
         10,
         11,
+        12,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
         null,
         null,
         null,
@@ -192,22 +220,30 @@
         null
       ],
       "savedIds": [
-        "m-mw5gjt3m-2",
-        "m-mw5gjt5q-3",
-        "m-mw5gjtdy-4",
-        "m-mw5gjthn-5",
-        "m-mw5gjtim-6",
+        "m-mwexg671-2",
+        "m-mwexg6ak-3",
+        "m-mwexg6ic-4",
+        "m-mwexg6sa-5",
+        "m-mwexg6vg-6",
+        "m-mwexg6wj-7",
         "fixed-message",
-        "m-mw5gjtn3-7",
-        "m-mw5gjtxv-9",
-        "m-mw5gju39-b",
-        "turn-req-mw5gju39-c-7mnv",
-        "m-mw5gjuae-d",
-        "turn-req-mw5gjuae-e-ol9i"
+        "m-mwexg70p-8",
+        "m-mwexg7bl-a",
+        "m-mwexg7gw-c",
+        "turn-req-mwexg7gw-d-ln5m",
+        "m-mwexg7o5-e",
+        "turn-req-mwexg7o5-f-tgbc",
+        "m-mwexg7so-h",
+        "turn-real-3",
+        "m-mwexg8g4-i",
+        "m-mwexg8uh-j",
+        "m-mwexg8wq-k",
+        "turn-req-mwexg8wq-l-qv0b",
+        "m-mwexg91o-m"
       ],
-      "lastId": "turn-req-mw5gjuae-e-ol9i",
-      "lastText": "",
-      "lastStatus": "failed",
+      "lastId": "m-mwexg91o-m",
+      "lastText": "Done.",
+      "lastStatus": "complete",
       "pendingFinalise": null,
       "history": {
         "limit": 200,
@@ -217,11 +253,9 @@
       "lastFailure": "OpenCode is not running at http://127.0.0.1:49374",
       "attachments": [],
       "lastCommand": {
-        "text": "summarise the attachment",
-        "project_id": "prj-93e4c637",
-        "attachments": [
-          "notes.txt"
-        ]
+        "text": "this one fails",
+        "project_id": "prj-cf687845",
+        "attachments": []
       }
     },
     "voice": {
@@ -242,12 +276,6 @@
       "options": 0
     },
     "rpcOps": [
-      "status",
-      "harness_list",
-      "progress_overview",
-      "graph_get",
-      "assistant_scope",
-      "messages",
       "ping",
       "progress_overview",
       "graph_get",
@@ -259,6 +287,8 @@
       "message_save",
       "message_save",
       "message_save",
+      "voice_finish",
+      "message_save",
       "message_save",
       "message_save",
       "message_save",
@@ -276,8 +306,16 @@
       "voice_confirm",
       "message_save",
       "command",
-      "status",
-      "message_save"
+      "message_save",
+      "message_save",
+      "message_save",
+      "message_save",
+      "voice_confirm",
+      "message_save",
+      "command",
+      "message_save",
+      "message_save",
+      "status"
     ],
     "rpcCalls": [
       {
@@ -298,20 +336,20 @@
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-93e4c637"
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-93e4c637"
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-93e4c637"
+          "project_id": "prj-cf687845"
         }
       },
       {
@@ -350,20 +388,20 @@
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-93e4c637"
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-93e4c637"
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjt3m-2",
+          "id": "m-mwexg671-2",
           "role": "assistant",
           "parts": [
             {
@@ -371,14 +409,14 @@
               "text": "Probe answer one"
             }
           ],
-          "time": 1793998773776,
-          "project_id": "prj-93e4c637"
+          "time": 1794571353177,
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjt5q-3",
+          "id": "m-mwexg6ak-3",
           "role": "assistant",
           "parts": [
             {
@@ -386,14 +424,38 @@
               "text": "Streaming text that arrives in pieces"
             }
           ],
-          "time": 1793998773852,
-          "project_id": "prj-93e4c637"
+          "time": 1794571353307,
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjtdy-4",
+          "id": "m-mwexg6ic-4",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "reasoning",
+              "text": "First thought. Second thought. Third thought."
+            },
+            {
+              "type": "text",
+              "text": "Reasoned answer"
+            }
+          ],
+          "time": 1794571353587,
+          "turn": "reasoned-1",
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "voice_finish",
+        "params": {}
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mwexg6sa-5",
           "role": "assistant",
           "parts": [
             {
@@ -401,15 +463,15 @@
               "text": "Coalesced answer"
             }
           ],
-          "time": 1793998774148,
+          "time": 1794571353945,
           "turn": "coalesced-1",
-          "project_id": "prj-93e4c637"
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjthn-5",
+          "id": "m-mwexg6vg-6",
           "role": "assistant",
           "parts": [
             {
@@ -417,14 +479,14 @@
               "text": "Same words twice"
             }
           ],
-          "time": 1793998774282,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354059,
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjtim-6",
+          "id": "m-mwexg6wj-7",
           "role": "assistant",
           "parts": [
             {
@@ -432,8 +494,8 @@
               "text": "Same words twice"
             }
           ],
-          "time": 1793998774318,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354098,
+          "project_id": "prj-cf687845"
         }
       },
       {
@@ -447,8 +509,8 @@
               "text": "One identity"
             }
           ],
-          "time": 1793998774381,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354158,
+          "project_id": "prj-cf687845"
         }
       },
       {
@@ -462,14 +524,14 @@
               "text": "One identity"
             }
           ],
-          "time": 1793998774381,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354158,
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjtn3-7",
+          "id": "m-mwexg70p-8",
           "role": "assistant",
           "parts": [
             {
@@ -501,11 +563,15 @@
             },
             {
               "type": "text",
+              "text": ""
+            },
+            {
+              "type": "text",
               "text": "Ready to continue"
             }
           ],
-          "time": 1793998774478,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354248,
+          "project_id": "prj-cf687845"
         }
       },
       {
@@ -525,7 +591,7 @@
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjtxv-9",
+          "id": "m-mwexg7bl-a",
           "role": "assistant",
           "parts": [
             {
@@ -546,15 +612,15 @@
               "text": "Here is the fix:\n\n```js\nconst x = 1 < 2;\n```\n\n<img src=x onerror=\"window.__xss=1\">"
             }
           ],
-          "time": 1793998774866,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354640,
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-93e4c637"
+          "project_id": "prj-cf687845"
         }
       },
       {
@@ -566,7 +632,7 @@
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gju39-b",
+          "id": "m-mwexg7gw-c",
           "role": "user",
           "parts": [
             {
@@ -574,22 +640,22 @@
               "text": "list the failing tests"
             }
           ],
-          "time": 1793998775061,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354832,
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "command",
         "params": {
           "text": "list the failing tests",
-          "project_id": "prj-93e4c637",
-          "request_id": "req-mw5gju39-c-7mnv"
+          "project_id": "prj-cf687845",
+          "request_id": "req-mwexg7gw-d-ln5m"
         }
       },
       {
         "op": "message_save",
         "params": {
-          "id": "turn-req-mw5gju39-c-7mnv",
+          "id": "turn-req-mwexg7gw-d-ln5m",
           "role": "assistant",
           "parts": [
             {
@@ -600,8 +666,8 @@
               "hint": "Navi\u2019s own commands still work: \u201copen Claude Code\u201d, \u201chow far along is this project?\u201d, \u201cmark Voice done\u201d, /assess. Chatting with Navi needs OpenCode: install the `opencode` CLI or start `opencode serve`."
             }
           ],
-          "time": 1793998775165,
-          "project_id": "prj-93e4c637"
+          "time": 1794571354949,
+          "project_id": "prj-cf687845"
         }
       },
       {
@@ -619,7 +685,7 @@
       {
         "op": "message_save",
         "params": {
-          "id": "m-mw5gjuae-d",
+          "id": "m-mwexg7o5-e",
           "role": "user",
           "parts": [
             {
@@ -627,16 +693,16 @@
               "text": "summarise the attachment"
             }
           ],
-          "time": 1793998775318,
-          "project_id": "prj-93e4c637"
+          "time": 1794571355093,
+          "project_id": "prj-cf687845"
         }
       },
       {
         "op": "command",
         "params": {
           "text": "summarise the attachment",
-          "project_id": "prj-93e4c637",
-          "request_id": "req-mw5gjuae-e-ol9i",
+          "project_id": "prj-cf687845",
+          "request_id": "req-mwexg7o5-f-tgbc",
           "attachments": [
             {
               "name": "notes.txt",
@@ -646,16 +712,9 @@
         }
       },
       {
-        "op": "status",
-        "params": {
-          "gui": true,
-          "since": 1837054736688131
-        }
-      },
-      {
         "op": "message_save",
         "params": {
-          "id": "turn-req-mw5gjuae-e-ol9i",
+          "id": "turn-req-mwexg7o5-f-tgbc",
           "role": "assistant",
           "parts": [
             {
@@ -666,9 +725,183 @@
               "hint": "Navi\u2019s own commands still work: \u201copen Claude Code\u201d, \u201chow far along is this project?\u201d, \u201cmark Voice done\u201d, /assess. Chatting with Navi needs OpenCode: install the `opencode` CLI or start `opencode serve`."
             }
           ],
-          "time": 1793998775319,
-          "turn": "turn-1793998775362-36df",
-          "project_id": "prj-93e4c637"
+          "time": 1794571355211,
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mwexg7so-h",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "reasoning",
+              "text": "One. Two. Three. Four."
+            },
+            {
+              "type": "text",
+              "text": "Checking."
+            },
+            {
+              "type": "tool",
+              "id": "real-tool-1",
+              "name": "shell",
+              "status": "running",
+              "final": false,
+              "input": "{\n  \"command\": \"ls\"\n}"
+            },
+            {
+              "type": "reasoning",
+              "text": "Thinking more."
+            },
+            {
+              "type": "tool",
+              "id": "real-tool-2",
+              "name": "shell",
+              "status": "running",
+              "final": false,
+              "input": "{\n  \"command\": \"ls -l\"\n}"
+            },
+            {
+              "type": "text",
+              "text": "Almost there.A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. A real answer. "
+            },
+            {
+              "type": "tool",
+              "id": "real-tool-long",
+              "name": "shell",
+              "status": "running",
+              "final": false,
+              "input": "{\n  \"command\": \"true\"\n}"
+            },
+            {
+              "type": "text",
+              "text": "Almost there."
+            }
+          ],
+          "time": 1794571355254,
+          "turn": "real-1",
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "turn-real-3",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "reasoning",
+              "text": "A thought."
+            },
+            {
+              "type": "tool",
+              "id": "real-tool-3",
+              "name": "shell",
+              "status": "running",
+              "final": false,
+              "input": "{\n  \"command\": \"sleep 1\"\n}"
+            },
+            {
+              "type": "reasoning",
+              "text": "Another."
+            },
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "timed out",
+              "retry": true
+            }
+          ],
+          "time": 1794571355880,
+          "turn": "real-3",
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mwexg8g4-i",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Finished."
+            }
+          ],
+          "time": 1794571356098,
+          "turn": "real-4",
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "voice_confirm",
+        "params": {
+          "accept": true
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mwexg8wq-k",
+          "role": "user",
+          "parts": [
+            {
+              "type": "text",
+              "text": "this one fails"
+            }
+          ],
+          "time": 1794571356698,
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "command",
+        "params": {
+          "text": "this one fails",
+          "project_id": "prj-cf687845",
+          "request_id": "req-mwexg8wq-l-qv0b"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "turn-req-mwexg8wq-l-qv0b",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "error",
+              "text": "Assistant unavailable",
+              "detail": "OpenCode is not running at http://127.0.0.1:49374",
+              "retry": true,
+              "hint": "Navi\u2019s own commands still work: \u201copen Claude Code\u201d, \u201chow far along is this project?\u201d, \u201cmark Voice done\u201d, /assess. Chatting with Navi needs OpenCode: install the `opencode` CLI or start `opencode serve`."
+            }
+          ],
+          "time": 1794571356815,
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "message_save",
+        "params": {
+          "id": "m-mwexg91o-m",
+          "role": "assistant",
+          "parts": [
+            {
+              "type": "text",
+              "text": "Done."
+            }
+          ],
+          "time": 1794571356874,
+          "project_id": "prj-cf687845"
+        }
+      },
+      {
+        "op": "status",
+        "params": {
+          "gui": true,
+          "since": 1837641057681411
         }
       }
     ],
@@ -678,25 +911,25 @@
     "terminalDisplay": "none",
     "dock": "closed",
     "graphOpen": false,
-    "phase": "error",
+    "phase": "idle",
     "project": {
-      "id": "prj-93e4c637",
+      "id": "prj-cf687845",
       "name": "Navi",
-      "path": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
+      "path": "/home/amrhares/Documents/navi",
       "path_state": "ok",
       "label": "Navi",
       "switcher": false,
       "options": 1,
       "scope": {
-        "directory": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
-        "project_id": "prj-93e4c637",
+        "directory": "/home/amrhares/Documents/navi",
+        "project_id": "prj-cf687845",
         "session": null
       }
     },
     "graph": {
       "open": false,
       "loading": false,
-      "project_id": "prj-93e4c637",
+      "project_id": "prj-cf687845",
       "percent": null,
       "percent_null": true,
       "unknown": true,
@@ -718,14 +951,14 @@
       "evidence": 2,
       "evidenceTotal": "Evidence (2)",
       "empty": true,
-      "as_of": "as of Nov 6, 10:59 PM"
+      "as_of": "as of Nov 13, 02:02 PM"
     },
     "layout": {
       "stage": {
         "x": 12,
-        "y": 71,
+        "y": 59,
         "width": 1368,
-        "height": 515,
+        "height": 527,
         "visible": true
       },
       "chat": {
@@ -743,10 +976,10 @@
         "visible": false
       },
       "sessions": {
-        "x": 12,
-        "y": 12,
-        "width": 266,
-        "height": 34,
+        "x": 0,
+        "y": 0,
+        "width": 1157,
+        "height": 46,
         "visible": true
       },
       "graph": {
@@ -795,7 +1028,7 @@
       "done": true
     },
     "dedupe": {
-      "rows": 6
+      "rows": 7
     },
     "tool": {
       "status": "completed"
@@ -816,7 +1049,7 @@
       "code": true,
       "safe": true
     },
-    "rehydrated": 8,
+    "rehydrated": 9,
     "voice": {
       "confirming": true,
       "claimed": true,
@@ -834,7 +1067,11 @@
         "notes.txt"
       ]
     },
-    "count": 12,
+    "paste": {
+      "image": true,
+      "terminal": "ignored"
+    },
+    "count": 13,
     "empty_final": false,
     "label": "Working"
   },
@@ -845,10 +1082,12 @@
     "One tool chip per id, upserted to its single final state",
     "Reasoning collapsed, approval sent permission_reply, one error surface per failure",
     "Fenced code rendered with a copy affordance; raw HTML stayed text",
-    "Transcript rehydrated from the daemon store (8 messages)",
+    "Transcript rehydrated from the daemon store (9 messages)",
     "Older history paged by cursor: 3 saved rows in two pages, one request, has_more false",
     "Voice confirm claimed the hold before dispatch; a lost claim sent nothing and said so; Escape cancelled",
     "A refused permission decision stayed undecided and showed the daemon text once",
+    "The real poll shape keeps one reasoning section, one activity section and each sentence once",
+    "An upward wheel leaves the end, streaming does not pull back, Jump to latest reaches the latest",
     "A text attachment was read and sent with the prompt; a 3 MiB file was refused visibly"
   ],
   "paging_store": {

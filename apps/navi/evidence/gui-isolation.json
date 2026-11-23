@@ -21,17 +21,17 @@
       "opacity": "0"
     },
     "art": {
-      "x": 400.9,
-      "y": 94.7,
-      "w": 590.3,
-      "h": 528,
-      "scale": 0.549,
-      "settled": false,
+      "x": 433.2,
+      "y": 109.5,
+      "w": 525.5,
+      "h": 471.1,
+      "scale": 0.489,
+      "settled": true,
       "cell": {
         "x": 12,
         "y": 71,
         "w": 1368,
-        "h": 564
+        "h": 523
       }
     },
     "devtools": false,
@@ -40,8 +40,8 @@
     "pendingOps": [],
     "pendingStale": 0,
     "pendingOldestMs": 0,
-    "cursor": 1837054622156804,
-    "polls": 9,
+    "cursor": 1837079939725316,
+    "polls": 8,
     "pollFailures": 0,
     "offline": false,
     "backoff": 700,
@@ -49,7 +49,7 @@
     "dropped": 0,
     "unknownReplies": 0,
     "daemon": {
-      "pid": 699586,
+      "pid": 1207131,
       "version": "0.1.0"
     },
     "workers": {
@@ -61,15 +61,15 @@
     "sessions": [
       {
         "active": false,
-        "created": 1793998654512,
-        "cwd": "/tmp/navi-isolated-99gano79",
+        "created": 1794023378720,
+        "cwd": "/tmp/navi-isolated-0sdvdl9d",
         "exit_status": null,
         "exited": null,
         "gen": 0,
         "harness": "bash",
-        "id": "navi-d425f6e5ca694298",
+        "id": "navi-d1fdfcfec900d9c9",
         "label": "Isolated validation",
-        "last_active": 1793998661272,
+        "last_active": 1794023385640,
         "last_launched": true,
         "launch_kind": "new",
         "name": "Isolated validation",
@@ -77,7 +77,7 @@
         "native_name": null,
         "origin": "navi",
         "orphan": false,
-        "pid": 699644,
+        "pid": 1207190,
         "profile": "terminal",
         "project_id": null,
         "replaced_by": null,
@@ -100,13 +100,13 @@
       "label": "Ready",
       "failed": 0,
       "ids": [
-        "m-mw5gheaz-1"
+        "m-mw5v7br2-1"
       ],
       "cursors": [
         null
       ],
       "savedIds": [],
-      "lastId": "m-mw5gheaz-1",
+      "lastId": "m-mw5v7br2-1",
       "lastText": "Harness session started: Isolated validation",
       "lastStatus": "complete",
       "pendingFinalise": null,
@@ -151,7 +151,6 @@
       "status",
       "status",
       "status",
-      "status",
       "status"
     ],
     "rpcCalls": [
@@ -173,20 +172,20 @@
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-7137e90d"
+          "project_id": "prj-9bdd2db5"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-7137e90d"
+          "project_id": "prj-9bdd2db5"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-7137e90d"
+          "project_id": "prj-9bdd2db5"
         }
       },
       {
@@ -197,62 +196,55 @@
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054622156803
+          "since": 1837079939725315
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054622156804
+          "since": 1837079939725316
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-7137e90d"
+          "project_id": "prj-9bdd2db5"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054622156804
+          "since": 1837079939725316
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054622156804
+          "since": 1837079939725316
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054622156804
+          "since": 1837079939725316
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054622156804
+          "since": 1837079939725316
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837054622156804
-        }
-      },
-      {
-        "op": "status",
-        "params": {
-          "gui": true,
-          "since": 1837054622156804
+          "since": 1837079939725316
         }
       }
     ],
@@ -264,23 +256,23 @@
     "graphOpen": false,
     "phase": "idle",
     "project": {
-      "id": "prj-7137e90d",
+      "id": "prj-9bdd2db5",
       "name": "Navi",
-      "path": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
+      "path": "/home/amrhares/Documents/navi",
       "path_state": "ok",
       "label": "Navi",
       "switcher": false,
       "options": 1,
       "scope": {
-        "directory": "/home/amrhares/Documents/navi/.claude/worktrees/navi-update",
-        "project_id": "prj-7137e90d",
+        "directory": "/home/amrhares/Documents/navi",
+        "project_id": "prj-9bdd2db5",
         "session": null
       }
     },
     "graph": {
       "open": false,
       "loading": false,
-      "project_id": "prj-7137e90d",
+      "project_id": "prj-9bdd2db5",
       "percent": null,
       "percent_null": true,
       "unknown": true,
@@ -299,24 +291,24 @@
       "risks": [
         "No aspects defined"
       ],
-      "evidence": 2,
-      "evidenceTotal": "Evidence (2)",
+      "evidence": 1,
+      "evidenceTotal": "Evidence (1)",
       "empty": true,
-      "as_of": "as of Nov 6, 10:57 PM"
+      "as_of": "as of Nov 7, 05:49 AM"
     },
     "layout": {
       "stage": {
         "x": 12,
         "y": 71,
         "width": 1368,
-        "height": 564,
+        "height": 523,
         "visible": true
       },
       "chat": {
         "x": 236,
-        "y": 647,
+        "y": 606,
         "width": 920,
-        "height": 213,
+        "height": 254,
         "visible": true
       },
       "terminal": {
@@ -345,13 +337,13 @@
     "host": {
       "push": {
         "delivered": 2,
-        "skipped": 7,
+        "skipped": 6,
         "errors": 0,
         "unhandled": 0,
-        "bytes": 6220,
-        "cursor": 1837054622156804,
+        "bytes": 6131,
+        "cursor": 1837079939725316,
         "active": false,
-        "rate": 0.24
+        "rate": 0.25
       }
     }
   }

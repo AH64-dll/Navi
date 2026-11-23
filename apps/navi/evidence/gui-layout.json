@@ -21,10 +21,10 @@
       "opacity": "0"
     },
     "art": {
-      "x": 213.9,
+      "x": 214,
       "y": 74.5,
-      "w": 172.3,
-      "h": 161.4,
+      "w": 172,
+      "h": 161.2,
       "scale": 0.197,
       "settled": true,
       "cell": {
@@ -40,7 +40,7 @@
     "pendingOps": [],
     "pendingStale": 0,
     "pendingOldestMs": 0,
-    "cursor": 1837083857355791,
+    "cursor": 1837640912422927,
     "polls": 8,
     "pollFailures": 0,
     "offline": false,
@@ -49,7 +49,7 @@
     "dropped": 0,
     "unknownReplies": 0,
     "daemon": {
-      "pid": 1338063,
+      "pid": 340946,
       "version": "0.1.0"
     },
     "workers": {
@@ -61,15 +61,15 @@
     "sessions": [
       {
         "active": true,
-        "created": 1794027204531,
-        "cwd": "/tmp/navi-isolated-zo4vdkur",
+        "created": 1794571203620,
+        "cwd": "/tmp/navi-isolated-uo5znr98",
         "exit_status": null,
         "exited": null,
         "gen": 0,
         "harness": "bash",
-        "id": "navi-83288e087e010638",
+        "id": "navi-c61287bed1257f4e",
         "label": "Layout probe",
-        "last_active": 1794027211279,
+        "last_active": 1794571209968,
         "last_launched": true,
         "launch_kind": "new",
         "name": "Layout probe",
@@ -77,7 +77,7 @@
         "native_name": null,
         "origin": "navi",
         "orphan": false,
-        "pid": 1338132,
+        "pid": 341012,
         "profile": "terminal",
         "project_id": null,
         "replaced_by": null,
@@ -184,20 +184,20 @@
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
@@ -208,155 +208,155 @@
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837083857355788
+          "since": 1837640912422924
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-83288e087e010638"
+          "id": "navi-c61287bed1257f4e"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837083857355788
+          "since": 1837640912422925
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837083857355789
+          "since": 1837640912422925
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-83288e087e010638"
+          "id": "navi-c61287bed1257f4e"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837083857355789
+          "since": 1837640912422926
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837083857355790
+          "since": 1837640912422926
         }
       },
       {
         "op": "select",
         "params": {
-          "id": "navi-83288e087e010638"
+          "id": "navi-c61287bed1257f4e"
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837083857355791
+          "since": 1837640912422927
         }
       },
       {
         "op": "status",
         "params": {
           "gui": true,
-          "since": 1837083857355791
+          "since": 1837640912422927
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-44212c43"
+          "project_id": "prj-e4bd94a4"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-44212c43"
+          "project_id": "prj-e4bd94a4"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-44212c43"
+          "project_id": "prj-e4bd94a4"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-eaaf96ec"
+          "project_id": "prj-451e758e"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-eaaf96ec"
+          "project_id": "prj-451e758e"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-eaaf96ec"
+          "project_id": "prj-451e758e"
         }
       },
       {
         "op": "graph_get",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "assistant_scope",
         "params": {
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       },
       {
         "op": "messages",
         "params": {
           "limit": 200,
-          "project_id": "prj-2fd82416"
+          "project_id": "prj-1a49f288"
         }
       }
     ],
@@ -368,23 +368,23 @@
     "graphOpen": true,
     "phase": "idle",
     "project": {
-      "id": "prj-2fd82416",
+      "id": "prj-1a49f288",
       "name": "Navi",
-      "path": "/home/amrhares/Documents/navi/.claude/worktrees/navi-opencode-one",
+      "path": "/home/amrhares/Documents/navi",
       "path_state": "ok",
       "label": "Navi",
       "switcher": false,
       "options": 3,
       "scope": {
-        "directory": "/home/amrhares/Documents/navi/.claude/worktrees/navi-opencode-one",
-        "project_id": "prj-2fd82416",
+        "directory": "/home/amrhares/Documents/navi",
+        "project_id": "prj-1a49f288",
         "session": null
       }
     },
     "graph": {
       "open": true,
       "loading": false,
-      "project_id": "prj-2fd82416",
+      "project_id": "prj-1a49f288",
       "percent": null,
       "percent_null": true,
       "unknown": true,
@@ -406,7 +406,7 @@
       "evidence": 2,
       "evidenceTotal": "Evidence (2)",
       "empty": true,
-      "as_of": "as of Nov 7, 06:54 AM"
+      "as_of": "as of Nov 13, 02:01 PM"
     },
     "layout": {
       "stage": {
@@ -452,8 +452,8 @@
         "skipped": 4,
         "errors": 0,
         "unhandled": 0,
-        "bytes": 7766,
-        "cursor": 1837083857355791,
+        "bytes": 7740,
+        "cursor": 1837640912422927,
         "active": false,
         "rate": 0.64
       }
@@ -473,49 +473,49 @@
         "x": 12,
         "y": 59,
         "width": 350,
-        "height": 581,
+        "height": 571,
         "visible": true
       },
       "art": {
-        "x": 31.3,
-        "y": 204.9,
-        "w": 314.3,
-        "h": 286.4,
-        "scale": 0.294,
+        "x": 31.5,
+        "y": 199.7,
+        "w": 314.1,
+        "h": 286.5,
+        "scale": 0.292,
         "settled": true,
         "cell": {
           "x": 12,
           "y": 59,
           "w": 349.6,
-          "h": 581
+          "h": 571
         }
       },
       "art_closed": {
-        "x": 228.6,
-        "y": 98.3,
-        "w": 587.1,
-        "h": 525.9,
-        "scale": 0.512,
+        "x": 234.2,
+        "y": 97.6,
+        "w": 576.6,
+        "h": 516.7,
+        "scale": 0.501,
         "settled": true,
         "cell": {
           "x": 12,
           "y": 59,
           "w": 1024,
-          "h": 581
+          "h": 571
         }
       },
       "chat": {
         "x": 260,
-        "y": 652,
+        "y": 642,
         "width": 920,
-        "height": 256,
+        "height": 266,
         "visible": true
       },
       "terminal": {
         "x": 374,
         "y": 59,
         "width": 662,
-        "height": 581,
+        "height": 571,
         "visible": true
       },
       "sessions": {
@@ -528,7 +528,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-2fd82416",
+        "project_id": "prj-1a49f288",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -550,7 +550,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:53 AM"
+        "as_of": "as of Nov 13, 02:00 PM"
       },
       "overlaps": [],
       "splitter": {
@@ -560,10 +560,10 @@
         "restored": 662
       },
       "switcher": {
-        "first": "prj-2fd82416",
-        "alpha": "prj-44212c43",
+        "first": "prj-1a49f288",
+        "alpha": "prj-e4bd94a4",
         "label": "100%",
-        "scope": "prj-44212c43"
+        "scope": "prj-e4bd94a4"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"
@@ -581,49 +581,49 @@
         "x": 12,
         "y": 59,
         "width": 264,
-        "height": 423,
+        "height": 413,
         "visible": true
       },
       "art": {
         "x": 31.3,
-        "y": 162.8,
+        "y": 157.6,
         "w": 228.7,
-        "h": 209.5,
-        "scale": 0.273,
+        "h": 209.7,
+        "scale": 0.271,
         "settled": true,
         "cell": {
           "x": 12,
           "y": 59,
           "w": 264,
-          "h": 423
+          "h": 413
         }
       },
       "art_closed": {
-        "x": 233.1,
-        "y": 89.8,
-        "w": 419,
-        "h": 375.9,
-        "scale": 0.47,
+        "x": 238.1,
+        "y": 88.9,
+        "w": 408.5,
+        "h": 366.7,
+        "scale": 0.456,
         "settled": true,
         "cell": {
           "x": 12,
           "y": 59,
           "w": 864,
-          "h": 423
+          "h": 413
         }
       },
       "chat": {
         "x": 180,
-        "y": 494,
+        "y": 484,
         "width": 920,
-        "height": 214,
+        "height": 224,
         "visible": true
       },
       "terminal": {
         "x": 288,
         "y": 59,
         "width": 588,
-        "height": 423,
+        "height": 413,
         "visible": true
       },
       "sessions": {
@@ -636,7 +636,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-2fd82416",
+        "project_id": "prj-1a49f288",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -658,7 +658,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:53 AM"
+        "as_of": "as of Nov 13, 02:00 PM"
       },
       "overlaps": [],
       "splitter": {
@@ -668,10 +668,10 @@
         "restored": 588
       },
       "switcher": {
-        "first": "prj-2fd82416",
-        "alpha": "prj-44212c43",
+        "first": "prj-1a49f288",
+        "alpha": "prj-e4bd94a4",
         "label": "100%",
-        "scope": "prj-44212c43"
+        "scope": "prj-e4bd94a4"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"
@@ -693,7 +693,7 @@
         "visible": true
       },
       "art": {
-        "x": 214.2,
+        "x": 214.3,
         "y": 71.5,
         "w": 172.5,
         "h": 161.4,
@@ -707,17 +707,17 @@
         }
       },
       "art_closed": {
-        "x": 138.1,
-        "y": 82,
-        "w": 323.9,
-        "h": 291.2,
-        "scale": 0.401,
+        "x": 143.3,
+        "y": 81.1,
+        "w": 313.4,
+        "h": 282,
+        "scale": 0.386,
         "settled": true,
         "cell": {
           "x": 12,
           "y": 59,
           "w": 576,
-          "h": 331
+          "h": 321
         }
       },
       "chat": {
@@ -744,7 +744,7 @@
       "graph": {
         "open": true,
         "loading": false,
-        "project_id": "prj-2fd82416",
+        "project_id": "prj-1a49f288",
         "percent": null,
         "percent_null": true,
         "unknown": true,
@@ -766,7 +766,7 @@
         "evidence": 2,
         "evidenceTotal": "Evidence (2)",
         "empty": true,
-        "as_of": "as of Nov 7, 06:54 AM"
+        "as_of": "as of Nov 13, 02:00 PM"
       },
       "overlaps": [],
       "splitter": {
@@ -776,10 +776,10 @@
         "restored": 205
       },
       "switcher": {
-        "first": "prj-2fd82416",
-        "alpha": "prj-44212c43",
+        "first": "prj-1a49f288",
+        "alpha": "prj-e4bd94a4",
         "label": "100%",
-        "scope": "prj-44212c43"
+        "scope": "prj-e4bd94a4"
       },
       "boot_terminal": "none",
       "closed_terminal": "none"

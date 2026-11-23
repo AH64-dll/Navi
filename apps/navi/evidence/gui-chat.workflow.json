@@ -7,10 +7,12 @@
     "One tool chip per id, upserted to its single final state",
     "Reasoning collapsed, approval sent permission_reply, one error surface per failure",
     "Fenced code rendered with a copy affordance; raw HTML stayed text",
-    "Transcript rehydrated from the daemon store (8 messages)",
+    "Transcript rehydrated from the daemon store (9 messages)",
     "Older history paged by cursor: 3 saved rows in two pages, one request, has_more false",
     "Voice confirm claimed the hold before dispatch; a lost claim sent nothing and said so; Escape cancelled",
     "A refused permission decision stayed undecided and showed the daemon text once",
+    "The real poll shape keeps one reasoning section, one activity section and each sentence once",
+    "An upward wheel leaves the end, streaming does not pull back, Jump to latest reaches the latest",
     "A text attachment was read and sent with the prompt; a 3 MiB file was refused visibly"
   ],
   "chat": {
@@ -37,7 +39,7 @@
       "done": true
     },
     "dedupe": {
-      "rows": 6
+      "rows": 7
     },
     "tool": {
       "status": "completed"
@@ -58,7 +60,7 @@
       "code": true,
       "safe": true
     },
-    "rehydrated": 8,
+    "rehydrated": 9,
     "voice": {
       "confirming": true,
       "claimed": true,
@@ -76,7 +78,11 @@
         "notes.txt"
       ]
     },
-    "count": 12,
+    "paste": {
+      "image": true,
+      "terminal": "ignored"
+    },
+    "count": 13,
     "empty_final": false,
     "label": "Working"
   }
