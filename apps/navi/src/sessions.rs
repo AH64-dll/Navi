@@ -716,6 +716,7 @@ impl App {
         let panes: BTreeSet<String> = self
             .panes()
             .into_iter()
+            .filter(|pane| !pane.dead)
             .map(|pane| pane.session)
             .collect();
         let settings = self.settings();
@@ -1125,11 +1126,16 @@ impl App {
         let mut seen = false;
         let mut exit_status = None;
         while Instant::now() < deadline {
-            let panes = self.panes();
+            // Launch settling must not reuse the one-second UI cache. A dead
+            // pane can briefly report no status before tmux reaps its process.
+            let panes = self.panes_uncached();
             match panes.iter().find(|pane| pane.session == target) {
                 Some(pane) if pane.dead => {
+                    running = false;
                     exit_status = pane.dead_status;
-                    break;
+                    if exit_status.is_some() {
+                        break;
+                    }
                 }
                 Some(pane) => {
                     seen = true;

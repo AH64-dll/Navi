@@ -4,6 +4,7 @@ Starts navid isolated with a temp HOME and stub executables; every assertion
 runs against the real daemon over the real socket and a real tmux server.
 """
 import json
+import shutil
 import os
 from pathlib import Path
 import re
@@ -113,6 +114,10 @@ class HarnessTests(unittest.TestCase):
         self.runtime = self.folder / "runtime"
         self.fx = Harness(self.folder)
         stubs = self.fx.write_stubs()
+        tmux = shutil.which("tmux")
+        if not tmux:
+            self.skipTest("tmux is required for isolated terminal tests")
+        (self.fx.stubbin / "tmux").symlink_to(tmux)
         env = dict(os.environ)
         env.update({
             "NAVI_ISOLATED": "1",
@@ -197,7 +202,17 @@ class HarnessTests(unittest.TestCase):
         subprocess.run(["tmux", "-S", str(self.data / "terminals.sock"),
                         "kill-server"], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
-        self.temporary.cleanup()
+        # tmux acknowledges kill-server before every pane child has exited.
+        # Retry only the resulting directory-not-empty race, with a hard bound.
+        import errno
+        for attempt in range(10):
+            try:
+                self.temporary.cleanup()
+                break
+            except OSError as error:
+                if error.errno != errno.ENOTEMPTY or attempt == 9:
+                    raise
+                time.sleep(.1)
 
     # ---------------------------------------------------------------
     # BUG-069/070/072/075/076: launch env/argv/geometry, preseed, pipe
@@ -422,6 +437,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(result["exit_status"], 3)
         row = self.wait_state(result["id"], "exited")
         self.assertEqual(row["exit_status"], 3)
+        self.assertFalse(row["running"], row)
         log = self.data / "sessions" / f"{result['id']}.log"
         self.assertIn("\0SCREENSHOT", log.read_text(errors="replace"))
 

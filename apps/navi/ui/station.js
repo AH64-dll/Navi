@@ -39,7 +39,12 @@ const budgets={status:15000,ping:10000,window_state:10000,settings:20000,create:
   oc_permission_saved_remove:20000,oc_credential_activate:20000,
   oc_integration_oauth_connect:30000,oc_integration_oauth_status:20000,oc_integration_oauth_complete:30000,oc_integration_connect_key:30000,
   permission_reply:20000,form_reply:20000,form_cancel:20000,browser_agent_start:20000,safety_check:20000,
-  mail_connect:45000,mail_disconnect:10000,mail_status:10000,desk:45000};
+  mail_connect:45000,mail_disconnect:10000,mail_status:10000,desk:45000,
+  pi_review_inventory:15000,
+  pi_review_cleanup:15000,
+  pi_review_apply:20000,
+  pi_review_preview:15000,
+  pi_review_testrun:65000};
 const DEFAULT_BUDGET=15000, PENDING_LIMIT=64, SWEEP_INTERVAL=5000, DIAGNOSTIC_LIMIT=200;
 const diagnostics=[];
 let timeouts=0, dropped=0, unknownReplies=0;
@@ -747,6 +752,820 @@ function toolBlock(label,value) {
   block.append(heading,pre);
   return block;
 }
+function reviewRequestId(project,part) {
+  // Metadata only. Persist before sending so reload cannot silently mint a
+  // second request for the same exact preview after an ambiguous outcome.
+  const key='navi-private-review-requests-v1';
+  if(typeof project!=='string'||[part.path,part.before_sha256,part.after_sha256].some(v=>typeof v!=='string'))throw Error('Invalid preview binding');
+  const binding=JSON.stringify([project,part.path,part.before_sha256,part.after_sha256]);
+  if(binding.length>4096)throw Error('Oversized preview binding');
+  let records;
+  try{records=JSON.parse(localStorage.getItem(key)||'[]');}catch{throw Error('Review request metadata unreadable');}
+  if(!Array.isArray(records)||records.length>32||records.some(r=>typeof r?.binding!=='string'||r.binding.length>4096||typeof r?.id!=='string'||!/^[0-9a-f]{32}$/.test(r.id)))throw Error('Invalid review request metadata');
+  const existing=records.find(r=>r.binding===binding);
+  if(existing)return existing.id;
+  if(records.length>=32||!globalThis.crypto?.getRandomValues)throw Error('Review request metadata full or unavailable');
+  const id=Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
+  records.push({binding,id});localStorage.setItem(key,JSON.stringify(records));
+  if(localStorage.getItem(key)!==JSON.stringify(records))throw Error('Review request metadata could not be saved');
+  return id;
+}
+/* review-inventory:start */
+const REVIEW_INVENTORY_SCHEMA='navi-review-inventory-v1';
+const REVIEW_INVENTORY_MAX_BYTES=65536;
+const REVIEW_INVENTORY_MAX_INSPECTED=64;
+const REVIEW_INVENTORY_MAX_VALID=32;
+const REVIEW_INVENTORY_MAX_FILE_BYTES=16384;
+const REVIEW_INVENTORY_ID_RE=/^review-[0-9a-f]{32}$/;
+const REVIEW_INVENTORY_HEX64_RE=/^[0-9a-f]{64}$/;
+const REVIEW_INVENTORY_UNSAFE_TEXT_RE=/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/;
+const REVIEW_INVENTORY_TOP_KEYS=new Set([
+  'schema','applied','source_contents_exposed','storage_present',
+  'inspected_count','valid_count','invalid_count',
+  'max_inspected_children','max_valid_records','items','notice'
+]);
+const REVIEW_INVENTORY_VALID_KEYS=new Set([
+  'review_id','valid','status','applied','requires_fresh_validation',
+  'original_path','proposal_digest','before_sha256','after_sha256',
+  'before_bytes','after_bytes','files'
+]);
+const REVIEW_INVENTORY_INVALID_KEYS=new Set([
+  'review_id','valid','status','reason','applied'
+]);
+const REVIEW_INVENTORY_REASONS=new Set([
+  'invalid_entry_type','invalid_permissions',
+  'incomplete_or_extra_files','verification_failed'
+]);
+const REVIEW_INVENTORY_FILES=['before.txt','proposed-after.txt','review.json'];
+
+function isPlainInventoryObject(value) {
+  return value!==null&&typeof value==='object'&&!Array.isArray(value);
+}
+
+function hasExactInventoryKeys(obj,allowed) {
+  const keys=Object.keys(obj);
+  if(keys.length!==allowed.size)return false;
+  for(const key of keys){if(!allowed.has(key))return false;}
+  return true;
+}
+
+function isSafeInventoryRelativePath(path) {
+  if(typeof path!=='string'||!path.length||path.length>4096)return false;
+  if(path.startsWith('/')||path.endsWith('/')||path.includes('\\'))return false;
+  if(REVIEW_INVENTORY_UNSAFE_TEXT_RE.test(path))return false;
+  for(const seg of path.split('/')){
+    if(!seg||seg==='.'||seg==='..')return false;
+  }
+  return true;
+}
+
+function validateReviewInventoryResult(value) {
+  const fail=()=>{throw Error('Invalid private review inventory result');};
+  if(!isPlainInventoryObject(value))fail();
+  let serialized;
+  try{serialized=JSON.stringify(value);}catch{fail();}
+  if(typeof serialized!=='string'||new TextEncoder().encode(serialized).length>REVIEW_INVENTORY_MAX_BYTES)fail();
+  if(!hasExactInventoryKeys(value,REVIEW_INVENTORY_TOP_KEYS))fail();
+
+  const schema=value.schema;
+  const applied=value.applied;
+  const sourceExposed=value.source_contents_exposed;
+  const storagePresent=value.storage_present;
+  const inspectedCount=value.inspected_count;
+  const validCount=value.valid_count;
+  const invalidCount=value.invalid_count;
+  const maxInspected=value.max_inspected_children;
+  const maxValid=value.max_valid_records;
+  const items=value.items;
+  const notice=value.notice;
+
+  if(schema!==REVIEW_INVENTORY_SCHEMA||applied!==false||sourceExposed!==false)fail();
+  if(typeof storagePresent!=='boolean')fail();
+  if(maxInspected!==REVIEW_INVENTORY_MAX_INSPECTED||maxValid!==REVIEW_INVENTORY_MAX_VALID)fail();
+  if(!Number.isSafeInteger(inspectedCount)||inspectedCount<0||inspectedCount>REVIEW_INVENTORY_MAX_INSPECTED)fail();
+  if(!Number.isSafeInteger(validCount)||validCount<0||validCount>REVIEW_INVENTORY_MAX_VALID)fail();
+  if(!Number.isSafeInteger(invalidCount)||invalidCount<0||invalidCount>REVIEW_INVENTORY_MAX_INSPECTED)fail();
+  if(validCount+invalidCount!==inspectedCount)fail();
+  if(typeof notice!=='string'||!notice.length||notice.length>512||REVIEW_INVENTORY_UNSAFE_TEXT_RE.test(notice))fail();
+  if(!Array.isArray(items)||items.length!==inspectedCount)fail();
+  if(!storagePresent&&items.length!==0)fail();
+
+  const seenIds=new Set();
+  const cleanItems=[];
+  let actualValid=0;
+  let actualInvalid=0;
+
+  for(const item of items){
+    if(!isPlainInventoryObject(item))fail();
+    const reviewId=item.review_id;
+    if(typeof reviewId!=='string'||!REVIEW_INVENTORY_ID_RE.test(reviewId)||seenIds.has(reviewId))fail();
+    seenIds.add(reviewId);
+    if(item.applied!==false||typeof item.valid!=='boolean')fail();
+
+    if(item.valid){
+      if(!hasExactInventoryKeys(item,REVIEW_INVENTORY_VALID_KEYS))fail();
+      if(item.status!=='valid'||item.requires_fresh_validation!==true)fail();
+      const originalPath=item.original_path;
+      const digest=item.proposal_digest;
+      const beforeSha=item.before_sha256;
+      const afterSha=item.after_sha256;
+      const beforeBytes=item.before_bytes;
+      const afterBytes=item.after_bytes;
+      const files=item.files;
+      if(!isSafeInventoryRelativePath(originalPath))fail();
+      if(typeof digest!=='string'||!REVIEW_INVENTORY_HEX64_RE.test(digest))fail();
+      if(typeof beforeSha!=='string'||!REVIEW_INVENTORY_HEX64_RE.test(beforeSha))fail();
+      if(typeof afterSha!=='string'||!REVIEW_INVENTORY_HEX64_RE.test(afterSha))fail();
+      if(!Number.isSafeInteger(beforeBytes)||beforeBytes<0||beforeBytes>REVIEW_INVENTORY_MAX_FILE_BYTES)fail();
+      if(!Number.isSafeInteger(afterBytes)||afterBytes<0||afterBytes>REVIEW_INVENTORY_MAX_FILE_BYTES)fail();
+      if(!Array.isArray(files)||files.length!==3)fail();
+      if(files[0]!==REVIEW_INVENTORY_FILES[0]||files[1]!==REVIEW_INVENTORY_FILES[1]||files[2]!==REVIEW_INVENTORY_FILES[2])fail();
+      actualValid+=1;
+      cleanItems.push({
+        review_id:reviewId,valid:true,status:'valid',applied:false,
+        requires_fresh_validation:true,original_path:originalPath,
+        proposal_digest:digest,before_sha256:beforeSha,after_sha256:afterSha,
+        before_bytes:beforeBytes,after_bytes:afterBytes,
+        files:[files[0],files[1],files[2]]
+      });
+    }else{
+      if(!hasExactInventoryKeys(item,REVIEW_INVENTORY_INVALID_KEYS))fail();
+      const reason=item.reason;
+      if(item.status!=='invalid'||typeof reason!=='string'||!REVIEW_INVENTORY_REASONS.has(reason))fail();
+      actualInvalid+=1;
+      cleanItems.push({
+        review_id:reviewId,valid:false,status:'invalid',reason:reason,applied:false
+      });
+    }
+  }
+
+  if(actualValid!==validCount||actualInvalid!==invalidCount||actualValid>REVIEW_INVENTORY_MAX_VALID||actualValid+actualInvalid!==inspectedCount)fail();
+  return {
+    schema:schema,applied:false,source_contents_exposed:false,
+    storage_present:storagePresent,inspected_count:inspectedCount,
+    valid_count:validCount,invalid_count:invalidCount,
+    max_inspected_children:maxInspected,max_valid_records:maxValid,
+    items:cleanItems,notice:notice
+  };
+}
+
+function clearReviewInventoryList(list) {
+  while(list.firstChild)list.removeChild(list.firstChild);
+}
+
+const REVIEW_CLEANUP_SCHEMA='navi-review-cleanup-v1';
+const REVIEW_CLEANUP_ID_RE=/^review-[0-9a-f]{32}$/;
+const REVIEW_CLEANUP_SUCCESS_TEXT='Deleted this private review copy only. No project file changed.';
+const REVIEW_CLEANUP_UNKNOWN_TEXT='Outcome unknown. Browse again before retrying.';
+const REVIEW_CLEANUP_REASONS=new Set([
+  'not_found',
+  'digest_mismatch',
+  'invalid_entry_type',
+  'invalid_permissions',
+  'incomplete_or_extra_files',
+  'verification_failed',
+  'directory_changed',
+  'canceled',
+  'timed_out',
+  'invalid_request',
+  'invalid_storage',
+]);
+const REVIEW_CLEANUP_REASON_TEXT=Object.freeze({
+  not_found:'This private review copy was already gone. Browse again to refresh the list.',
+  digest_mismatch:'Delete refused: review digest did not match. No files were deleted. Browse again to refresh.',
+  invalid_entry_type:'Delete refused: unexpected file type in private review copy. No files were deleted.',
+  invalid_permissions:'Delete refused: private review permissions did not match owner-only rules. No files were deleted.',
+  incomplete_or_extra_files:'Delete refused: private review copy had missing or unexpected files. No files were deleted.',
+  verification_failed:'Delete refused: private review integrity verification failed. No files were deleted.',
+  directory_changed:'Delete stopped: private review directory changed during cleanup. Outcome unknown. Browse again before retrying.',
+  canceled:'Delete was canceled. Outcome unknown. Browse again before retrying.',
+  timed_out:'Delete timed out. Outcome unknown. Browse again before retrying.',
+  invalid_request:'Delete refused: invalid cleanup request. No files were deleted.',
+  invalid_storage:'Delete refused: private review storage is unavailable or not owner-private. No files were deleted.',
+});
+let reviewCleanupInFlight=false;
+const reviewCleanupSyncers=new Set();
+
+function setReviewCleanupInFlight(active) {
+  reviewCleanupInFlight=!!active;
+  for(const sync of reviewCleanupSyncers)sync();
+}
+
+function validateReviewCleanupResult(raw,expectedReviewId) {
+  if(typeof expectedReviewId!=='string'||!REVIEW_CLEANUP_ID_RE.test(expectedReviewId))throw new Error('Invalid review cleanup request');
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid review cleanup response');
+  const keys=Object.keys(raw);
+  const has=(k)=>Object.prototype.hasOwnProperty.call(raw,k);
+  if(!has('schema')||!has('deleted')||!has('review_id'))throw new Error('Invalid review cleanup response');
+  if(raw.schema!==REVIEW_CLEANUP_SCHEMA)throw new Error('Invalid review cleanup response');
+  if(typeof raw.deleted!=='boolean')throw new Error('Invalid review cleanup response');
+  if(typeof raw.review_id!=='string'||raw.review_id!==expectedReviewId)throw new Error('Invalid review cleanup response');
+  if(raw.deleted){
+    if(keys.length!==3||has('reason'))throw new Error('Invalid review cleanup response');
+    return {schema:REVIEW_CLEANUP_SCHEMA,deleted:true,review_id:expectedReviewId};
+  }
+  if(keys.length!==4||!has('reason'))throw new Error('Invalid review cleanup response');
+  if(typeof raw.reason!=='string'||!REVIEW_CLEANUP_REASONS.has(raw.reason))throw new Error('Invalid review cleanup response');
+  return {schema:REVIEW_CLEANUP_SCHEMA,deleted:false,review_id:expectedReviewId,reason:raw.reason};
+}
+
+function buildReviewCleanupRow(status,list,item,ctx) {
+  const rowReviewId=item.review_id;
+  const rowDigest=item.proposal_digest;
+  const requiredConfirm='delete private review '+rowReviewId;
+  const wrap=document.createElement('div');
+  wrap.className='review-cleanup-controls';
+  const prompt=document.createElement('span');
+  prompt.className='review-cleanup-prompt';
+  prompt.textContent='Delete this private review copy: type "'+requiredConfirm+'"';
+  const input=document.createElement('input');
+  input.type='text';
+  input.className='review-cleanup-confirm';
+  input.value='';
+  input.setAttribute('autocomplete','off');
+  input.setAttribute('aria-label','Type '+requiredConfirm+' to enable delete');
+  const delBtn=document.createElement('button');
+  delBtn.type='button';
+  delBtn.className='review-cleanup-delete';
+  delBtn.textContent='Delete this private review copy';
+  delBtn.title='Delete only this private review copy. No project file is changed.';
+  const syncDelBtn=()=>{
+    const browsing=ctx&&ctx.isBrowseInFlight?ctx.isBrowseInFlight():false;
+    delBtn.disabled=reviewCleanupInFlight||browsing||input.value!==requiredConfirm;
+  };
+  syncDelBtn();
+  if(ctx&&ctx.rowSyncers)ctx.rowSyncers.push(syncDelBtn);
+  input.oninput=syncDelBtn;
+  input.onchange=syncDelBtn;
+  delBtn.onclick=async()=>{
+    const browsing=ctx&&ctx.isBrowseInFlight?ctx.isBrowseInFlight():false;
+    if(delBtn.disabled||reviewCleanupInFlight||browsing)return;
+    const typedConfirm=input.value;
+    if(typedConfirm!==requiredConfirm){
+      input.value='';
+      syncDelBtn();
+      return;
+    }
+    const currentProject=activeProjectId();
+    const expectedProject=ctx&&ctx.projectId?ctx.projectId:currentProject;
+    const messageProject=ctx?ctx.messageProject:null;
+    if(!currentProject||currentProject!==expectedProject||(messageProject&&currentProject!==messageProject)){
+      input.value='';
+      if(ctx&&ctx.clearPanel)ctx.clearPanel();
+      else clearReviewInventoryList(list);
+      status.textContent=REVIEW_CLEANUP_UNKNOWN_TEXT;
+      syncDelBtn();
+      return;
+    }
+    setReviewCleanupInFlight(true);
+    syncDelBtn();
+    status.textContent='Deleting this private review copy only. No project file is changed.';
+    try{
+      const raw=await rpc('pi_review_cleanup',{
+        project_id:expectedProject,
+        review_id:rowReviewId,
+        proposal_digest:rowDigest,
+        confirm:typedConfirm,
+      });
+      if(activeProjectId()!==expectedProject){
+        if(ctx&&ctx.clearPanel)ctx.clearPanel();
+        else clearReviewInventoryList(list);
+        status.textContent=REVIEW_CLEANUP_UNKNOWN_TEXT;
+        return;
+      }
+      const res=validateReviewCleanupResult(raw,rowReviewId);
+      if(!res.deleted){
+        if(res.reason==='canceled'||res.reason==='timed_out'||res.reason==='directory_changed'){
+          if(ctx&&ctx.clearPanel)ctx.clearPanel();
+          else clearReviewInventoryList(list);
+        }
+        status.textContent=REVIEW_CLEANUP_REASON_TEXT[res.reason];
+        return;
+      }
+      status.textContent=REVIEW_CLEANUP_SUCCESS_TEXT;
+      if(ctx&&ctx.refreshAfterDelete){
+        await ctx.refreshAfterDelete(expectedProject,REVIEW_CLEANUP_SUCCESS_TEXT);
+      }
+    }catch{
+      if(ctx&&ctx.clearPanel)ctx.clearPanel();
+      else clearReviewInventoryList(list);
+      status.textContent=REVIEW_CLEANUP_UNKNOWN_TEXT;
+    }finally{
+      input.value='';
+      setReviewCleanupInFlight(false);
+      syncDelBtn();
+    }
+  };
+  wrap.appendChild(prompt);
+  wrap.appendChild(input);
+  wrap.appendChild(delBtn);
+  return wrap;
+}
+
+const REVIEW_APPLY_SCHEMA='navi-review-apply-v1';
+const REVIEW_APPLY_ID_RE=/^review-[0-9a-f]{32}$/;
+const REVIEW_APPLY_SUCCESS_TEXT='Applied this review to the project file. The private review copy was kept.';
+const REVIEW_APPLY_UNKNOWN_TEXT='Outcome unknown. The project file may or may not have changed. Browse again and check the file before retrying.';
+const REVIEW_APPLY_REASONS=new Set([
+  'invalid_request',
+  'not_found',
+  'digest_mismatch',
+  'verification_failed',
+  'before_mismatch',
+  'invalid_entry_type',
+  'invalid_permissions',
+  'too_large',
+  'directory_changed',
+  'invalid_storage',
+  'canceled',
+  'timed_out',
+]);
+const REVIEW_APPLY_REASON_TEXT=Object.freeze({
+  invalid_request:'Apply refused: invalid apply request. The project file was not changed.',
+  not_found:'Apply refused: private review copy was not found. The project file was not changed. Browse again to refresh.',
+  digest_mismatch:'Apply refused: review digest did not match. The project file was not changed. Browse again to refresh.',
+  verification_failed:'Apply refused: private review integrity verification failed. The project file was not changed.',
+  before_mismatch:'Apply refused: the project file changed since the review was created. The project file was not changed. Browse again and inspect the file.',
+  invalid_entry_type:'Apply refused: unexpected file type for the private review or target path. The project file was not changed.',
+  invalid_permissions:'Apply refused: permissions did not match owner-only rules. The project file was not changed.',
+  too_large:'Apply refused: review or target file exceeded the allowed size limit. The project file was not changed.',
+  directory_changed:REVIEW_APPLY_UNKNOWN_TEXT,
+  invalid_storage:'Apply refused: private review storage is unavailable or not owner-private. The project file was not changed.',
+  canceled:REVIEW_APPLY_UNKNOWN_TEXT,
+  timed_out:REVIEW_APPLY_UNKNOWN_TEXT,
+});
+
+function validateReviewApplyResult(raw,expectedReviewId) {
+  if(typeof expectedReviewId!=='string'||!REVIEW_APPLY_ID_RE.test(expectedReviewId))throw new Error('Invalid review apply request');
+  if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.prototype.toString.call(raw)!=='[object Object]')throw new Error('Invalid review apply response');
+  const keys=Object.keys(raw);
+  const has=(k)=>Object.prototype.hasOwnProperty.call(raw,k);
+  if(!has('schema')||!has('applied')||!has('review_id'))throw new Error('Invalid review apply response');
+  if(raw.schema!==REVIEW_APPLY_SCHEMA)throw new Error('Invalid review apply response');
+  if(typeof raw.applied!=='boolean')throw new Error('Invalid review apply response');
+  if(typeof raw.review_id!=='string'||raw.review_id!==expectedReviewId)throw new Error('Invalid review apply response');
+  if(raw.applied){
+    if(keys.length!==3||has('reason'))throw new Error('Invalid review apply response');
+    return {schema:REVIEW_APPLY_SCHEMA,applied:true,review_id:expectedReviewId};
+  }
+  if(keys.length!==4||!has('reason'))throw new Error('Invalid review apply response');
+  if(typeof raw.reason!=='string'||!REVIEW_APPLY_REASONS.has(raw.reason))throw new Error('Invalid review apply response');
+  return {schema:REVIEW_APPLY_SCHEMA,applied:false,review_id:expectedReviewId,reason:raw.reason};
+}
+
+const REVIEW_PREVIEW_SCHEMA='navi-review-preview-v1';
+const REVIEW_PREVIEW_MAX_DIFF=40000;
+const REVIEW_PREVIEW_REASONS=new Set(['invalid_request','not_found','digest_mismatch','verification_failed','invalid_entry_type','invalid_permissions','too_large','invalid_storage','canceled','timed_out']);
+const REVIEW_PREVIEW_FAIL_TEXT='Preview unavailable. Apply stays disabled. Browse again to refresh.';
+
+function validateReviewPreviewResult(raw,expectedReviewId) {
+  if(typeof expectedReviewId!=='string'||!REVIEW_APPLY_ID_RE.test(expectedReviewId))throw new Error('Invalid review preview request');
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid review preview response');
+  const keys=Object.keys(raw);
+  if(raw.schema!==REVIEW_PREVIEW_SCHEMA||raw.review_id!==expectedReviewId||typeof raw.ok!=='boolean')throw new Error('Invalid review preview response');
+  if(!raw.ok){
+    if(keys.length!==4||typeof raw.reason!=='string'||!REVIEW_PREVIEW_REASONS.has(raw.reason))throw new Error('Invalid review preview response');
+    return {ok:false,reason:raw.reason};
+  }
+  const want=['schema','review_id','ok','stale','truncated','diff_lines','before_bytes','after_bytes','diff'];
+  if(keys.length!==want.length||want.some((k)=>!Object.prototype.hasOwnProperty.call(raw,k)))throw new Error('Invalid review preview response');
+  if(typeof raw.stale!=='boolean'||typeof raw.truncated!=='boolean')throw new Error('Invalid review preview response');
+  for(const k of ['diff_lines','before_bytes','after_bytes'])if(!Number.isSafeInteger(raw[k])||raw[k]<0)throw new Error('Invalid review preview response');
+  if(typeof raw.diff!=='string'||raw.diff.length>REVIEW_PREVIEW_MAX_DIFF)throw new Error('Invalid review preview response');
+  return {ok:true,stale:raw.stale,truncated:raw.truncated,diff_lines:raw.diff_lines,diff:raw.diff};
+}
+
+function buildReviewPreviewRow(status,list,item,ctx,state) {
+  const rowReviewId=item.review_id;
+  const rowDigest=item.proposal_digest;
+  const wrap=document.createElement('div');
+  wrap.className='review-preview-controls';
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='review-preview-button';
+  btn.textContent='Preview changes';
+  btn.title='Show what Apply would change. Read-only. Nothing is changed.';
+  const pre=document.createElement('pre');
+  pre.className='review-preview-diff';
+  pre.hidden=true;
+  let inFlight=false;
+  const sync=()=>{
+    const browsing=ctx&&ctx.isBrowseInFlight?ctx.isBrowseInFlight():false;
+    btn.disabled=inFlight||reviewCleanupInFlight||browsing;
+  };
+  sync();
+  if(ctx&&ctx.rowSyncers)ctx.rowSyncers.push(sync);
+  btn.onclick=async()=>{
+    if(btn.disabled)return;
+    const currentProject=activeProjectId();
+    const expectedProject=ctx&&ctx.projectId?ctx.projectId:currentProject;
+    if(!currentProject||currentProject!==expectedProject)return;
+    state.previewed=false;
+    pre.hidden=true;
+    pre.textContent='';
+    if(state.sync)state.sync();
+    inFlight=true;
+    sync();
+    status.textContent='Loading preview. Nothing is changed.';
+    try{
+      const raw=await rpc('pi_review_preview',{project_id:expectedProject,review_id:rowReviewId,proposal_digest:rowDigest});
+      if(activeProjectId()!==expectedProject){
+        if(ctx&&ctx.clearPanel)ctx.clearPanel();
+        status.textContent=REVIEW_PREVIEW_FAIL_TEXT;
+        return;
+      }
+      const res=validateReviewPreviewResult(raw,rowReviewId);
+      if(!res.ok){status.textContent=REVIEW_PREVIEW_FAIL_TEXT;return;}
+      if(res.stale){status.textContent='The project file changed since this review was created. Apply stays disabled. Browse again and inspect the file.';return;}
+      pre.textContent=res.diff.length?res.diff:'(no differences)';
+      pre.hidden=false;
+      state.previewed=true;
+      status.textContent='Preview loaded ('+res.diff_lines+' lines'+(res.truncated?', truncated: only part of the diff is shown':'')+'). Nothing has been changed yet.';
+    }catch{
+      state.previewed=false;
+      pre.hidden=true;
+      pre.textContent='';
+      status.textContent=REVIEW_PREVIEW_FAIL_TEXT;
+    }finally{
+      inFlight=false;
+      sync();
+      if(state.sync)state.sync();
+    }
+  };
+  wrap.appendChild(btn);
+  wrap.appendChild(pre);
+  return wrap;
+}
+
+const REVIEW_TESTRUN_SCHEMA='navi-review-testrun-v1';
+const REVIEW_TESTRUN_REASONS=new Set(['invalid_request','not_found','digest_mismatch','verification_failed','invalid_entry_type','invalid_permissions','too_large','invalid_storage','canceled','timed_out','stale_target','tree_too_large','copy_failed','sandbox_unavailable','busy','output_too_large','failed_to_start']);
+const REVIEW_TESTRUN_FAIL_TEXT='Test run did not complete. Nothing in the project was changed. The proposed edit was never applied.';
+
+function validateReviewTestrunResult(raw,expectedReviewId) {
+  if(typeof expectedReviewId!=='string'||!REVIEW_APPLY_ID_RE.test(expectedReviewId))throw new Error('Invalid review test run request');
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid review test run response');
+  const keys=Object.keys(raw);
+  if(raw.schema!==REVIEW_TESTRUN_SCHEMA||raw.review_id!==expectedReviewId||typeof raw.ok!=='boolean')throw new Error('Invalid review test run response');
+  if(!raw.ok){
+    if(keys.length!==4||typeof raw.reason!=='string'||!REVIEW_TESTRUN_REASONS.has(raw.reason))throw new Error('Invalid review test run response');
+    return {ok:false,reason:raw.reason};
+  }
+  const want=['schema','review_id','ok','passed','exit_code','stdout_tail','stderr_tail'];
+  if(keys.length!==want.length||want.some((k)=>!Object.prototype.hasOwnProperty.call(raw,k)))throw new Error('Invalid review test run response');
+  if(typeof raw.passed!=='boolean')throw new Error('Invalid review test run response');
+  if(raw.exit_code!==null&&!Number.isSafeInteger(raw.exit_code))throw new Error('Invalid review test run response');
+  if(typeof raw.stdout_tail!=='string'||typeof raw.stderr_tail!=='string'||raw.stdout_tail.length>4000||raw.stderr_tail.length>4000)throw new Error('Invalid review test run response');
+  return {ok:true,passed:raw.passed,exit_code:raw.exit_code,stdout_tail:raw.stdout_tail,stderr_tail:raw.stderr_tail};
+}
+
+function buildReviewTestrunRow(status,list,item,ctx,state) {
+  const rowReviewId=item.review_id;
+  const rowDigest=item.proposal_digest;
+  const requiredConfirm='run tests on private copy '+rowReviewId;
+  const wrap=document.createElement('div');
+  wrap.className='review-testrun-controls';
+  const prompt=document.createElement('span');
+  prompt.className='review-testrun-prompt';
+  prompt.textContent='Run this project\'s tests on a private copy with this edit (the project is not changed). Preview first, then type "'+requiredConfirm+'"';
+  const input=document.createElement('input');
+  input.type='text';
+  input.className='review-testrun-confirm';
+  input.value='';
+  input.setAttribute('autocomplete','off');
+  input.setAttribute('aria-label','Type '+requiredConfirm+' to enable test run');
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='review-testrun-button';
+  btn.textContent='Run tests on private copy';
+  btn.title='Runs tests inside a sandbox on a throwaway copy. The project file is not changed and the edit is not applied.';
+  const out=document.createElement('pre');
+  out.className='review-testrun-output';
+  out.hidden=true;
+  const sync=()=>{
+    const browsing=ctx&&ctx.isBrowseInFlight?ctx.isBrowseInFlight():false;
+    btn.disabled=reviewCleanupInFlight||browsing||input.value!==requiredConfirm||!(state&&state.previewed);
+  };
+  const prior=state&&state.sync;
+  if(state)state.sync=()=>{if(prior)prior();sync();};
+  sync();
+  if(ctx&&ctx.rowSyncers)ctx.rowSyncers.push(sync);
+  input.oninput=sync;
+  input.onchange=sync;
+  btn.onclick=async()=>{
+    const browsing=ctx&&ctx.isBrowseInFlight?ctx.isBrowseInFlight():false;
+    if(btn.disabled||reviewCleanupInFlight||browsing)return;
+    const typed=input.value;
+    if(typed!==requiredConfirm){input.value='';sync();return;}
+    const currentProject=activeProjectId();
+    const expectedProject=ctx&&ctx.projectId?ctx.projectId:currentProject;
+    if(!currentProject||currentProject!==expectedProject){
+      input.value='';
+      if(ctx&&ctx.clearPanel)ctx.clearPanel();
+      status.textContent=REVIEW_TESTRUN_FAIL_TEXT;
+      return;
+    }
+    out.hidden=true;
+    out.textContent='';
+    setReviewCleanupInFlight(true);
+    sync();
+    status.textContent='Running tests on a private copy. The project is not being changed. This can take up to a minute.';
+    try{
+      const raw=await rpc('pi_review_testrun',{project_id:expectedProject,review_id:rowReviewId,proposal_digest:rowDigest,confirm:typed});
+      if(activeProjectId()!==expectedProject){
+        if(ctx&&ctx.clearPanel)ctx.clearPanel();
+        status.textContent=REVIEW_TESTRUN_FAIL_TEXT;
+        return;
+      }
+      const res=validateReviewTestrunResult(raw,rowReviewId);
+      if(!res.ok){
+        status.textContent=res.reason==='stale_target'?'The project file changed since this review was created. Tests were not run. Browse again and inspect the file.':REVIEW_TESTRUN_FAIL_TEXT+' ('+res.reason+')';
+        return;
+      }
+      out.textContent=(res.stdout_tail+(res.stdout_tail&&res.stderr_tail?'\n':'')+res.stderr_tail)||'(no output)';
+      out.hidden=false;
+      status.textContent=(res.passed?'Tests passed':'Tests failed')+' on the private copy (exit '+(res.exit_code===null?'none':res.exit_code)+'). The project was not changed and the edit was not applied.';
+    }catch{
+      out.hidden=true;
+      out.textContent='';
+      status.textContent=REVIEW_TESTRUN_FAIL_TEXT;
+    }finally{
+      input.value='';
+      setReviewCleanupInFlight(false);
+      sync();
+    }
+  };
+  wrap.appendChild(prompt);
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  wrap.appendChild(out);
+  return wrap;
+}
+
+function buildReviewApplyRow(status,list,item,ctx,state) {
+  const rowReviewId=item.review_id;
+  const rowDigest=item.proposal_digest;
+  const requiredConfirm='apply private review '+rowReviewId;
+  const wrap=document.createElement('div');
+  wrap.className='review-apply-controls';
+  const prompt=document.createElement('span');
+  prompt.className='review-apply-prompt';
+  prompt.textContent='Preview first, then apply this review to the project file: type "'+requiredConfirm+'"';
+  const input=document.createElement('input');
+  input.type='text';
+  input.className='review-apply-confirm';
+  input.value='';
+  input.setAttribute('autocomplete','off');
+  input.setAttribute('aria-label','Type '+requiredConfirm+' to enable apply');
+  const applyBtn=document.createElement('button');
+  applyBtn.type='button';
+  applyBtn.className='review-apply-button';
+  applyBtn.textContent='Apply this review to the project file';
+  applyBtn.title='Apply this review to the project file. The project file changes and the private review copy is kept.';
+  const syncApplyBtn=()=>{
+    const browsing=ctx&&ctx.isBrowseInFlight?ctx.isBrowseInFlight():false;
+    applyBtn.disabled=reviewCleanupInFlight||browsing||input.value!==requiredConfirm||!(state&&state.previewed);
+  };
+  if(state)state.sync=syncApplyBtn;
+  syncApplyBtn();
+  if(ctx&&ctx.rowSyncers)ctx.rowSyncers.push(syncApplyBtn);
+  input.oninput=syncApplyBtn;
+  input.onchange=syncApplyBtn;
+  applyBtn.onclick=async()=>{
+    const browsing=ctx&&ctx.isBrowseInFlight?ctx.isBrowseInFlight():false;
+    if(applyBtn.disabled||reviewCleanupInFlight||browsing)return;
+    const typedConfirm=input.value;
+    if(typedConfirm!==requiredConfirm){
+      input.value='';
+      syncApplyBtn();
+      return;
+    }
+    const currentProject=activeProjectId();
+    const expectedProject=ctx&&ctx.projectId?ctx.projectId:currentProject;
+    const messageProject=ctx?ctx.messageProject:null;
+    if(!currentProject||currentProject!==expectedProject||(messageProject&&currentProject!==messageProject)){
+      input.value='';
+      if(ctx&&ctx.clearPanel)ctx.clearPanel();
+      else clearReviewInventoryList(list);
+      status.textContent=REVIEW_APPLY_UNKNOWN_TEXT;
+      syncApplyBtn();
+      return;
+    }
+    setReviewCleanupInFlight(true);
+    syncApplyBtn();
+    status.textContent='Applying this review to the project file. The private review copy will be kept.';
+    try{
+      const raw=await rpc('pi_review_apply',{
+        project_id:expectedProject,
+        review_id:rowReviewId,
+        proposal_digest:rowDigest,
+        confirm:typedConfirm,
+      });
+      if(activeProjectId()!==expectedProject){
+        if(ctx&&ctx.clearPanel)ctx.clearPanel();
+        else clearReviewInventoryList(list);
+        status.textContent=REVIEW_APPLY_UNKNOWN_TEXT;
+        return;
+      }
+      const res=validateReviewApplyResult(raw,rowReviewId);
+      if(!res.applied){
+        if(res.reason==='canceled'||res.reason==='timed_out'||res.reason==='directory_changed'){
+          if(ctx&&ctx.clearPanel)ctx.clearPanel();
+          else clearReviewInventoryList(list);
+        }
+        status.textContent=REVIEW_APPLY_REASON_TEXT[res.reason];
+        return;
+      }
+      status.textContent=REVIEW_APPLY_SUCCESS_TEXT;
+      const refresh=ctx&&(ctx.refreshAfterApply||ctx.refreshAfterDelete);
+      if(refresh){
+        await refresh(expectedProject,REVIEW_APPLY_SUCCESS_TEXT);
+      }
+    }catch{
+      if(ctx&&ctx.clearPanel)ctx.clearPanel();
+      else clearReviewInventoryList(list);
+      status.textContent=REVIEW_APPLY_UNKNOWN_TEXT;
+    }finally{
+      input.value='';
+      setReviewCleanupInFlight(false);
+      syncApplyBtn();
+    }
+  };
+  wrap.appendChild(prompt);
+  wrap.appendChild(input);
+  wrap.appendChild(applyBtn);
+  return wrap;
+}
+
+function renderReviewInventory(status,list,inv,ctx) {
+  if(ctx&&ctx.rowSyncers)ctx.rowSyncers.length=0;
+  clearReviewInventoryList(list);
+  if(!inv.items.length){
+    status.textContent='No private review files found'+(inv.storage_present?'':' (storage not created)')+'. '+inv.notice;
+    return;
+  }
+  status.textContent='Private review metadata: '+inv.inspected_count+' inspected ('+inv.valid_count+' valid, '+inv.invalid_count+' invalid). '+inv.notice;
+  for(const item of inv.items){
+    const li=document.createElement('li');
+    if(item.valid){
+      li.textContent=item.review_id+' | valid | '+item.original_path+' | bytes '+item.before_bytes+' -> '+item.after_bytes+' | digest '+item.proposal_digest.slice(0,12)+' | sha256 '+item.before_sha256.slice(0,12)+' -> '+item.after_sha256.slice(0,12)+' | not applied';
+      li.appendChild(buildReviewCleanupRow(status,list,item,ctx));
+      const state={previewed:false,sync:null};
+      li.appendChild(buildReviewPreviewRow(status,list,item,ctx,state));
+      li.appendChild(buildReviewApplyRow(status,list,item,ctx,state));
+      li.appendChild(buildReviewTestrunRow(status,list,item,ctx,state));
+    }else{
+      li.textContent=item.review_id+' | invalid ('+item.reason+') | not applied';
+    }
+    list.appendChild(li);
+  }
+}
+
+function reviewInventoryControls(message) {
+  const browse=document.createElement('button');
+  browse.type='button';
+  browse.textContent='Browse private review files';
+  browse.title='List private review metadata only. No files are opened, changed, deleted, or applied.';
+  const status=document.createElement('p');
+  status.setAttribute('role','status');
+  const list=document.createElement('ul');
+  list.className='review-inventory-list';
+  let browseInFlight=false;
+  const rowSyncers=[];
+  const syncPanel=()=>{
+    browse.disabled=browseInFlight||reviewCleanupInFlight;
+    for(const sync of rowSyncers)sync();
+  };
+  reviewCleanupSyncers.add(syncPanel);
+  syncPanel();
+  const clearPanel=()=>{
+    rowSyncers.length=0;
+    clearReviewInventoryList(list);
+  };
+  const refreshInventory=async(expectedProject,successText)=>{
+    try{
+      const raw=await rpc('pi_review_inventory',{project_id:expectedProject});
+      if(activeProjectId()!==expectedProject){
+        clearPanel();
+        status.textContent=successText+' Project changed. Result discarded.';
+        return;
+      }
+      const inv=validateReviewInventoryResult(raw);
+      renderReviewInventory(status,list,inv,makeCtx(expectedProject));
+      status.textContent=successText+' '+status.textContent;
+    }catch{
+      clearPanel();
+      status.textContent=successText+' Could not refresh private review list; browse again.';
+    }
+  };
+  const makeCtx=(projectId)=>({
+    projectId,
+    messageProject:message?.meta?.project_id||null,
+    isBrowseInFlight:()=>browseInFlight,
+    rowSyncers,
+    clearPanel,
+    refreshAfterDelete:refreshInventory,
+    refreshAfterApply:refreshInventory,
+  });
+  browse.onclick=async()=>{
+    if(browse.disabled||browseInFlight||reviewCleanupInFlight)return;
+    const beforeProject=activeProjectId();
+    const messageProject=message?.meta?.project_id;
+    if(!beforeProject||(messageProject&&messageProject!==beforeProject)){
+      clearPanel();
+      status.textContent='Select the original project before browsing private review metadata.';
+      return;
+    }
+    browseInFlight=true;
+    syncPanel();
+    clearPanel();
+    status.textContent='Loading private review metadata only. No files are changed or applied.';
+    try{
+      const raw=await rpc('pi_review_inventory',{project_id:beforeProject});
+      if(activeProjectId()!==beforeProject){
+        clearPanel();
+        status.textContent='Project changed. Result discarded.';
+        return;
+      }
+      const inv=validateReviewInventoryResult(raw);
+      renderReviewInventory(status,list,inv,makeCtx(beforeProject));
+    }catch{
+      clearPanel();
+      status.textContent=activeProjectId()!==beforeProject
+        ?'Project changed. Result discarded.'
+        :'Private review inventory disabled, unavailable, or canceled. No files were changed.';
+    }finally{
+      browseInFlight=false;
+      syncPanel();
+    }
+  };
+  return [browse,status,list];
+}
+/* review-inventory:end */
+
+function editPreviewPart(part,message) {
+  const box=document.createElement('details');box.className='part edit-preview';
+  const summary=document.createElement('summary');summary.textContent='Edit preview only: '+String(part.path||'')+' (not applied)';box.append(summary);
+  const notice=document.createElement('p');notice.textContent='No file was changed. Review these exact before/after contents. Applying changes is not available.';box.append(notice);
+  const copy=document.createElement('button');copy.type='button';copy.textContent='Copy proposal JSON';
+  copy.title='Copy exact before/after for manual review. This does not apply or approve an edit.';
+  copy.onclick=async()=>{
+    const proposal={schema:'navi-edit-preview-v1',applied:false,requires_fresh_validation:true,path:String(part.path||''),before_sha256:String(part.before_sha256||''),after_sha256:String(part.after_sha256||''),before:String(part.before||''),after:String(part.after||'')};
+    const ok=await copyText(JSON.stringify(proposal,null,2));toast(ok?'Proposal copied. No file changed. Revalidate before applying.':'Could not copy the proposal');
+  };
+  box.append(copy);
+  const workspace=document.createElement('button');workspace.type='button';workspace.textContent='Create or recover private review files';
+  const workspaceState=document.createElement('p');workspaceState.setAttribute('role','status');workspaceState.textContent=part.workspaceStatus||'';
+  workspace.onclick=async()=>{
+    if(workspace.disabled)return;
+    workspace.disabled=true;
+    const project=message?.meta?.project_id;
+    if(!project||project!==activeProjectId()){workspaceState.textContent='Select the original project first.';workspace.disabled=false;return;}
+    try{
+      if(!navigator.locks?.request)throw Error('Cross-window request lock unavailable');
+      part.workspaceRequest=await navigator.locks.request('navi-private-review-request-id-v1',()=>reviewRequestId(project,part));
+    }catch{
+      workspaceState.textContent='Review request metadata unavailable or full. No request sent. Preserve existing IDs before manual cleanup.';workspace.disabled=false;return;
+    }
+    workspace.disabled=true;part.workspaceStatus='Creating or recovering inert review files. Request ID: '+part.workspaceRequest;workspaceState.textContent=part.workspaceStatus;
+    try{
+      const value=await rpc('pi_preview_workspace',{project_id:project,request_id:part.workspaceRequest,preview:{schema:'navi-edit-preview-v1',applied:false,requires_fresh_validation:true,path:part.path,before_sha256:part.before_sha256,after_sha256:part.after_sha256,before:part.before,after:part.after}});
+      if(project!==activeProjectId())throw Error('Project changed');
+      if(value?.applied!==false||value?.request_id!==part.workspaceRequest||typeof value?.storage_path!=='string')throw Error('Unconfirmed review');
+      part.workspaceStatus='Private review files '+(value.recovered?'recovered':'created')+'. No project file changed. '+value.storage_path+' | Request ID: '+part.workspaceRequest;
+    }catch{
+      part.workspaceStatus='Review outcome unconfirmed or disabled. Retry only this same request, do not start a new one. Request ID: '+part.workspaceRequest+'. Partial files may need manual cleanup.';
+    }finally{workspaceState.textContent=part.workspaceStatus;workspace.disabled=false;}
+  };
+  box.append(workspace,workspaceState);
+  box.append(...reviewInventoryControls(message));
+
+  if(/\.(py|json|js|mjs|cjs)$/.test(String(part.path||''))){
+    const language=String(part.path).endsWith('.py')?'Python':String(part.path).endsWith('.json')?'JSON':String(part.path).endsWith('.cjs')?'JavaScript (CommonJS)':'JavaScript (module)';
+    const check=document.createElement('button');check.type='button';check.textContent='Check '+language+' syntax only';
+    const result=document.createElement('p');result.setAttribute('role','status');
+    check.onclick=async()=>{
+      const project=message?.meta?.project_id;
+      if(!project||project!==activeProjectId()){result.textContent='Select the original project before checking this preview.';return;}
+      check.disabled=true;result.textContent='Checking syntax in isolation. No project code runs.';
+      try{
+        const value=await rpc('pi_preview_validate',{project_id:project,preview:{schema:'navi-edit-preview-v1',applied:false,requires_fresh_validation:true,path:part.path,before_sha256:part.before_sha256,after_sha256:part.after_sha256,before:part.before,after:part.after}});
+        if(project!==activeProjectId()){result.textContent='Project changed. Result discarded.';return;}
+        if(value?.applied!==false||value?.executed_project_code!==false||value?.after_sha256!==part.after_sha256||typeof value?.result?.valid!=='boolean')throw Error('Invalid isolated syntax result');
+        result.textContent=value.result.valid?'Valid '+language+' syntax only. No tests, imports or project code ran. No file changed.':language+' syntax error at line '+String(value.result.line||'?')+', column '+String(value.result.column||'?')+'. No file changed.';
+      }catch{result.textContent='Syntax check disabled, unavailable or canceled. No file changed.';}
+      finally{check.disabled=false;}
+    };
+    box.append(check,result);
+  }
+
+
+  for(const [key,label] of [['before','Before'],['after','Proposed after']]){
+    const title=document.createElement('h4');title.textContent=label+' | SHA256 '+String(part[key+'_sha256']||'');box.append(title);
+    const eof=document.createElement('p');const text=String(part[key]||'');eof.textContent='UTF-8 bytes: '+new TextEncoder().encode(text).length+' | Ends with newline: '+(text.endsWith('\n')?'yes':'no');box.append(eof);
+    const pre=document.createElement('pre');pre.textContent=text;box.append(pre);
+  }
+  return box;
+}
 function diffPart(part) {
   const wrap=document.createElement('div');
   wrap.className='part diff';
@@ -767,9 +1586,17 @@ function approvalRow(message,part) {
   label.textContent=part.approval.decision
     ? 'Decision: '+part.approval.decision
     : (part.approval.tool||'This tool')+' needs approval';
+  if(String(part.approval.id).startsWith('project-perm-')) label.textContent+=': '+String(part.input?.path||'(project root)')+(part.approval.tool==='project_read'?' [lines '+String(part.input?.start_line||1)+' through '+String((part.input?.start_line||1)+(part.input?.max_lines||200)-1)+']':'');
   box.append(label);
+  if(part.approval.arming){
+    const notice=document.createElement('span');notice.textContent='Return to the attached browser page now. Allow once will be sent in 3 seconds. The page must stay active and focused.';box.append(notice);
+    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel approval';cancel.onclick=()=>{clearTimeout(part.approval.armTimer);part.approval.arming=false;answerApproval(message,part,'deny',true);};box.append(cancel);return box;
+  }
   if (!part.approval.decision) {
-    for (const [decision,caption] of [['allow','Allow'],['always','Always allow'],['deny','Deny']]) {
+    const scoped=String(part.approval.id).startsWith('navi-perm-')||String(part.approval.id).startsWith('acp-perm-')||String(part.approval.id).startsWith('project-perm-');
+    const choices=Array.isArray(part.approval.choices)?part.approval.choices:[];
+    const decisions=scoped?[['allow','Allow once'],['always','Always allow'],['deny','Deny']].filter(([decision])=>decision==='deny'||((String(part.approval.id).startsWith('navi-perm-')||String(part.approval.id).startsWith('project-perm-'))?decision==='allow':choices.includes(decision))):[['allow','Allow'],['always','Always allow'],['deny','Deny']];
+    for (const [decision,caption] of decisions) {
       const button=document.createElement('button');
       button.type='button';
       button.className='approval-'+decision;
@@ -783,14 +1610,20 @@ function approvalRow(message,part) {
   }
   return box;
 }
-function answerApproval(message,part,decision) {
+function answerApproval(message,part,decision,armed=false) {
+  if(part.approval.arming&&!armed)return;
+  if(decision==='allow'&&String(part.approval.id).startsWith('navi-perm-')&&!armed){
+    part.approval.arming=true;bump(message);
+    part.approval.armTimer=setTimeout(()=>{part.approval.arming=false;if(part.approval.decision||message.status!=='streaming'||turn?.message!==message)return;answerApproval(message,part,decision,true);},3000);
+    return;
+  }
   const id=part.approval.id;
   const session=part.approval.session||undefined;
   /* BUG-006: the daemon answers `{ok:false,error}` when it refuses the decision,
    * and a transport failure rejects; either way the refusal is one failure surface
    * with the daemon's own text — never a silent success, and never a second row. */
   rpc('permission_reply',{id,decision,session}).then(result=>{
-    if (refused) {
+    if (result?.replied!==true||result?.error) {
       surfaceFailure(String(result.error||'The permission reply was not accepted'));
       return;
     }
@@ -1072,6 +1905,7 @@ function renderPart(message,part) {
     case 'reasoning': return reasoningPart(part);
     case 'tool': return toolPart(message,part);
     case 'diff': return diffPart(part);
+    case 'edit_preview': return editPreviewPart(part,message);
     case 'error': return errorPart(message,part);
     case 'form': return formPart(message,part);
     default: return textPart(part);
@@ -1454,7 +2288,7 @@ function replyDone(event) {
     ...(message.meta||{}),
     request:message.meta?.request||activeText||undefined,
     model:normalizeModel(details.actual_model),
-    requested:modelRef()||undefined,
+    requested:['pi-rpc','pi-station','pi-project'].includes(source)?normalizeModel(details.actual_model):(modelRef()||undefined),
     agent:typeof details.actual_agent==='string'?details.actual_agent:undefined,
     usage:details.usage||undefined,
     sessionUsage:details.session_usage||undefined,
@@ -1465,6 +2299,12 @@ function replyDone(event) {
     project_id:details.project_id||activeProjectId()||undefined,
     warnings:Array.isArray(details.warnings)&&details.warnings.length?details.warnings:undefined,
   };
+  if(source==='pi-project'&&Array.isArray(details.previews))for(const preview of details.previews.slice(0,4)){
+    if(preview?.applied!==false||typeof preview.path!=='string'||typeof preview.before!=='string'||typeof preview.after!=='string')continue;
+    if(message.parts.some(p=>p.type==='edit_preview'&&p.path===preview.path))continue;
+    if(new TextEncoder().encode(preview.before).length>16384||new TextEncoder().encode(preview.after).length>16384||preview.path.length>1024)continue;
+    message.parts.push({type:'edit_preview',path:preview.path,before:preview.before,after:preview.after,before_sha256:preview.before_sha256,after_sha256:preview.after_sha256,volatile:true});
+  }
   if (Array.isArray(details.warnings)) for (const warning of details.warnings) warningRow(String(warning));
   if (!event.replayed&&Array.isArray(details.choices)&&details.choices.length) offerChoices(message,details.choices,requestId);
   /* "Mark barge-in done": one click takes the change back, as saying “undo” does. */
@@ -1546,9 +2386,9 @@ function approvalEvent(event) {
   let part=message.parts.find(entry=>entry.type==='tool'&&entry.approval&&entry.approval.id===permissionId);
   if (!part) {
     part={
-      type:'tool', id:'approval-'+permissionId, name:details.tool||details.name||'Tool',
+      type:'tool', id:'approval-'+permissionId, name:details.tool||details.name||'Tool',open:true,
       status:'awaiting approval', input:details.input,
-      approval:{id:permissionId,tool:details.tool||details.name||'',session:details.session||event.session_id||undefined,decision:null},
+      approval:{id:permissionId,choices:details.choices,tool:details.tool||details.name||'',session:details.session||event.session_id||undefined,decision:null},
     };
     message.parts.push(part);
   }
@@ -2110,7 +2950,7 @@ addEventListener('keydown',event=>{
 });
 
 function serialiseParts(parts) {
-  return (parts||[]).map(part=>{
+  return (parts||[]).filter(part=>part.type!=='edit_preview').map(part=>{
     if (part.type==='tool') {
       return {
         type:'tool',id:part.id,name:part.name,status:part.status,exit:part.exit,
@@ -2372,7 +3212,13 @@ async function dispatch(text,options={}) {
     /* The turn resolves this project's directory and its own assistant
      * session, so a switch changes what "this project" means (BUG-088/090). */
     const chosenHarness=element('chat-harness')?.value||'opencode';
+    if (chosenHarness==='pi-browser') {
+      await rpc('pi_browser_start',{});
+      const browser=await rpc('pi_browser_status',{});
+      if(!browser?.running||browser?.attached!==true)throw Error('Pi browser is not attached. Open the Navi extension toolbar popup on the page you want, choose capabilities, then Attach current tab. Resend this message after attaching.');
+    }
     let sendText=value;
+    if (chosenHarness==='pi-browser'||chosenHarness==='pi-project') handoffSummary=''; // Never import another harness transcript into browser authority.
     if (handoffSummary&&chosenHarness!=='opencode') {
       sendText='[Context handoff from previous harness:\n'+handoffSummary+']\n\n'+value;
       handoffSummary='';
@@ -3114,6 +3960,7 @@ addEventListener('paste',event=>{
 });
 
 element('stop').onclick=async()=>{
+  for(const message of messages){for(const part of message.parts){if(part.approval?.arming){clearTimeout(part.approval.armTimer);part.approval.arming=false;part.approval.decision='cancelled';bump(message);}}}
   try {
     const result=await rpc('cancel');
     /* BUG-007: an unconfirmed interrupt is reported, never assumed. The daemon
@@ -5602,7 +6449,11 @@ const chatHarnessEl=element('chat-harness');
 if (chatHarnessEl) {
   chatHarnessEl.onchange=()=>{
     const next=chatHarnessEl.value||'opencode';
-    if (next!==lastChatHarness&&messages.length) {
+    if (next==='pi-project') {handoffSummary='';toast('Pi project uses only this request and exact approved reads in the selected project');}
+    else if (next==='pi-browser') {
+      handoffSummary='';
+      toast('Pi browser uses the current request and fresh browser approval, not another harness transcript');
+    } else if (next!==lastChatHarness&&messages.length) {
       const tail=messages.slice(-4).map(m=>(m.role==='user'?'User: ':'Assistant: ')+messageText(m).slice(0,180)).join('\n');
       if (tail.trim()) handoffSummary=tail;
       toast('Switched to '+next+' (context handoff ready)');

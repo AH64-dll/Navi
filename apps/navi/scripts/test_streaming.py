@@ -36,7 +36,8 @@ LEAN_SECTIONS = ("settings", "sessions", "projects", "workers", "browser",
 
 def push_events(server, events):
     with server.sse_condition:
-        server.pending_events.extend(events)
+        for queue in server.sse_queues:
+            queue.extend(events)
         server.sse_condition.notify_all()
 
 
@@ -79,7 +80,7 @@ class StreamingTests(unittest.TestCase):
         FakeOpenCode.last_directory = None
         self.opencode = ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenCode)
         self.opencode.sse_condition = threading.Condition()
-        self.opencode.pending_events = []
+        self.opencode.sse_queues = []
         self.opencode.daemon_threads = True
         threading.Thread(target=self.opencode.serve_forever, daemon=True).start()
         # Isolated mode refuses the real decision endpoint (BUG-014): give the
@@ -148,7 +149,14 @@ class StreamingTests(unittest.TestCase):
         return self.call("status", params)["result"]
 
     def full_status(self):
-        return self.call("status")["result"]
+        page = self.call("status")["result"]
+        events = list(page["events"])
+        while page.get("has_more"):
+            cursor = max(event["seq"] for event in events)
+            page = self.call("status", {"since": cursor})["result"]
+            events.extend(page["events"])
+        page["events"] = events
+        return page
 
     # -- helpers ---------------------------------------------------------------
 

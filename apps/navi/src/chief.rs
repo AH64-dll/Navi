@@ -860,6 +860,10 @@ impl App {
         if directory.is_empty() {
             return Err("Project has no directory".into());
         }
+        if self.current_project.lock().unwrap().as_deref()!=Some(id.as_str()) {
+            self.project_epoch.fetch_add(1,Ordering::SeqCst);
+            if let Some(host)=self.project_host.lock().unwrap().take(){host.cancel();}
+        }
         *self.current_project.lock().unwrap() = Some(id.clone());
         let session: Option<String> = {
             let state = self.state.lock().unwrap();
@@ -935,42 +939,60 @@ impl App {
     }
 
     /// Decode attachment params into gateway --attachment file paths. `data`
-    /// payloads land in private runtime files; `path` payloads are checked and
-    /// passed through. Limits: 4 files, 2 MiB decoded each.
-    fn prepare_attachments(&self, params: &Value) -> Result<Vec<String>> {
-        let Some(items) = params.as_array() else {
-            return Ok(Vec::new());
-        };
+    /// payloads and explicitly selected paths are snapshotted into private
+    /// owned runtime files. Limits: 4 files, 2 MiB decoded each.
+    fn prepare_attachments(&self, params: &Value) -> Result<PreparedAttachments> {
         validate_attachments(params)?;
-        let mut paths = Vec::new();
+        let mut prepared = PreparedAttachments::default();
+        prepared.ledger=Some((self.data.join("station.sqlite3"),self.runtime.clone()));
+        let Some(items) = params.as_array() else {
+            return Ok(prepared);
+        };
         for (index, item) in items.iter().enumerate() {
-            if let Some(path) = item["path"].as_str() {
-                let meta = std::fs::metadata(path).map_err(|error| {
-                    format!("Attachment {} is not readable: {error}", item["name"].as_str().unwrap_or(path))
-                })?;
-                if !meta.is_file() {
-                    return Err("Attachment path must be a file".into());
+            use std::os::unix::fs::OpenOptionsExt;
+            let (bytes, name) = if let Some(path) = item["path"].as_str() {
+                let input = std::fs::OpenOptions::new().read(true)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path)
+                    .map_err(|error| format!("Attachment is not readable: {error}"))?;
+                let meta = input.metadata().map_err(|error| error.to_string())?;
+                if !meta.is_file() || meta.len() > 2 * 1024 * 1024 {
+                    return Err("Attachment must be a regular file of at most 2 MiB".into());
                 }
-                paths.push(path.to_string());
-                continue;
+                let mut bytes = Vec::new();
+                input.take(2 * 1024 * 1024 + 1).read_to_end(&mut bytes)
+                    .map_err(|error| error.to_string())?;
+                let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str())
+                    .ok_or("Attachment filename must be UTF-8")?.to_string();
+                (bytes, name)
+            } else {
+                let data = item["data"].as_str().ok_or("Attachment data must be a string")?;
+                (b64_decode(data).ok_or("Attachment data is not valid base64")?,
+                 item["name"].as_str().unwrap_or("attachment").to_string())
+            };
+            if bytes.len() > 2 * 1024 * 1024 {
+                return Err("Attachment exceeds 2 MiB".into());
             }
-            let data = item["data"].as_str().unwrap_or_default();
-            let bytes = b64_decode(data).ok_or("Attachment data is not valid base64")?;
-            let name = item["name"].as_str().unwrap_or("attachment");
-            let safe: String = name
-                .chars()
-                .map(|c| if matches!(c, '/' | '\\') { '_' } else { c })
-                .collect();
-            let file = self
-                .runtime
-                .join(format!("attach-{}-{index}-{safe}", crate::id()));
-            std::fs::write(&file, &bytes).map_err(|error| error.to_string())?;
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))
+            // Snapshot every input. Later path replacement cannot change the
+            // bytes sent to a provider, and only these snapshots are owned.
+            let safe: String = name.chars().take(120)
+                .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
+            use std::os::unix::fs::DirBuilderExt;
+            let directory = self.runtime.join(format!("attach-{}-{index}", crate::id()));
+            std::fs::DirBuilder::new().mode(0o700).create(&directory)
                 .map_err(|error| error.to_string())?;
-            paths.push(file.to_string_lossy().into_owned());
+            prepared.directories.push(directory.clone());
+            let basename = if safe.is_empty() || safe == "." || safe == ".." { "attachment" } else { &safe };
+            let file = directory.join(basename);
+            let mut output = std::fs::OpenOptions::new().write(true).create_new(true)
+                .mode(0o600).open(&file).map_err(|error| error.to_string())?;
+            // Commit ownership before writing any attachment bytes. A SIGKILL
+            // then leaves an exact recoverable inode, never a prefix guess.
+            crate::attachment_snapshots::register(&self.state.lock().unwrap().db,&file,&directory)?;
+            prepared.scratch.push(file.clone());
+            output.write_all(&bytes).map_err(|error| error.to_string())?;
+            prepared.paths.push(file.to_str().ok_or("Attachment runtime path must be UTF-8")?.to_string());
         }
-        Ok(paths)
+        Ok(prepared)
     }
 
     /// Interrupt the server-side turn for the current assistant directory,
@@ -1146,8 +1168,7 @@ impl App {
                     self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
                 }
                 if let Some(done) = done {
-                    self.turn_finish(&turn_id, &turn.accumulated);
-                    return Ok(self.finish_turn(done, &mut turn));
+                    return Ok(self.completed_turn(&turn_id, done, &mut turn));
                 }
                 self.turn_finish(&turn_id, &turn.accumulated);
                 return Err(GatewayFailure::new("OpenCode bridge closed unexpectedly", false));
@@ -1442,6 +1463,19 @@ impl App {
         decision: &str,
         session_id: Option<&str>,
     ) -> Result<Value> {
+        if permission_id.starts_with("project-perm-") {
+            let host=self.project_host.lock().unwrap().clone().ok_or("Project turn no longer active")?;
+            host.approve(permission_id,decision)?;
+            return Ok(json!({"replied":true,"dispatched":true}));
+        }
+        if permission_id.starts_with("navi-perm-") {
+            let host=self.browser_host.lock().unwrap().clone().ok_or("Browser host not running")?;
+            return host.reply(permission_id,decision);
+        }
+        if permission_id.starts_with("acp-perm-") {
+            let host=self.acp_host.lock().unwrap().clone().ok_or("ACP turn no longer active")?;
+            return host.reply_scoped(permission_id,decision,true);
+        }
         if !matches!(decision, "allow" | "always" | "deny") {
             return Err("Permission decision must be allow, always, or deny".into());
         }
@@ -1924,7 +1958,7 @@ impl App {
         let request = params["request_id"].as_str().filter(|id| !id.is_empty());
         crate::with_request(request, || {
             let text = params["text"].as_str().unwrap_or_default();
-            if text.trim_start().starts_with('/') && navi_slash(text).is_none() {
+            if params["harness"]!="pi-project" && text.trim_start().starts_with('/') && navi_slash(text).is_none() {
                 return self.run_slash(text.trim(), params, generation);
             }
             self.run_command(text, params, false, generation)
@@ -2018,7 +2052,7 @@ impl App {
             "--directory".to_string(),
             turn.path.clone(),
         ];
-        for attachment in &turn.attachments {
+        for attachment in &turn.attachments.paths {
             args.push("--attachment".into());
             args.push(attachment.clone());
         }
@@ -2030,11 +2064,6 @@ impl App {
             Some(turn.id.as_str()),
             Some(turn.path.as_str()),
         );
-        // Remove only runtime scratch files we decoded; user paths stay.
-        let scratch = self.runtime.join("attach-").to_string_lossy().into_owned();
-        for path in turn.attachments.iter().filter(|p| p.starts_with(&scratch)) {
-            let _ = std::fs::remove_file(path);
-        }
         match result {
             Ok(done) => {
                 if let Some(session) = done["session"].as_str() {
@@ -2095,38 +2124,933 @@ impl App {
         }
     }
 
+    /// Explicit owner-only local diagnostic read. No model route invokes this.
+    /// The project is resolved from the owner's registered project selection,
+    /// never a path in proposal data. Each exact operation still needs approval.
+    pub(crate) fn owner_preview_workspace(&self,p:&Value,connected:Option<&std::sync::atomic::AtomicBool>)->Result<Value> {
+        static ACTIVE:std::sync::Mutex<()>=std::sync::Mutex::new(());
+        if std::env::var("NAVI_PROJECT_WORKSPACES").as_deref()!=Ok("1"){return Err("Optional private review workspaces are disabled".into());}
+        let _guard=ACTIVE.try_lock().map_err(|_|"A private review request is already active")?;
+        if p.as_object().is_none_or(|m|m.len()!=3||m.keys().any(|k|!matches!(k.as_str(),"project_id"|"request_id"|"preview"))){return Err("Invalid private review request".into());}
+        let generation=self.generation.load(Ordering::SeqCst);let epoch=self.project_epoch.load(Ordering::SeqCst);
+        if connected.is_some_and(|v|!v.load(Ordering::SeqCst)){return Err("Owner disconnected".into());}
+        let id=p["project_id"].as_str().filter(|v|!v.is_empty()).ok_or("Explicit project required")?;
+        let _project=self.assistant_project(Some(id))?;
+        if self.current_project.lock().map_err(|_|"Project state unavailable")?.as_deref()!=Some(id){return Err("Original project must be selected".into());}
+        let request=p["request_id"].as_str().filter(|v|v.len()==32&&v.bytes().all(|c|c.is_ascii_digit()||(b'a'..=b'f').contains(&c))).ok_or("Owner request ID required")?;
+        if p["preview"].to_string().len()>210000{return Err("Private review exceeds bounds".into());}
+        if self.generation.load(Ordering::SeqCst)!=generation||self.project_epoch.load(Ordering::SeqCst)!=epoch||self.current_project.lock().map_err(|_|"Project state unavailable")?.as_deref()!=Some(id)||connected.is_some_and(|v|!v.load(Ordering::SeqCst)){return Err("Owner scope changed before start".into());}
+        let mut command=Command::new("/usr/bin/python3");command.arg("-I").arg(self.root.join("workers/project_workspace.py")).arg("--owner-data").arg(&self.data).env_clear();
+        let host=crate::browser_host::BrowserHost::spawn(command)?;
+        let result=(||{
+            host.send(&json!({"request_id":request,"preview":p["preview"]}))?;
+            let deadline=std::time::Instant::now()+Duration::from_secs(6);
+            loop {
+                let current=||self.generation.load(Ordering::SeqCst)==generation&&self.project_epoch.load(Ordering::SeqCst)==epoch&&connected.is_none_or(|v|v.load(Ordering::SeqCst));
+                if !current()||std::time::Instant::now()>deadline{return Err("Private review outcome unknown. Recover using the same request ID; do not create a new request.".into());}
+                let record=host.receive()?;
+                if !current(){return Err("Private review outcome unknown. Recover using the same request ID.".into());}
+                if let Some(record)=record{
+                    let review=record["review_id"].as_str().unwrap_or("");
+                    if record.to_string().len()>4096||record["applied"]!=false||!record["created"].is_boolean()||review.len()!=39||!review.starts_with("review-")||!review[7..].bytes().all(|c|c.is_ascii_digit()||(b'a'..=b'f').contains(&c)){return Err("Private review was not confirmed. Recover using the same request ID; partial state may need manual cleanup.".into());}
+                    if self.current_project.lock().map_err(|_|"Project state unavailable")?.as_deref()!=Some(id)||!current(){return Err("Private review outcome unknown. Recover using the same request ID.".into());}
+                    let mut result=record.clone();result["request_id"]=json!(request);result["storage_path"]=json!(self.data.join("proposal-reviews").join(review));return Ok(result);
+                }
+            }
+        })();host.stop();result
+    }
+
+    /// Explicit owner-only read-only metadata inventory of private review workspaces.
+    /// No model route invokes this. Creates, modifies, deletes, and applies nothing.
+    pub(crate) fn owner_review_inventory(
+        &self,
+        p: &Value,
+        connected: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<Value> {
+        static ACTIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        if std::env::var("NAVI_PROJECT_REVIEW_INVENTORY").as_deref() != Ok("1") {
+            return Err("Optional private review inventory is disabled".into());
+        }
+        let _guard = ACTIVE
+            .try_lock()
+            .map_err(|_| "A private review inventory request is already active")?;
+        if p.as_object()
+            .is_none_or(|m| m.len() != 1 || !m.contains_key("project_id"))
+        {
+            return Err("Invalid private review inventory request".into());
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let epoch = self.project_epoch.load(Ordering::SeqCst);
+        if connected.is_some_and(|v| !v.load(Ordering::SeqCst)) {
+            return Err("Owner disconnected".into());
+        }
+        let id = p["project_id"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .ok_or("Explicit project required")?;
+        let _project = self.assistant_project(Some(id))?;
+        if self
+            .current_project
+            .lock()
+            .map_err(|_| "Project state unavailable")?
+            .as_deref()
+            != Some(id)
+        {
+            return Err("Original project must be selected".into());
+        }
+        if self.generation.load(Ordering::SeqCst) != generation
+            || self.project_epoch.load(Ordering::SeqCst) != epoch
+            || self
+                .current_project
+                .lock()
+                .map_err(|_| "Project state unavailable")?
+                .as_deref()
+                != Some(id)
+            || connected.is_some_and(|v| !v.load(Ordering::SeqCst))
+        {
+            return Err("Owner scope changed before start".into());
+        }
+        let mut command = Command::new("/usr/bin/python3");
+        command
+            .arg("-I")
+            .arg(self.root.join("workers/project_review_inventory.py"))
+            .arg("--owner-data")
+            .arg(&self.data)
+            .env_clear();
+        let host = crate::browser_host::BrowserHost::spawn(command)
+            .map_err(|_| "Private review inventory unavailable")?;
+        let result = (|| -> Result<Value> {
+            host.send(&json!({"schema": "navi-review-inventory-request-v1"}))
+                .map_err(|_| "Private review inventory unavailable")?;
+            let deadline = std::time::Instant::now() + Duration::from_secs(6);
+            loop {
+                let current = || {
+                    self.generation.load(Ordering::SeqCst) == generation
+                        && self.project_epoch.load(Ordering::SeqCst) == epoch
+                        && connected.is_none_or(|v| v.load(Ordering::SeqCst))
+                };
+                if !current() || std::time::Instant::now() > deadline {
+                    return Err("Private review inventory canceled or timed out".into());
+                }
+                let record = match host.receive() {
+                    Ok(value) => value,
+                    Err(_) => {
+                        if !current() {
+                            return Err("Private review inventory canceled".into());
+                        }
+                        return Err("Private review inventory unavailable".into());
+                    }
+                };
+                if !current() {
+                    return Err("Private review inventory canceled".into());
+                }
+                if let Some(record) = record {
+                    let validated = validate_review_inventory_record(&record)?;
+                    if self
+                        .current_project
+                        .lock()
+                        .map_err(|_| "Project state unavailable")?
+                        .as_deref()
+                        != Some(id)
+                        || !current()
+                    {
+                        return Err("Private review inventory canceled".into());
+                    }
+                    return Ok(validated);
+                }
+            }
+        })();
+        host.stop();
+        result
+    }
+
+    pub(crate) fn owner_review_cleanup(
+        &self,
+        p: &Value,
+        connected: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<Value> {
+        const AMBIGUOUS_OUTCOME: &str =
+            "Private review cleanup was canceled, timed out, or interrupted after start; outcome is unknown, re-run private review inventory";
+        static ACTIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        if std::env::var("NAVI_PROJECT_REVIEW_CLEANUP").as_deref() != Ok("1") {
+            return Err("Optional private review cleanup is disabled".into());
+        }
+        let _guard = ACTIVE
+            .try_lock()
+            .map_err(|_| "A private review cleanup request is already active")?;
+        if p.as_object().is_none_or(|m| {
+            m.len() != 4
+                || !m.contains_key("project_id")
+                || !m.contains_key("review_id")
+                || !m.contains_key("proposal_digest")
+                || !m.contains_key("confirm")
+        }) {
+            return Err("Invalid private review cleanup request".into());
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let epoch = self.project_epoch.load(Ordering::SeqCst);
+        if connected.is_some_and(|v| !v.load(Ordering::SeqCst)) {
+            return Err("Owner disconnected".into());
+        }
+        let id = p["project_id"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .ok_or("Explicit project required")?;
+        let review_id = p["review_id"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_review_id(v))
+            .ok_or("Invalid private review identifier")?;
+        let proposal_digest = p["proposal_digest"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_hex64(v))
+            .ok_or("Invalid proposal digest")?;
+        let confirm = p["confirm"]
+            .as_str()
+            .ok_or("Explicit per-review confirmation string required")?;
+        validate_review_cleanup_confirm(review_id, confirm)?;
+        let _project = self.assistant_project(Some(id))?;
+        let current = || {
+            self.generation.load(Ordering::SeqCst) == generation
+                && self.project_epoch.load(Ordering::SeqCst) == epoch
+                && connected.is_none_or(|v| v.load(Ordering::SeqCst))
+        };
+        if self
+            .current_project
+            .lock()
+            .map_err(|_| "Project state unavailable")?
+            .as_deref()
+            != Some(id)
+        {
+            return Err("Original project must be selected".into());
+        }
+        if !current()
+            || self
+                .current_project
+                .lock()
+                .map_err(|_| "Project state unavailable")?
+                .as_deref()
+                != Some(id)
+        {
+            return Err("Owner scope changed before start".into());
+        }
+        let mut command = Command::new("/usr/bin/python3");
+        command
+            .arg("-I")
+            .arg(self.root.join("workers/project_review_cleanup.py"))
+            .arg("--owner-data")
+            .arg(&self.data)
+            .env_clear();
+        let host = crate::browser_host::BrowserHost::spawn(command)
+            .map_err(|_| "Private review cleanup unavailable")?;
+        let result = (|| -> Result<Value> {
+            if !current()
+                || self
+                    .current_project
+                    .lock()
+                    .map_err(|_| "Project state unavailable")?
+                    .as_deref()
+                    != Some(id)
+            {
+                return Err("Owner scope changed before start".into());
+            }
+            host.send(&json!({
+                "schema": "navi-review-cleanup-request-v1",
+                "review_id": review_id,
+                "proposal_digest": proposal_digest,
+            }))
+            .map_err(|_| AMBIGUOUS_OUTCOME)?;
+            let deadline = std::time::Instant::now() + Duration::from_secs(6);
+            loop {
+                if !current() || std::time::Instant::now() > deadline {
+                    return Err(AMBIGUOUS_OUTCOME.into());
+                }
+                let record = match host.receive() {
+                    Ok(value) => value,
+                    Err(_) => return Err(AMBIGUOUS_OUTCOME.into()),
+                };
+                if !current() {
+                    return Err(AMBIGUOUS_OUTCOME.into());
+                }
+                if let Some(record) = record {
+                    let validated = validate_review_cleanup_record(&record, review_id).map_err(
+                        |_| {
+                            "Private review cleanup returned an invalid response; outcome is unknown, re-run private review inventory"
+                        },
+                    )?;
+                    if self
+                        .current_project
+                        .lock()
+                        .map_err(|_| AMBIGUOUS_OUTCOME)?
+                        .as_deref()
+                        != Some(id)
+                        || !current()
+                    {
+                        return Err(AMBIGUOUS_OUTCOME.into());
+                    }
+                    if matches!(
+                        validated.get("reason").and_then(Value::as_str),
+                        Some("canceled" | "timed_out")
+                    ) {
+                        return Err(AMBIGUOUS_OUTCOME.into());
+                    }
+                    return Ok(validated);
+                }
+            }
+        })();
+        host.stop();
+        result
+    }
+
+    pub(crate) fn owner_review_apply(
+        &self,
+        p: &Value,
+        connected: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<Value> {
+        const AMBIGUOUS_OUTCOME: &str =
+            "Private review apply was canceled, timed out, or interrupted after start; the project file may or may not have changed, re-run private review inventory and inspect the project";
+        static ACTIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        if std::env::var("NAVI_PROJECT_REVIEW_APPLY").as_deref() != Ok("1") {
+            return Err("Optional private review apply is disabled".into());
+        }
+        let _guard = ACTIVE
+            .try_lock()
+            .map_err(|_| "A private review apply request is already active")?;
+        if p.as_object().is_none_or(|m| {
+            m.len() != 4
+                || !m.contains_key("project_id")
+                || !m.contains_key("review_id")
+                || !m.contains_key("proposal_digest")
+                || !m.contains_key("confirm")
+        }) {
+            return Err("Invalid private review apply request".into());
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let epoch = self.project_epoch.load(Ordering::SeqCst);
+        if connected.is_some_and(|v| !v.load(Ordering::SeqCst)) {
+            return Err("Owner disconnected".into());
+        }
+        let id = p["project_id"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .ok_or("Explicit project required")?;
+        let review_id = p["review_id"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_review_id(v))
+            .ok_or("Invalid private review identifier")?;
+        let proposal_digest = p["proposal_digest"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_hex64(v))
+            .ok_or("Invalid proposal digest")?;
+        let confirm = p["confirm"]
+            .as_str()
+            .ok_or("Explicit per-review confirmation string required")?;
+        validate_review_apply_confirm(review_id, confirm)?;
+        let project = self.assistant_project(Some(id))?;
+        let data_root = self
+            .data
+            .to_str()
+            .filter(|v| v.starts_with('/'))
+            .ok_or("Invalid owner data directory")?;
+        let workspace_root = project["path"]
+            .as_str()
+            .filter(|v| v.starts_with('/'))
+            .ok_or("Invalid project workspace path")?;
+        let current = || {
+            self.generation.load(Ordering::SeqCst) == generation
+                && self.project_epoch.load(Ordering::SeqCst) == epoch
+                && connected.is_none_or(|v| v.load(Ordering::SeqCst))
+        };
+        if self
+            .current_project
+            .lock()
+            .map_err(|_| "Project state unavailable")?
+            .as_deref()
+            != Some(id)
+        {
+            return Err("Original project must be selected".into());
+        }
+        if !current()
+            || self
+                .current_project
+                .lock()
+                .map_err(|_| "Project state unavailable")?
+                .as_deref()
+                != Some(id)
+        {
+            return Err("Owner scope changed before start".into());
+        }
+        let mut command = Command::new("/usr/bin/python3");
+        command
+            .arg("-I")
+            .arg(self.root.join("workers/project_review_apply.py"))
+            .env_clear();
+        let host = crate::browser_host::BrowserHost::spawn(command)
+            .map_err(|_| "Private review apply unavailable")?;
+        let result = (|| -> Result<Value> {
+            if !current()
+                || self
+                    .current_project
+                    .lock()
+                    .map_err(|_| "Project state unavailable")?
+                    .as_deref()
+                    != Some(id)
+            {
+                return Err("Owner scope changed before start".into());
+            }
+            host.send(&json!({
+                "schema": "navi-review-apply-request-v1",
+                "data_root": data_root,
+                "workspace_root": workspace_root,
+                "review_id": review_id,
+                "proposal_digest": proposal_digest,
+            }))
+            .map_err(|_| AMBIGUOUS_OUTCOME)?;
+            let deadline = std::time::Instant::now() + Duration::from_secs(12);
+            loop {
+                if !current() || std::time::Instant::now() > deadline {
+                    return Err(AMBIGUOUS_OUTCOME.into());
+                }
+                let record = match host.receive() {
+                    Ok(value) => value,
+                    Err(_) => return Err(AMBIGUOUS_OUTCOME.into()),
+                };
+                if !current() {
+                    return Err(AMBIGUOUS_OUTCOME.into());
+                }
+                if let Some(record) = record {
+                    let validated = validate_review_apply_record(&record, review_id)
+                        .map_err(|_| AMBIGUOUS_OUTCOME)?;
+                    if self
+                        .current_project
+                        .lock()
+                        .map_err(|_| AMBIGUOUS_OUTCOME)?
+                        .as_deref()
+                        != Some(id)
+                        || !current()
+                    {
+                        return Err(AMBIGUOUS_OUTCOME.into());
+                    }
+                    if matches!(
+                        validated.get("reason").and_then(Value::as_str),
+                        Some("canceled" | "timed_out" | "directory_changed")
+                    ) {
+                        return Err(AMBIGUOUS_OUTCOME.into());
+                    }
+                    return Ok(validated);
+                }
+            }
+        })();
+        host.stop();
+        result
+    }
+
+    pub(crate) fn owner_review_preview(
+        &self,
+        p: &Value,
+        connected: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<Value> {
+        static ACTIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        if std::env::var("NAVI_PROJECT_REVIEW_PREVIEW").as_deref() != Ok("1") {
+            return Err("Optional private review preview is disabled".into());
+        }
+        let _guard = ACTIVE
+            .try_lock()
+            .map_err(|_| "A private review preview request is already active")?;
+        if p.as_object().is_none_or(|m| {
+            m.len() != 3
+                || !m.contains_key("project_id")
+                || !m.contains_key("review_id")
+                || !m.contains_key("proposal_digest")
+        }) {
+            return Err("Invalid private review preview request".into());
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let epoch = self.project_epoch.load(Ordering::SeqCst);
+        if connected.is_some_and(|v| !v.load(Ordering::SeqCst)) {
+            return Err("Owner disconnected".into());
+        }
+        let id = p["project_id"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .ok_or("Explicit project required")?;
+        let review_id = p["review_id"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_review_id(v))
+            .ok_or("Invalid private review identifier")?;
+        let proposal_digest = p["proposal_digest"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_hex64(v))
+            .ok_or("Invalid proposal digest")?;
+        let project = self.assistant_project(Some(id))?;
+        let data_root = self
+            .data
+            .to_str()
+            .filter(|v| v.starts_with('/'))
+            .ok_or("Invalid owner data directory")?;
+        let workspace_root = project["path"]
+            .as_str()
+            .filter(|v| v.starts_with('/'))
+            .ok_or("Invalid project workspace path")?;
+        let current = || {
+            self.generation.load(Ordering::SeqCst) == generation
+                && self.project_epoch.load(Ordering::SeqCst) == epoch
+                && connected.is_none_or(|v| v.load(Ordering::SeqCst))
+        };
+        let selected = || -> bool {
+            self.current_project
+                .lock()
+                .map(|g| g.as_deref() == Some(id))
+                .unwrap_or(false)
+        };
+        if !selected() {
+            return Err("Original project must be selected".into());
+        }
+        if !current() {
+            return Err("Owner scope changed before start".into());
+        }
+        let mut command = Command::new("/usr/bin/python3");
+        command
+            .arg("-I")
+            .arg(self.root.join("workers/project_review_diff.py"))
+            .env_clear();
+        let host = crate::browser_host::BrowserHost::spawn(command)
+            .map_err(|_| "Private review preview unavailable")?;
+        let result = (|| -> Result<Value> {
+            host.send(&json!({
+                "schema": "navi-review-preview-request-v1",
+                "data_root": data_root,
+                "workspace_root": workspace_root,
+                "review_id": review_id,
+                "proposal_digest": proposal_digest,
+            }))
+            .map_err(|_| "Private review preview unavailable")?;
+            let deadline = std::time::Instant::now() + Duration::from_secs(12);
+            loop {
+                if !current() || !selected() || std::time::Instant::now() > deadline {
+                    return Err("Private review preview canceled or timed out".into());
+                }
+                let record = host
+                    .receive()
+                    .map_err(|_| "Private review preview unavailable")?;
+                if let Some(record) = record {
+                    let validated = validate_review_preview_record(&record, review_id)
+                        .map_err(|_| "Private review preview failed or unavailable")?;
+                    if !current() || !selected() {
+                        return Err("Private review preview canceled or timed out".into());
+                    }
+                    return Ok(validated);
+                }
+            }
+        })();
+        host.stop();
+        result
+    }
+
+    pub(crate) fn owner_review_testrun(
+        &self,
+        p: &Value,
+        connected: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<Value> {
+        static ACTIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        if std::env::var("NAVI_PROJECT_REVIEW_TESTRUN").as_deref() != Ok("1") {
+            return Err("Optional private review test run is disabled".into());
+        }
+        let _guard = ACTIVE
+            .try_lock()
+            .map_err(|_| "A private review test run request is already active")?;
+        if p.as_object().is_none_or(|m| {
+            m.len() != 4
+                || !m.contains_key("project_id")
+                || !m.contains_key("review_id")
+                || !m.contains_key("proposal_digest")
+                || !m.contains_key("confirm")
+        }) {
+            return Err("Invalid private review test run request".into());
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
+        let epoch = self.project_epoch.load(Ordering::SeqCst);
+        if connected.is_some_and(|v| !v.load(Ordering::SeqCst)) {
+            return Err("Owner disconnected".into());
+        }
+        let id = p["project_id"]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .ok_or("Explicit project required")?;
+        let review_id = p["review_id"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_review_id(v))
+            .ok_or("Invalid private review identifier")?;
+        let proposal_digest = p["proposal_digest"]
+            .as_str()
+            .filter(|v| is_valid_cleanup_hex64(v))
+            .ok_or("Invalid proposal digest")?;
+        let confirm = p["confirm"]
+            .as_str()
+            .ok_or("Explicit per-review confirmation string required")?;
+        if confirm != format!("run tests on private copy {review_id}") {
+            return Err("Confirmation string does not match".into());
+        }
+        let project = self.assistant_project(Some(id))?;
+        let data_root = self
+            .data
+            .to_str()
+            .filter(|v| v.starts_with('/'))
+            .ok_or("Invalid owner data directory")?;
+        let workspace_root = project["path"]
+            .as_str()
+            .filter(|v| v.starts_with('/'))
+            .ok_or("Invalid project workspace path")?;
+        let current = || {
+            self.generation.load(Ordering::SeqCst) == generation
+                && self.project_epoch.load(Ordering::SeqCst) == epoch
+                && connected.is_none_or(|v| v.load(Ordering::SeqCst))
+        };
+        let selected = || -> bool {
+            self.current_project
+                .lock()
+                .map(|g| g.as_deref() == Some(id))
+                .unwrap_or(false)
+        };
+        if !selected() {
+            return Err("Original project must be selected".into());
+        }
+        if !current() {
+            return Err("Owner scope changed before start".into());
+        }
+        let mut command = Command::new("/usr/bin/python3");
+        command
+            .arg("-I")
+            .arg(self.root.join("workers/project_review_testrun.py"))
+            .env_clear();
+        let host = crate::browser_host::BrowserHost::spawn(command)
+            .map_err(|_| "Private review test run unavailable")?;
+        let result = (|| -> Result<Value> {
+            host.send(&json!({
+                "schema": "navi-review-testrun-request-v1",
+                "data_root": data_root,
+                "workspace_root": workspace_root,
+                "review_id": review_id,
+                "proposal_digest": proposal_digest,
+            }))
+            .map_err(|_| "Private review test run unavailable")?;
+            let deadline = std::time::Instant::now() + Duration::from_secs(55);
+            loop {
+                if !current() || !selected() || std::time::Instant::now() > deadline {
+                    return Err("Private review test run canceled or timed out".into());
+                }
+                let record = host
+                    .receive()
+                    .map_err(|_| "Private review test run unavailable")?;
+                if let Some(record) = record {
+                    let validated = validate_review_testrun_record(&record, review_id)
+                        .map_err(|_| "Private review test run failed or unavailable")?;
+                    if !current() || !selected() {
+                        return Err("Private review test run canceled or timed out".into());
+                    }
+                    return Ok(validated);
+                }
+            }
+        })();
+        host.stop();
+        result
+    }
+
+    pub(crate) fn owner_preview_validate(&self,p:&Value,connected:Option<&std::sync::atomic::AtomicBool>)->Result<Value> {
+        static ACTIVE:std::sync::Mutex<()>=std::sync::Mutex::new(());
+        if std::env::var("NAVI_PROJECT_VALIDATE").as_deref()!=Ok("1") {return Err("Optional preview syntax validation is disabled".into());}
+        let _guard=ACTIVE.try_lock().map_err(|_|"A preview syntax check is already active")?;
+        if p.as_object().is_none_or(|m|m.len()!=2||m.keys().any(|k|!matches!(k.as_str(),"project_id"|"preview"))) {return Err("Invalid preview syntax arguments".into());}
+        let generation=self.generation.load(Ordering::SeqCst);let epoch=self.project_epoch.load(Ordering::SeqCst);
+        if connected.is_some_and(|v|!v.load(Ordering::SeqCst)){return Err("Owner disconnected".into());}
+        let id=p["project_id"].as_str().filter(|s|!s.is_empty()).ok_or("An explicit project is required")?;
+        let _project=self.assistant_project(Some(id))?;
+        if self.current_project.lock().map_err(|_|"Project state unavailable")?.as_deref()!=Some(id){return Err("Preview project is no longer selected".into());}
+        if p["preview"].to_string().len()>210000{return Err("Preview exceeds limit".into());}
+        if self.generation.load(Ordering::SeqCst)!=generation||self.project_epoch.load(Ordering::SeqCst)!=epoch||self.current_project.lock().map_err(|_|"Project state unavailable")?.as_deref()!=Some(id)||connected.is_some_and(|v|!v.load(Ordering::SeqCst)){return Err("Owner scope changed before start".into());}
+        let mut command=Command::new("/usr/bin/python3");
+        command.arg("-I").arg(self.root.join("workers/project_validate.py")).env_clear();
+        let host=crate::browser_host::BrowserHost::spawn(command)?;
+        let result=(||{
+            host.send(&p["preview"])?;
+            let deadline=std::time::Instant::now()+Duration::from_secs(6);
+            loop {
+                let current=|| self.generation.load(Ordering::SeqCst)==generation&&self.project_epoch.load(Ordering::SeqCst)==epoch&&connected.is_none_or(|v|v.load(Ordering::SeqCst));
+                if !current()||std::time::Instant::now()>deadline{return Err("Preview syntax check canceled or timed out".into());}
+                let record=host.receive()?;
+                if !current(){return Err("Preview syntax check canceled".into());}
+                if let Some(record)=record{
+                    if record.to_string().len()>4096||!matches!(record["kind"].as_str(),Some("python-syntax-only"|"json-syntax-only"|"javascript-syntax-only"))||record["applied"]!=false||record["executed_project_code"]!=false||record["path"]!=p["preview"]["path"]||record["after_sha256"]!=p["preview"]["after_sha256"]||!record["result"]["valid"].is_boolean(){return Err("Preview syntax validation failed or unavailable".into());}
+                    let path=p["preview"]["path"].as_str().unwrap_or("");
+                    let expected=if path.ends_with(".py"){"python-syntax-only"}else if path.ends_with(".json"){"json-syntax-only"}else{"javascript-syntax-only"};
+                    if record["kind"]!=expected{return Err("Preview syntax language mismatch".into());}
+                    if self.current_project.lock().map_err(|_|"Project state unavailable")?.as_deref()!=Some(id)||!current(){return Err("Preview scope changed".into());}
+                    return Ok(record);
+                }
+            }
+        })();
+        host.stop();result
+    }
+
+    pub(crate) fn owner_project_read(&self,p:&Value)->Result<Value> {
+        self.owner_project_read_connected(p,None)
+    }
+    pub(crate) fn owner_project_read_connected(&self,p:&Value,connected:Option<&std::sync::atomic::AtomicBool>)->Result<Value> {
+        if std::env::var("NAVI_PI_PROJECT_READ").as_deref()!=Ok("1") {return Err("Optional project reads are disabled".into());}
+        if p.as_object().is_none_or(|m|m.keys().any(|k|!matches!(k.as_str(),"project_id"|"operation"|"args"|"request_id"))) {return Err("Invalid owner project read arguments".into());}
+        let project=self.assistant_project(p["project_id"].as_str())?;
+        let root=project["path"].as_str().ok_or("Project has no directory")?;
+        let generation=self.generation.load(Ordering::SeqCst);
+        let scope=format!("project-read-{}",crate::id());
+        let host={
+            let mut slot=self.project_host.lock().unwrap();
+            if slot.is_some(){return Err("A project read is already active".into());}
+            let host=std::sync::Arc::new(crate::project_host::ProjectHost::start(&self.python(),&self.root.join("workers/project_worker.py"),std::path::Path::new(root),&scope)?);
+            *slot=Some(host.clone());host
+        };
+        let result=(||{
+            host.request(p["operation"].as_str().ok_or("Missing project operation")?,&p["args"])?;
+            loop {
+                if self.generation.load(Ordering::SeqCst)!=generation || connected.is_some_and(|v|!v.load(Ordering::SeqCst)) {return Err("Project read canceled or owner disconnected".into());}
+                let record=host.receive()?;
+                // Gate after the blocking receive too, including queued bytes.
+                if self.generation.load(Ordering::SeqCst)!=generation || connected.is_some_and(|v|!v.load(Ordering::SeqCst)) {return Err("Project read canceled or owner disconnected".into());}
+                let Some(record)=record else {continue;};
+                match record["type"].as_str() {
+                    Some("permission")=>{
+                        let mut record=record;
+                        if let Some(id)=p["request_id"].as_str().filter(|v|!v.is_empty()&&v.len()<=256&&!v.chars().any(char::is_control)){record["request_id"]=json!(id);}
+                        self.event_for(project["id"].as_str(),None,"approval","Project read needs exact approval",record);
+                    },
+                    Some("project_result")=>return Ok(record["result"].clone()),
+                    Some("project_error")=>return Err("Project read failed".into()),
+                    _=>return Err("Invalid project event".into()),
+                }
+            }
+        })();
+        host.cancel();
+        let mut slot=self.project_host.lock().unwrap();
+        if slot.as_ref().is_some_and(|v|std::sync::Arc::ptr_eq(v,&host)){slot.take();}
+        result
+    }
+
+    fn converse_project_pi(&self,text:&str,turn:&AssistantTurn,generation:u64)->Result<Value> {
+        if std::env::var("NAVI_PI_PROJECT_READ").as_deref()!=Ok("1") {return Err("Optional project reads are disabled".into());}
+        if !turn.attachments.paths.is_empty(){return Err("Project read route does not accept attachments yet".into());}
+        let project_epoch=self.project_epoch.load(Ordering::SeqCst);
+        let bundle=self.root.join("../../packages/navi/dist/project-host.mjs");
+        if !bundle.is_file(){return Err("Build optional project host first".into());}
+        let mut command=Command::new("node");
+        command.arg("--").arg(bundle).env_remove("NODE_OPTIONS").env_remove("NODE_PATH")
+            .env("NAVI_RUNTIME_DIR",&self.runtime).env("NAVI_PROJECT_ID",&turn.id)
+            .env("NAVI_PROJECT_REQUEST_ID",crate::REQUEST.with(|v|v.borrow().clone()).unwrap_or_default());
+        let host=crate::browser_host::BrowserHost::spawn(command)?;
+        let turn_id=self.begin_turn();let mut acc=GatewayTurn::default();
+        let result=(||{
+            let startup=std::time::Instant::now()+Duration::from_secs(5);
+            loop {
+                if std::time::Instant::now()>startup{return Err("Project host startup timed out".into());}
+                if let Some(record)=host.receive()? {
+                    if record["type"]=="startup_error"{return Err("Configure explicit local project provider endpoint/model".into());}
+                    if record["type"]=="ready"{break;}
+                    return Err("Unexpected project startup record".into());
+                }
+            }
+            host.send(&json!({"type":"prompt","text":text}))?;
+            let deadline=std::time::Instant::now()+Duration::from_secs(65);let mut bytes=0usize;let mut count=0usize;
+            loop {
+                if (self.generation.load(Ordering::SeqCst)!=generation||self.project_epoch.load(Ordering::SeqCst)!=project_epoch)||std::time::Instant::now()>deadline{return Err("Project run canceled or timed out".into());}
+                let record=host.receive()?;
+                if (self.generation.load(Ordering::SeqCst)!=generation||self.project_epoch.load(Ordering::SeqCst)!=project_epoch){return Err("Project run canceled".into());}
+                let Some(record)=record else{continue;};bytes+=record.to_string().len();count+=1;
+                if count>64||bytes>262144{return Err("Project host output exceeded bounds".into());}
+                match record["type"].as_str(){
+                    Some("done")=>{
+                        if let Some(items)=record["previews"].as_array(){
+                            if items.len()>4||items.iter().any(|v|v["applied"]!=false||v["path"].as_str().is_none_or(|p|p.len()>1024)||v["before"].as_str().is_none_or(|p|p.len()>16384)||v["after"].as_str().is_none_or(|p|p.len()>16384)){return Err("Invalid project previews".into());}
+                        }
+                        let reply=self.completed_turn(&turn_id,record,&mut acc);self.event_for(Some(turn.id.as_str()),None,"reply",reply["text"].as_str().unwrap_or(""),reply.clone());return Ok(reply);},
+                    Some("error")=>return Err("Project run failed or was canceled".into()),
+                    _=>return Err("Unexpected project host record".into()),
+                }
+            }
+        })();
+        host.stop();if result.is_err(){self.turn_finish(&turn_id,&acc.accumulated);}result
+    }
+
+    fn converse_browser_pi(&self,text:&str,turn:&AssistantTurn,generation:u64)->Result<Value> {
+        let host=self.browser_host.lock().unwrap().clone().ok_or("Start the optional Pi browser host before attaching its extension")?;
+        host.clear();
+        let turn_id=self.begin_turn();
+        let mut accumulator=GatewayTurn::default();
+        let deadline=std::time::Instant::now()+Duration::from_secs(40);
+        let result=(|| {
+            let prompt=if turn.context.is_empty(){text.to_string()}else{format!("{}\n\n{}",turn.context,text)};
+            let prompt=crate::attachment_snapshots::browser_prompt(&prompt,&turn.attachments.paths)?;
+            let history_text=if turn.attachments.paths.is_empty() && text.len()<=2048 {Some(text)}else{None};
+            let scope=format!("{}\n{}",turn.id,turn.path);
+            let mut control=json!({"type":"prompt","text":prompt,"scope":scope});
+            if let Some(value)=history_text {control["historyText"]=json!(value);}
+            host.send(&control)?;
+            let mut record_count=0usize;
+            let mut record_bytes=0usize;
+            loop {
+                if self.generation.load(Ordering::SeqCst)!=generation || std::time::Instant::now()>deadline {
+                    let _=host.send(&json!({"type":"cancel"}));
+                    return Err("Pi browser run stopped or timed out".into());
+                }
+                let Some(record)=host.receive()? else {continue;};
+                record_count+=1;
+                record_bytes+=record.to_string().len();
+                if record_count>4096 || record_bytes>2*1024*1024 {return Err("Browser host stream exceeded its limit".into());}
+                match record["type"].as_str().unwrap_or("") {
+                    "permission"=>{
+                        let id=record["id"].as_str().ok_or("Invalid browser approval")?;
+                        if !id.starts_with("navi-perm-") {return Err("Invalid browser approval id".into());}
+                        host.permission(id);
+                        self.event_for(Some(turn.id.as_str()),None,"approval","Browser effect needs approval",record);
+                    }
+                    "delta"=>{
+                        if let Some(mut event)=map_gateway_line(&record.to_string()) {
+                            accumulator.record(&mut event);
+                            self.turn_flush(&turn_id,&accumulator.accumulated,"pi-browser",Some(turn.id.as_str()));
+                        }
+                    }
+                    "tool_status"|"tool"=>{
+                        self.event_for(Some(turn.id.as_str()),None,"tool_use","Pi browser tool",record);
+                    }
+                    "error"|"control_rejected"=>return Err(record["text"].as_str().unwrap_or("Browser host rejected the run").to_string()),
+                    "done"=>{
+                        let reply=self.completed_turn(&turn_id,record,&mut accumulator);
+                        self.event_for(Some(turn.id.as_str()),None,"reply",reply["text"].as_str().unwrap_or(""),reply.clone());
+                        return Ok(reply);
+                    }
+                    _=>{}
+                }
+            }
+        })();
+        host.clear();
+        if result.is_err() {
+            self.turn_finish(&turn_id,&accumulator.accumulated);
+            host.stop();
+            let mut slot=self.browser_host.lock().unwrap();
+            if slot.as_ref().is_some_and(|current|std::sync::Arc::ptr_eq(current,&host)) {slot.take();}
+        }
+        result
+    }
+
+    fn converse_approved_acp(&self,harness:&str,text:&str,turn:&AssistantTurn,generation:u64)->Result<Value> {
+        if !turn.attachments.paths.is_empty() {return Err("ACP attachment forwarding is not supported; use native Pi text or OpenCode".into());}
+        let caps=crate::adapters::caps(harness);
+        let key=format!("NAVI_ACP_CMD_{}",harness.to_uppercase());
+        let parts:Vec<String>=if let Ok(value)=std::env::var(&key) {value.split_whitespace().map(str::to_string).collect()}
+            else {caps.acp_cmd.iter().map(|s|s.to_string()).collect()};
+        if parts.is_empty(){return Err(format!("Harness {harness} does not support ACP"));}
+        let prompt=if turn.context.is_empty(){text.to_string()}else{format!("{}\n\n{}",turn.context,text)};
+        let mut command=Command::new(self.python());
+        command.arg(self.root.join("workers/acp_client.py")).arg("--cwd").arg(&turn.path).arg("--prompt").arg(prompt)
+            .arg("--").args(parts).env("NAVI_RUNTIME_DIR",&self.runtime).env("NAVI_DATA_DIR",&self.data);
+        let host=std::sync::Arc::new(crate::browser_host::BrowserHost::spawn(command)?);
+        *self.acp_host.lock().unwrap()=Some(std::sync::Arc::clone(&host));
+        let turn_id=self.begin_turn();let mut acc=GatewayTurn::default();
+        let deadline=std::time::Instant::now()+Duration::from_secs(195);
+        let result=(|| {
+            let mut count=0usize;let mut bytes=0usize;
+            loop {
+                if self.generation.load(Ordering::SeqCst)!=generation || std::time::Instant::now()>deadline {
+                    let _=host.send(&json!({"type":"cancel"}));return Err("ACP run stopped or timed out".into());
+                }
+                let Some(record)=host.receive()? else {continue;};
+                count+=1;bytes+=record.to_string().len();
+                if count>16384||bytes>8*1024*1024{return Err("ACP stream exceeded its limit".into());}
+                if record["type"]=="permission" {
+                    let id=record["id"].as_str().ok_or("Invalid ACP approval")?;
+                    if !id.starts_with("acp-perm-") || id.len()>128{return Err("Invalid ACP approval id".into());}
+                    host.permission(id);
+                    self.event_for(Some(turn.id.as_str()),record["session"].as_str(),"approval","ACP tool needs approval",record.clone());continue;
+                }
+                let Some(mut event)=map_gateway_line(&record.to_string()) else {continue;};
+                if !acc.record(&mut event){continue;}
+                match event {
+                    GatewayLine::Delta(_)=>self.turn_flush(&turn_id,&acc.accumulated,harness,Some(turn.id.as_str())),
+                    GatewayLine::Reasoning(text,_)=>{self.event_for(Some(turn.id.as_str()),None,"reasoning",&text,json!({"text":text}));},
+                    GatewayLine::ToolStatus{id,name,input,progress}=>{self.event_for(Some(turn.id.as_str()),None,"tool_use",name.as_deref().unwrap_or("tool"),json!({"id":id,"name":name,"input":input,"progress":progress,"status":"running","final":false}));},
+                    GatewayLine::ToolFinal{id,name,status,input,output,exit}=>{self.event_for(Some(turn.id.as_str()),None,"tool_use",name.as_deref().unwrap_or("tool"),json!({"id":id,"name":name,"input":input,"output":output,"exit":exit,"status":status,"final":true}));},
+                    GatewayLine::Error(error)=>return Err(error),
+                    GatewayLine::Done(value)=>{
+                        let mut reply=self.completed_turn(&turn_id,*value,&mut acc);
+                        reply["source"]=json!(format!("acp:{harness}"));reply["persona"]=json!(harness);
+                        self.event_for(Some(turn.id.as_str()),None,"reply",reply["text"].as_str().unwrap_or(""),reply.clone());return Ok(reply);
+                    },
+                    _=>{}
+                }
+            }
+        })();
+        host.clear();host.stop();
+        let mut slot=self.acp_host.lock().unwrap();
+        if slot.as_ref().is_some_and(|current|std::sync::Arc::ptr_eq(current,&host)){slot.take();}
+        if result.is_err(){self.turn_finish(&turn_id,&acc.accumulated);}
+        result
+    }
+
     /// Phase 6: run one turn against an ACP-speaking harness via `workers/acp_client.py`.
     fn converse_acp(&self, harness: &str, text: &str, turn: &AssistantTurn, generation: u64) -> Result<Value> {
-        let caps = crate::adapters::caps(harness);
-        let env_key = format!("NAVI_ACP_CMD_{}", harness.to_uppercase());
-        let cmd_parts: Vec<String> = if let Ok(override_cmd) = std::env::var(&env_key) {
-            override_cmd.split_whitespace().map(str::to_string).collect()
-        } else {
-            caps.acp_cmd.iter().map(|s| s.to_string()).collect()
-        };
-        if cmd_parts.is_empty() {
-            return Err(format!("Harness {harness} does not support ACP").into());
-        }
+        if harness!="pi" {return self.converse_approved_acp(harness,text,turn,generation);}
         let prompt = if turn.context.is_empty() {
             text.to_string()
         } else {
             format!("{}\n\n{}", turn.context, text)
         };
-        let mut child = Command::new(self.python())
-            .arg(self.root.join("workers/acp_client.py"))
-            .arg("--cwd")
-            .arg(&turn.path)
-            .arg("--prompt")
-            .arg(&prompt)
-            .arg("--")
-            .args(&cmd_parts)
+        let mut command = Command::new(self.python());
+        if harness == "pi" {
+            let model = std::env::var("NAVI_PI_MODEL")
+                .map_err(|_| "Select a Pi provider/model with NAVI_PI_MODEL before starting Pi")?;
+            command.arg(self.root.join("workers/pi_rpc.py"))
+                .arg("--model").arg(model)
+                .arg("--executable").arg(std::env::var("NAVI_PI_EXECUTABLE").unwrap_or_else(|_| "pi".into()));
+        } else {
+            let caps = crate::adapters::caps(harness);
+            let env_key = format!("NAVI_ACP_CMD_{}", harness.to_uppercase());
+            let cmd_parts: Vec<String> = if let Ok(override_cmd) = std::env::var(&env_key) {
+                override_cmd.split_whitespace().map(str::to_string).collect()
+            } else {
+                caps.acp_cmd.iter().map(|s| s.to_string()).collect()
+            };
+            if cmd_parts.is_empty() {
+                return Err(format!("Harness {harness} does not support ACP"));
+            }
+            command.arg(self.root.join("workers/acp_client.py"));
+            command.arg("--cwd").arg(&turn.path).arg("--prompt").arg(&prompt)
+                .arg("--").args(&cmd_parts);
+        }
+        if harness == "pi" {
+            command.arg("--cwd").arg(&turn.path).arg("--prompt").arg(&prompt);
+            for attachment in &turn.attachments.paths {
+                command.arg("--attachment").arg(attachment);
+            }
+            if let Ok(directory) = std::env::var("NAVI_PI_SESSION_DIR") {
+                command.arg("--session-dir").arg(directory);
+            }
+        }
+        let mut child = command
             .env("NAVI_RUNTIME_DIR", &self.runtime)
             .env("NAVI_DATA_DIR", &self.data)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("Failed to start ACP client: {e}"))?;
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null())
+            .spawn().map_err(|e| format!("Failed to start {harness} client: {e}"))?;
+        // Let the Python transport reap its isolated provider group before the
+        // daemon resorts to killing the transport itself.
+        let stop_child = |child: &mut std::process::Child| {
+            if let Some(stdin) = child.stdin.as_mut() { let _ = writeln!(stdin, "{{\"type\":\"cancel\"}}"); }
+            let until = std::time::Instant::now() + Duration::from_secs(2);
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) => return,
+                    _ if std::time::Instant::now() >= until => break,
+                    _ => std::thread::sleep(Duration::from_millis(10)),
+                }
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+        };
         let stdout = child.stdout.take().ok_or("ACP client has no stdout")?;
         let (sender, receiver) = std::sync::mpsc::channel::<String>();
         std::thread::spawn(move || {
@@ -2139,10 +3063,15 @@ impl App {
         let turn_id = self.begin_turn();
         let mut turn_acc = GatewayTurn::default();
         let mut done: Option<Value> = None;
+        let deadline = std::time::Instant::now() + Duration::from_secs(195);
         loop {
+            if std::time::Instant::now() > deadline {
+                stop_child(&mut child);
+                self.turn_finish(&turn_id, &turn_acc.accumulated);
+                return Err(format!("{harness} turn timed out"));
+            }
             if self.generation.load(Ordering::SeqCst) != generation {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop_child(&mut child);
                 self.turn_finish(&turn_id, &turn_acc.accumulated);
                 let reply = json!({"text":"Conversation stopped.","persona":harness,"source":"stopped","stopped":true});
                 self.event_for(Some(turn.id.as_str()), None, "reply", "Conversation stopped.", reply.clone());
@@ -2194,10 +3123,13 @@ impl App {
         }
         let _ = child.wait();
         self.turn_finish(&turn_id, &turn_acc.accumulated);
-        let done_val = self.finish_turn(done.unwrap_or_else(|| json!({})), &mut turn_acc);
+        let done = done.ok_or_else(|| format!("{harness} closed without a completed answer"))?;
+        let done_val = self.completed_turn(&turn_id, done, &mut turn_acc);
         let reply = json!({
-            "text": done_val["text"], "persona": harness, "source": format!("acp:{harness}"),
-            "session": done_val["session"], "project_id": turn.id,
+            "text": done_val["text"], "persona": harness, "source": if harness == "pi" { "pi-rpc".to_string() } else { format!("acp:{harness}") },
+            "session": done_val["session"], "project_id": turn.id, "turn": done_val["turn"],
+            "finish": done_val["finish"], "truncated": done_val["truncated"],
+            "actual_model": done_val["actual_model"], "warnings": done_val["warnings"], "usage": done_val["usage"],
         });
         self.event_for(Some(turn.id.as_str()), done_val["session"].as_str(), "reply",
             reply["text"].as_str().unwrap_or("No reply"), reply.clone());
@@ -4440,6 +5372,15 @@ impl App {
     }
 
     pub fn run_command(&self, text: &str, params: &Value, dry: bool, generation: u64) -> Result<Value> {
+        // This harness is read-only by construction. Never let the chief or
+        // fast-intent dispatcher turn its text into a desktop/shell mutation.
+        if params["harness"]=="pi-project" {
+            let turn=self.assistant_turn(params)?;
+            if dry{return Ok(json!({"dry_run":true,"harness":"pi-project","read_only":true}));}
+            self.event_for(Some(&turn.id),None,"working","Local read-only project run",json!({"text":text}));
+            let reply=self.converse_project_pi(text,&turn,generation)?;
+            return Ok(json!({"trace":[],"reply":reply,"dry_run":false}));
+        }
         // "Open Claude and assess the project" is two fast steps. A clause is
         // split on "and" only when every half is a fast intent, so "write a
         // parser and its tests" still reaches the model whole.
@@ -4649,7 +5590,9 @@ impl App {
             let result = if routes_to_conversation(kind) {
                 let turn = self.assistant_turn(&scope)?;
                 let reply = if let Some(harness) = params["harness"].as_str().filter(|h| !h.is_empty() && *h != "opencode") {
-                    self.converse_acp(harness, &conversational_text(clause), &turn, generation)?
+                    if harness=="pi-project" {self.converse_project_pi(&conversational_text(clause),&turn,generation)?}
+                    else if harness=="pi-browser" {self.converse_browser_pi(&conversational_text(clause),&turn,generation)?}
+                    else {self.converse_acp(harness, &conversational_text(clause), &turn, generation)?}
                 } else {
                     self.converse(&conversational_text(clause), &turn, generation)?
                 };
@@ -4763,11 +5706,33 @@ impl App {
     }
 }
 
+#[derive(Default)]
+struct PreparedAttachments {
+    paths: Vec<String>,
+    scratch: Vec<std::path::PathBuf>,
+    directories: Vec<std::path::PathBuf>,
+    ledger: Option<(std::path::PathBuf,std::path::PathBuf)>,
+}
+
+impl Drop for PreparedAttachments {
+    fn drop(&mut self) {
+        // The durable ledger validates inode ownership for normal and crash cleanup.
+        if let Some((database,runtime))=&self.ledger {
+            if let Ok(db)=rusqlite::Connection::open(database) {
+                let _=crate::attachment_snapshots::cleanup(&db,runtime,Some(&self.scratch));
+            }
+        }
+        for path in &self.directories {
+            let _ = std::fs::remove_dir(path);
+        }
+    }
+}
+
 struct AssistantTurn {
     id: String,
     path: String,
     context: String,
-    attachments: Vec<String>,
+    attachments: PreparedAttachments,
 }
 
 /// A gateway failure: `stopped` marks a user Stop so callers can return a
@@ -5016,7 +5981,7 @@ pub(crate) fn validate_attachments(params: &Value) -> Result<()> {
             return Err("Invalid attachment name".into());
         }
         match (item["path"].as_str(), item["data"].as_str()) {
-            (Some(_), _) | (None, Some(_)) => {}
+            (Some(_), None) | (None, Some(_)) => {}
             _ => return Err("Attachment needs a path or data".into()),
         }
         if let Some(data) = item["data"].as_str() {
@@ -6407,5 +7372,1058 @@ mod tests {
         let long = "x".repeat(1000);
         assert_eq!(cap_block(&long).len(), 600);
         assert_eq!(cap_block("short"), "short");
+    }
+}
+
+fn is_unsafe_inventory_text_char(ch: char) -> bool {
+    let code = ch as u32;
+    code <= 0x1f
+        || code == 0x7f
+        || (0x202a..=0x202e).contains(&code)
+        || (0x2066..=0x2069).contains(&code)
+}
+
+fn is_lower_hex(s: &str, len: usize) -> bool {
+    s.len() == len && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+}
+
+fn is_valid_review_id(s: &str) -> bool {
+    s.len() == 39 && s.starts_with("review-") && is_lower_hex(&s[7..], 32)
+}
+
+fn is_safe_inventory_rel_path(path: &str) -> bool {
+    !path.is_empty()
+        && path.len() <= 4096
+        && !path.starts_with('/')
+        && !path.ends_with('/')
+        && !path.contains('\\')
+        && !path.chars().any(is_unsafe_inventory_text_char)
+        && path
+            .split('/')
+            .all(|seg| !seg.is_empty() && seg != "." && seg != "..")
+}
+
+pub(crate) fn validate_review_inventory_record(record: &Value) -> Result<Value> {
+    const MAX_OUTPUT_BYTES: usize = 65536;
+    const MAX_INSPECTED: u64 = 64;
+    const MAX_VALID: u64 = 32;
+    const MAX_FILE_BYTES: u64 = 16384;
+    const REJECT: &str = "Invalid private review inventory response";
+
+    let serialized = serde_json::to_string(record).map_err(|_| REJECT)?;
+    if serialized.len() > MAX_OUTPUT_BYTES {
+        return Err(REJECT.into());
+    }
+    let obj = record.as_object().ok_or(REJECT)?;
+    if obj.len() != 11
+        || obj.keys().any(|k| {
+            !matches!(
+                k.as_str(),
+                "schema"
+                    | "applied"
+                    | "source_contents_exposed"
+                    | "storage_present"
+                    | "inspected_count"
+                    | "valid_count"
+                    | "invalid_count"
+                    | "max_inspected_children"
+                    | "max_valid_records"
+                    | "items"
+                    | "notice"
+            )
+        })
+    {
+        return Err(REJECT.into());
+    }
+
+    if obj.get("schema").and_then(Value::as_str) != Some("navi-review-inventory-v1")
+        || obj.get("applied").and_then(Value::as_bool) != Some(false)
+        || obj.get("source_contents_exposed").and_then(Value::as_bool) != Some(false)
+        || obj.get("max_inspected_children").and_then(Value::as_u64) != Some(MAX_INSPECTED)
+        || obj.get("max_valid_records").and_then(Value::as_u64) != Some(MAX_VALID)
+    {
+        return Err(REJECT.into());
+    }
+
+    let storage_present = obj
+        .get("storage_present")
+        .and_then(Value::as_bool)
+        .ok_or(REJECT)?;
+    let inspected_count = obj
+        .get("inspected_count")
+        .and_then(Value::as_u64)
+        .ok_or(REJECT)?;
+    let valid_count = obj
+        .get("valid_count")
+        .and_then(Value::as_u64)
+        .ok_or(REJECT)?;
+    let invalid_count = obj
+        .get("invalid_count")
+        .and_then(Value::as_u64)
+        .ok_or(REJECT)?;
+    let notice = obj.get("notice").and_then(Value::as_str).ok_or(REJECT)?;
+    if notice.is_empty()
+        || notice.len() > 512
+        || notice.chars().any(is_unsafe_inventory_text_char)
+    {
+        return Err(REJECT.into());
+    }
+
+    let items = obj.get("items").and_then(Value::as_array).ok_or(REJECT)?;
+    if inspected_count > MAX_INSPECTED
+        || valid_count > MAX_VALID
+        || invalid_count > MAX_INSPECTED
+        || valid_count.checked_add(invalid_count) != Some(inspected_count)
+        || (items.len() as u64) != inspected_count
+        || (!storage_present && !items.is_empty())
+    {
+        return Err(REJECT.into());
+    }
+
+    let mut seen_ids = std::collections::HashSet::with_capacity(items.len());
+    let mut actual_valid: u64 = 0;
+    let mut actual_invalid: u64 = 0;
+
+    for item in items {
+        let map = item.as_object().ok_or(REJECT)?;
+        let review_id = map
+            .get("review_id")
+            .and_then(Value::as_str)
+            .filter(|s| is_valid_review_id(s))
+            .ok_or(REJECT)?;
+        if !seen_ids.insert(review_id) {
+            return Err(REJECT.into());
+        }
+        if map.get("applied").and_then(Value::as_bool) != Some(false) {
+            return Err(REJECT.into());
+        }
+        let valid = map.get("valid").and_then(Value::as_bool).ok_or(REJECT)?;
+        if valid {
+            if map.len() != 12
+                || map.keys().any(|k| {
+                    !matches!(
+                        k.as_str(),
+                        "review_id"
+                            | "valid"
+                            | "status"
+                            | "applied"
+                            | "requires_fresh_validation"
+                            | "original_path"
+                            | "proposal_digest"
+                            | "before_sha256"
+                            | "after_sha256"
+                            | "before_bytes"
+                            | "after_bytes"
+                            | "files"
+                    )
+                })
+            {
+                return Err(REJECT.into());
+            }
+            if map.get("status").and_then(Value::as_str) != Some("valid")
+                || map
+                    .get("requires_fresh_validation")
+                    .and_then(Value::as_bool)
+                    != Some(true)
+            {
+                return Err(REJECT.into());
+            }
+            let original_path = map
+                .get("original_path")
+                .and_then(Value::as_str)
+                .ok_or(REJECT)?;
+            if !is_safe_inventory_rel_path(original_path) {
+                return Err(REJECT.into());
+            }
+            for hash_key in ["proposal_digest", "before_sha256", "after_sha256"] {
+                let hash = map.get(hash_key).and_then(Value::as_str).ok_or(REJECT)?;
+                if !is_lower_hex(hash, 64) {
+                    return Err(REJECT.into());
+                }
+            }
+            for size_key in ["before_bytes", "after_bytes"] {
+                let sz = map.get(size_key).and_then(Value::as_u64).ok_or(REJECT)?;
+                if sz > MAX_FILE_BYTES {
+                    return Err(REJECT.into());
+                }
+            }
+            let files = map.get("files").and_then(Value::as_array).ok_or(REJECT)?;
+            if files.len() != 3
+                || files[0].as_str() != Some("before.txt")
+                || files[1].as_str() != Some("proposed-after.txt")
+                || files[2].as_str() != Some("review.json")
+            {
+                return Err(REJECT.into());
+            }
+            actual_valid += 1;
+        } else {
+            if map.len() != 5
+                || map.keys().any(|k| {
+                    !matches!(
+                        k.as_str(),
+                        "review_id" | "valid" | "status" | "reason" | "applied"
+                    )
+                })
+            {
+                return Err(REJECT.into());
+            }
+            if map.get("status").and_then(Value::as_str) != Some("invalid") {
+                return Err(REJECT.into());
+            }
+            let reason = map.get("reason").and_then(Value::as_str).ok_or(REJECT)?;
+            if !matches!(
+                reason,
+                "invalid_entry_type"
+                    | "invalid_permissions"
+                    | "incomplete_or_extra_files"
+                    | "verification_failed"
+            ) {
+                return Err(REJECT.into());
+            }
+            actual_invalid += 1;
+        }
+    }
+
+    if actual_valid != valid_count
+        || actual_invalid != invalid_count
+        || actual_valid > MAX_VALID
+        || actual_valid.checked_add(actual_invalid) != Some(inspected_count)
+    {
+        return Err(REJECT.into());
+    }
+
+    Ok(record.clone())
+}
+
+#[cfg(test)]
+mod review_inventory_tests {
+    use super::*;
+
+    fn sample_valid_item(hex_suffix: &str, original_path: &str) -> Value {
+        json!({
+            "review_id": format!("review-{hex_suffix}"),
+            "valid": true,
+            "status": "valid",
+            "applied": false,
+            "requires_fresh_validation": true,
+            "original_path": original_path,
+            "proposal_digest": "25ada7bca03323eab54c9b31f86bdad0f180b84fba1ceb4af3ba1ada06fc1b8c",
+            "before_sha256": "9f56e761d79bfdb34304a012586cb04d16b435ef6130091a97702e559260a2f2",
+            "after_sha256": "98752ee28d5484bdc2814fb70adb6a0b2fb31f6a9b8ee7ae81fd2fc9cf300b3b",
+            "before_bytes": 5,
+            "after_bytes": 4,
+            "files": ["before.txt", "proposed-after.txt", "review.json"]
+        })
+    }
+
+    fn sample_invalid_item(hex_suffix: &str, reason: &str) -> Value {
+        json!({
+            "review_id": format!("review-{hex_suffix}"),
+            "valid": false,
+            "status": "invalid",
+            "reason": reason,
+            "applied": false
+        })
+    }
+
+    fn sample_envelope(storage_present: bool, items: Vec<Value>, valid: u64, invalid: u64) -> Value {
+        json!({
+            "schema": "navi-review-inventory-v1",
+            "applied": false,
+            "source_contents_exposed": false,
+            "storage_present": storage_present,
+            "inspected_count": valid + invalid,
+            "valid_count": valid,
+            "invalid_count": invalid,
+            "max_inspected_children": 64,
+            "max_valid_records": 32,
+            "items": items,
+            "notice": "Metadata inventory of private inert review workspaces only."
+        })
+    }
+
+    #[test]
+    fn accepts_empty_and_mixed_valid_invalid_records() {
+        let empty = sample_envelope(false, vec![], 0, 0);
+        assert_eq!(validate_review_inventory_record(&empty).unwrap(), empty);
+
+        let mixed = sample_envelope(
+            true,
+            vec![
+                sample_valid_item("39b3cfb6b0d77be498d5d0785020f1c5", "src/s.py"),
+                sample_invalid_item("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "incomplete_or_extra_files"),
+            ],
+            1,
+            1,
+        );
+        assert_eq!(validate_review_inventory_record(&mixed).unwrap(), mixed);
+    }
+
+    #[test]
+    fn rejects_bad_envelope_flags_schema_and_extra_keys() {
+        let base = sample_envelope(false, vec![], 0, 0);
+
+        let mut wrong_schema = base.clone();
+        wrong_schema["schema"] = json!("navi-review-inventory-v2");
+        assert!(validate_review_inventory_record(&wrong_schema).is_err());
+
+        let mut applied_true = base.clone();
+        applied_true["applied"] = json!(true);
+        assert!(validate_review_inventory_record(&applied_true).is_err());
+
+        let mut source_exposed = base.clone();
+        source_exposed["source_contents_exposed"] = json!(true);
+        assert!(validate_review_inventory_record(&source_exposed).is_err());
+
+        let mut with_storage_path = base.clone();
+        with_storage_path["storage_path"] = json!("/home/user/.navi/proposal-reviews");
+        assert!(validate_review_inventory_record(&with_storage_path).is_err());
+
+        let mut storage_absent_with_item = sample_envelope(
+            false,
+            vec![sample_invalid_item("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "verification_failed")],
+            0,
+            1,
+        );
+        assert!(validate_review_inventory_record(&storage_absent_with_item).is_err());
+        storage_absent_with_item["storage_present"] = json!(true);
+        assert!(validate_review_inventory_record(&storage_absent_with_item).is_ok());
+    }
+
+    #[test]
+    fn rejects_count_mismatches_and_bounds() {
+        let mut bad_counts = sample_envelope(
+            true,
+            vec![sample_valid_item("39b3cfb6b0d77be498d5d0785020f1c5", "s.py")],
+            1,
+            0,
+        );
+        bad_counts["inspected_count"] = json!(2);
+        assert!(validate_review_inventory_record(&bad_counts).is_err());
+
+        let mut swapped_counts = sample_envelope(
+            true,
+            vec![sample_valid_item("39b3cfb6b0d77be498d5d0785020f1c5", "s.py")],
+            0,
+            1,
+        );
+        assert!(validate_review_inventory_record(&swapped_counts).is_err());
+        swapped_counts["valid_count"] = json!(1);
+        swapped_counts["invalid_count"] = json!(0);
+        assert!(validate_review_inventory_record(&swapped_counts).is_ok());
+
+        let too_many_valid: Vec<Value> = (0..33)
+            .map(|i| sample_valid_item(&format!("{i:032x}"), "a.py"))
+            .collect();
+        assert!(validate_review_inventory_record(&sample_envelope(true, too_many_valid, 33, 0)).is_err());
+
+        let too_many_items: Vec<Value> = (0..65)
+            .map(|i| sample_invalid_item(&format!("{i:032x}"), "verification_failed"))
+            .collect();
+        assert!(validate_review_inventory_record(&sample_envelope(true, too_many_items, 0, 65)).is_err());
+    }
+
+    #[test]
+    fn rejects_bad_item_keys_ids_paths_and_source_fields() {
+        // Bad review_id and duplicate review_id
+        for bad_id in ["review-short", "review-39B3CFB6B0D77BE498D5D0785020F1C5", "../etc/passwd"] {
+            let mut item = sample_invalid_item("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "verification_failed");
+            item["review_id"] = json!(bad_id);
+            assert!(validate_review_inventory_record(&sample_envelope(true, vec![item], 0, 1)).is_err());
+        }
+        let dup = sample_envelope(
+            true,
+            vec![
+                sample_invalid_item("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "verification_failed"),
+                sample_invalid_item("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "verification_failed"),
+            ],
+            0,
+            2,
+        );
+        assert!(validate_review_inventory_record(&dup).is_err());
+
+        // Forbidden source/path/created fields on valid item
+        for (k, v) in [
+            ("before", json!("secret")),
+            ("after", json!("secret")),
+            ("proposal", json!({})),
+            ("storage_path", json!("/tmp/x")),
+            ("path", json!("s.py")),
+            ("created", json!("2026-11-24T00:00:00Z")),
+        ] {
+            let mut item = sample_valid_item("39b3cfb6b0d77be498d5d0785020f1c5", "s.py");
+            item[k] = v;
+            assert!(validate_review_inventory_record(&sample_envelope(true, vec![item], 1, 0)).is_err());
+        }
+
+        // Absolute or traversal original_path rejected
+        for bad_path in ["/etc/passwd", "../secret.py", "a/../b.py", "a\\b.py", "a\nb.py"] {
+            let item = sample_valid_item("39b3cfb6b0d77be498d5d0785020f1c5", bad_path);
+            assert!(validate_review_inventory_record(&sample_envelope(true, vec![item], 1, 0)).is_err());
+        }
+
+        // Unknown invalid reason or extra field on invalid item rejected
+        let bad_reason = sample_invalid_item("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "custom_reason");
+        assert!(validate_review_inventory_record(&sample_envelope(true, vec![bad_reason], 0, 1)).is_err());
+        let mut extra_invalid = sample_invalid_item("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "verification_failed");
+        extra_invalid["original_path"] = json!("s.py");
+        assert!(validate_review_inventory_record(&sample_envelope(true, vec![extra_invalid], 0, 1)).is_err());
+    }
+
+    #[test]
+    fn rejects_serialized_record_over_65536_bytes() {
+        let long_rel = format!("{}f.py", "a/".repeat(1098));
+        let items: Vec<Value> = (0..32)
+            .map(|i| sample_valid_item(&format!("{i:032x}"), &long_rel))
+            .collect();
+        let oversized = sample_envelope(true, items, 32, 0);
+        assert!(serde_json::to_string(&oversized).unwrap().len() > 65536);
+        assert!(validate_review_inventory_record(&oversized).is_err());
+    }
+}
+
+const REVIEW_CLEANUP_MAX_REPLY_BYTES: usize = 512;
+const REVIEW_CLEANUP_REASONS: &[&str] = &[
+    "not_found",
+    "digest_mismatch",
+    "invalid_entry_type",
+    "invalid_permissions",
+    "incomplete_or_extra_files",
+    "verification_failed",
+    "directory_changed",
+    "canceled",
+    "timed_out",
+    "invalid_request",
+    "invalid_storage",
+];
+
+fn is_valid_cleanup_review_id(value: &str) -> bool {
+    value.strip_prefix("review-").is_some_and(|hex| {
+        hex.len() == 32 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    })
+}
+
+fn is_valid_cleanup_hex64(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn validate_review_cleanup_confirm(review_id: &str, confirm: &str) -> Result<()> {
+    if !is_valid_cleanup_review_id(review_id) {
+        return Err("Invalid private review identifier".into());
+    }
+    if confirm != format!("delete private review {review_id}") {
+        return Err("Explicit per-review confirmation string required".into());
+    }
+    Ok(())
+}
+
+fn validate_review_cleanup_record(record: &Value, expected_review_id: &str) -> Result<Value> {
+    if !is_valid_cleanup_review_id(expected_review_id) {
+        return Err("Invalid private review identifier".into());
+    }
+    let encoded =
+        serde_json::to_vec(record).map_err(|_| "Invalid private review cleanup response")?;
+    if encoded.len() > REVIEW_CLEANUP_MAX_REPLY_BYTES {
+        return Err("Private review cleanup response exceeded size bound".into());
+    }
+    let map = record
+        .as_object()
+        .ok_or("Invalid private review cleanup response")?;
+    if map.get("schema").and_then(Value::as_str) != Some("navi-review-cleanup-v1") {
+        return Err("Invalid private review cleanup response".into());
+    }
+    let deleted = map
+        .get("deleted")
+        .and_then(Value::as_bool)
+        .ok_or("Invalid private review cleanup response")?;
+    let review_id = map
+        .get("review_id")
+        .and_then(Value::as_str)
+        .ok_or("Invalid private review cleanup response")?;
+    if review_id != expected_review_id {
+        return Err("Invalid private review cleanup response".into());
+    }
+    if deleted {
+        if map.len() != 3 || map.contains_key("reason") {
+            return Err("Invalid private review cleanup response".into());
+        }
+        return Ok(json!({
+            "schema": "navi-review-cleanup-v1",
+            "deleted": true,
+            "review_id": review_id,
+        }));
+    }
+    if map.len() != 4 {
+        return Err("Invalid private review cleanup response".into());
+    }
+    let reason = map
+        .get("reason")
+        .and_then(Value::as_str)
+        .ok_or("Invalid private review cleanup response")?;
+    if !REVIEW_CLEANUP_REASONS.contains(&reason) {
+        return Err("Invalid private review cleanup response".into());
+    }
+    Ok(json!({
+        "schema": "navi-review-cleanup-v1",
+        "deleted": false,
+        "review_id": review_id,
+        "reason": reason,
+    }))
+}
+
+#[cfg(test)]
+mod review_cleanup_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn review_cleanup_confirm_requires_exact_per_review_phrase() {
+        let rid = "review-0123456789abcdef0123456789abcdef";
+        let other = "review-fedcba9876543210fedcba9876543210";
+        assert!(validate_review_cleanup_confirm(rid, &format!("delete private review {rid}")).is_ok());
+        for bad in [
+            "",
+            "yes",
+            "delete",
+            "delete private review",
+            &format!("delete private review {other}"),
+            &format!("Delete private review {rid}"),
+            &format!(" delete private review {rid}"),
+            &format!("delete private review {rid} "),
+            &format!("delete private review {rid}\n"),
+        ] {
+            assert!(validate_review_cleanup_confirm(rid, bad).is_err(), "{bad:?}");
+        }
+        assert!(
+            validate_review_cleanup_confirm(
+                "../review-0123456789abcdef0123456789abcdef",
+                "delete private review ../review-0123456789abcdef0123456789abcdef",
+            )
+            .is_err()
+        );
+        assert!(
+            validate_review_cleanup_confirm(
+                "review-0123456789ABCDEF0123456789abcdef",
+                "delete private review review-0123456789ABCDEF0123456789abcdef",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn review_cleanup_validator_accepts_exact_valid_shapes() {
+        let rid = "review-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let deleted = json!({
+            "schema": "navi-review-cleanup-v1",
+            "deleted": true,
+            "review_id": rid,
+        });
+        assert_eq!(validate_review_cleanup_record(&deleted, rid).unwrap(), deleted);
+
+        for reason in REVIEW_CLEANUP_REASONS {
+            let reply = json!({
+                "schema": "navi-review-cleanup-v1",
+                "deleted": false,
+                "review_id": rid,
+                "reason": reason,
+            });
+            assert_eq!(validate_review_cleanup_record(&reply, rid).unwrap(), reply);
+        }
+    }
+
+    #[test]
+    fn review_cleanup_validator_rejects_malformed_and_oversized_replies() {
+        let rid = "review-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let other = "review-cccccccccccccccccccccccccccccccc";
+        let big = "a".repeat(520);
+        for bad in [
+            json!("not-an-object"),
+            json!({"schema": "wrong", "deleted": true, "review_id": rid}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": true, "review_id": other}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": false, "review_id": null, "reason": "invalid_request"}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": true, "review_id": rid, "reason": "not_found"}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": false, "review_id": rid}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": false, "review_id": rid, "reason": "unknown_code"}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": false, "review_id": rid, "reason": 42}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": "true", "review_id": rid}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": true, "review_id": rid, "storage_path": "/tmp"}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": false, "review_id": rid, "reason": "not_found", "extra": 1}),
+            json!({"schema": "navi-review-cleanup-v1", "deleted": false, "review_id": rid, "reason": big}),
+        ] {
+            assert!(validate_review_cleanup_record(&bad, rid).is_err(), "{bad}");
+        }
+    }
+}
+
+const REVIEW_TESTRUN_MAX_REPLY_BYTES: usize = 65536;
+const REVIEW_TESTRUN_REASONS: &[&str] = &[
+    "invalid_request", "not_found", "digest_mismatch", "verification_failed", "invalid_entry_type",
+    "invalid_permissions", "too_large", "invalid_storage", "canceled", "timed_out", "stale_target",
+    "tree_too_large", "copy_failed", "sandbox_unavailable", "busy", "output_too_large", "failed_to_start",
+];
+
+fn validate_review_testrun_record(record: &Value, expected_review_id: &str) -> Result<Value> {
+    let obj = record.as_object().ok_or("Invalid test run reply")?;
+    if serde_json::to_vec(record).map_err(|_| "Invalid test run reply")?.len()
+        > REVIEW_TESTRUN_MAX_REPLY_BYTES
+    {
+        return Err("Test run reply too large".into());
+    }
+    if obj.get("schema").and_then(Value::as_str) != Some("navi-review-testrun-v1")
+        || obj.get("review_id").and_then(Value::as_str) != Some(expected_review_id)
+    {
+        return Err("Invalid test run reply".into());
+    }
+    match obj.get("ok").and_then(Value::as_bool) {
+        Some(true) => {
+            let keys = ["schema", "review_id", "ok", "passed", "exit_code", "stdout_tail", "stderr_tail"];
+            if obj.len() != keys.len() || keys.iter().any(|k| !obj.contains_key(*k)) {
+                return Err("Invalid test run reply".into());
+            }
+            let exit_ok = obj["exit_code"].is_null() || obj["exit_code"].as_i64().is_some();
+            let tail_ok = |k: &str| obj[k].as_str().is_some_and(|t| t.chars().count() <= 4000);
+            if !obj["passed"].is_boolean() || !exit_ok || !tail_ok("stdout_tail") || !tail_ok("stderr_tail") {
+                return Err("Invalid test run reply".into());
+            }
+            Ok(record.clone())
+        }
+        Some(false) => {
+            let reason = obj.get("reason").and_then(Value::as_str).unwrap_or("");
+            if obj.len() != 4 || !REVIEW_TESTRUN_REASONS.contains(&reason) {
+                return Err("Invalid test run reply".into());
+            }
+            Ok(record.clone())
+        }
+        None => Err("Invalid test run reply".into()),
+    }
+}
+
+#[cfg(test)]
+mod review_testrun_tests {
+    use super::*;
+    const ID: &str = "review-0123456789abcdef0123456789abcdef";
+    fn ok_record() -> Value {
+        json!({"schema":"navi-review-testrun-v1","review_id":ID,"ok":true,"passed":true,
+               "exit_code":0,"stdout_tail":"","stderr_tail":"OK"})
+    }
+    #[test]
+    fn accepts_exact_success_and_failure() {
+        assert!(validate_review_testrun_record(&ok_record(), ID).is_ok());
+        let mut null_exit = ok_record();
+        null_exit["exit_code"] = Value::Null;
+        assert!(validate_review_testrun_record(&null_exit, ID).is_ok());
+        for r in REVIEW_TESTRUN_REASONS {
+            let f = json!({"schema":"navi-review-testrun-v1","review_id":ID,"ok":false,"reason":r});
+            assert!(validate_review_testrun_record(&f, ID).is_ok());
+        }
+    }
+    #[test]
+    fn rejects_malformed() {
+        let mut extra = ok_record();
+        extra["path"] = json!("/x");
+        assert!(validate_review_testrun_record(&extra, ID).is_err());
+        let mut wrong = ok_record();
+        wrong["review_id"] = json!("review-ffffffffffffffffffffffffffffffff");
+        assert!(validate_review_testrun_record(&wrong, ID).is_err());
+        let mut bad = ok_record();
+        bad["passed"] = json!("yes");
+        assert!(validate_review_testrun_record(&bad, ID).is_err());
+        let mut long = ok_record();
+        long["stderr_tail"] = json!("x".repeat(4001));
+        assert!(validate_review_testrun_record(&long, ID).is_err());
+        let f = json!({"schema":"navi-review-testrun-v1","review_id":ID,"ok":false,"reason":"/etc/passwd"});
+        assert!(validate_review_testrun_record(&f, ID).is_err());
+    }
+}
+
+const REVIEW_PREVIEW_MAX_REPLY_BYTES: usize = 40000;
+const REVIEW_PREVIEW_REASONS: &[&str] = &[
+    "invalid_request",
+    "not_found",
+    "digest_mismatch",
+    "verification_failed",
+    "invalid_entry_type",
+    "invalid_permissions",
+    "too_large",
+    "invalid_storage",
+    "canceled",
+    "timed_out",
+];
+
+fn validate_review_preview_record(record: &Value, expected_review_id: &str) -> Result<Value> {
+    let obj = record.as_object().ok_or("Invalid preview reply")?;
+    if serde_json::to_vec(record).map_err(|_| "Invalid preview reply")?.len()
+        > REVIEW_PREVIEW_MAX_REPLY_BYTES
+    {
+        return Err("Preview reply too large".into());
+    }
+    if obj.get("schema").and_then(Value::as_str) != Some("navi-review-preview-v1")
+        || obj.get("review_id").and_then(Value::as_str) != Some(expected_review_id)
+    {
+        return Err("Invalid preview reply".into());
+    }
+    match obj.get("ok").and_then(Value::as_bool) {
+        Some(true) => {
+            let keys = [
+                "schema", "review_id", "ok", "stale", "truncated", "diff_lines",
+                "before_bytes", "after_bytes", "diff",
+            ];
+            if obj.len() != keys.len() || keys.iter().any(|k| !obj.contains_key(*k)) {
+                return Err("Invalid preview reply".into());
+            }
+            if !obj["stale"].is_boolean()
+                || !obj["truncated"].is_boolean()
+                || !obj["diff_lines"].is_u64()
+                || !obj["before_bytes"].is_u64()
+                || !obj["after_bytes"].is_u64()
+                || !obj["diff"].is_string()
+            {
+                return Err("Invalid preview reply".into());
+            }
+            Ok(record.clone())
+        }
+        Some(false) => {
+            let reason = obj.get("reason").and_then(Value::as_str).unwrap_or("");
+            if obj.len() != 4 || !REVIEW_PREVIEW_REASONS.contains(&reason) {
+                return Err("Invalid preview reply".into());
+            }
+            Ok(record.clone())
+        }
+        None => Err("Invalid preview reply".into()),
+    }
+}
+
+#[cfg(test)]
+mod review_preview_tests {
+    use super::*;
+    const ID: &str = "review-0123456789abcdef0123456789abcdef";
+    fn ok_record() -> Value {
+        json!({"schema":"navi-review-preview-v1","review_id":ID,"ok":true,"stale":false,
+               "truncated":false,"diff_lines":3,"before_bytes":10,"after_bytes":12,"diff":"-a\n+b\n"})
+    }
+    #[test]
+    fn accepts_exact_success_and_failure() {
+        assert!(validate_review_preview_record(&ok_record(), ID).is_ok());
+        for r in REVIEW_PREVIEW_REASONS {
+            let f = json!({"schema":"navi-review-preview-v1","review_id":ID,"ok":false,"reason":r});
+            assert!(validate_review_preview_record(&f, ID).is_ok());
+        }
+    }
+    #[test]
+    fn rejects_malformed() {
+        let mut extra = ok_record();
+        extra["path"] = json!("/x");
+        assert!(validate_review_preview_record(&extra, ID).is_err());
+        let mut wrong = ok_record();
+        wrong["review_id"] = json!("review-ffffffffffffffffffffffffffffffff");
+        assert!(validate_review_preview_record(&wrong, ID).is_err());
+        let mut bad = ok_record();
+        bad["diff_lines"] = json!("3");
+        assert!(validate_review_preview_record(&bad, ID).is_err());
+        let f = json!({"schema":"navi-review-preview-v1","review_id":ID,"ok":false,"reason":"/etc/passwd"});
+        assert!(validate_review_preview_record(&f, ID).is_err());
+        let mut big = ok_record();
+        big["diff"] = json!("x".repeat(40001));
+        assert!(validate_review_preview_record(&big, ID).is_err());
+    }
+}
+
+const REVIEW_APPLY_MAX_REPLY_BYTES: usize = 512;
+
+const REVIEW_APPLY_REASONS: &[&str] = &[
+    "invalid_request",
+    "not_found",
+    "digest_mismatch",
+    "verification_failed",
+    "before_mismatch",
+    "invalid_entry_type",
+    "invalid_permissions",
+    "too_large",
+    "directory_changed",
+    "invalid_storage",
+    "canceled",
+    "timed_out",
+];
+
+fn validate_review_apply_confirm(review_id: &str, confirm: &str) -> Result<()> {
+    if !is_valid_cleanup_review_id(review_id) {
+        return Err("Invalid private review identifier".into());
+    }
+    if confirm != format!("apply private review {review_id}") {
+        return Err("Explicit per-review confirmation string required".into());
+    }
+    Ok(())
+}
+
+fn validate_review_apply_record(record: &Value, expected_review_id: &str) -> Result<Value> {
+    if !is_valid_cleanup_review_id(expected_review_id) {
+        return Err("Invalid private review identifier".into());
+    }
+    let encoded =
+        serde_json::to_vec(record).map_err(|_| "Invalid private review apply response")?;
+    if encoded.len() > REVIEW_APPLY_MAX_REPLY_BYTES {
+        return Err("Private review apply response exceeded size bound".into());
+    }
+    let map = record
+        .as_object()
+        .ok_or("Invalid private review apply response")?;
+    if map.get("schema").and_then(Value::as_str) != Some("navi-review-apply-v1") {
+        return Err("Invalid private review apply response".into());
+    }
+    let applied = map
+        .get("applied")
+        .and_then(Value::as_bool)
+        .ok_or("Invalid private review apply response")?;
+    let review_id = map
+        .get("review_id")
+        .and_then(Value::as_str)
+        .ok_or("Invalid private review apply response")?;
+    if review_id != expected_review_id {
+        return Err("Invalid private review apply response".into());
+    }
+    if applied {
+        if map.len() != 3 || map.contains_key("reason") {
+            return Err("Invalid private review apply response".into());
+        }
+        return Ok(json!({
+            "schema": "navi-review-apply-v1",
+            "applied": true,
+            "review_id": review_id,
+        }));
+    }
+    if map.len() != 4 {
+        return Err("Invalid private review apply response".into());
+    }
+    let reason = map
+        .get("reason")
+        .and_then(Value::as_str)
+        .ok_or("Invalid private review apply response")?;
+    if !REVIEW_APPLY_REASONS.contains(&reason) {
+        return Err("Invalid private review apply response".into());
+    }
+    Ok(json!({
+        "schema": "navi-review-apply-v1",
+        "applied": false,
+        "review_id": review_id,
+        "reason": reason,
+    }))
+}
+
+#[cfg(test)]
+mod review_apply_tests {
+    use super::*;
+
+    const VALID_REVIEW_ID: &str = "review-0123456789abcdef0123456789abcdef";
+    const OTHER_REVIEW_ID: &str = "review-fedcba9876543210fedcba9876543210";
+
+    #[test]
+    fn confirm_validator_accepts_exact_match_and_rejects_invalid_inputs() {
+        assert!(validate_review_apply_confirm(
+            VALID_REVIEW_ID,
+            &format!("apply private review {VALID_REVIEW_ID}"),
+        )
+        .is_ok());
+
+        assert!(validate_review_apply_confirm(
+            VALID_REVIEW_ID,
+            &format!("delete private review {VALID_REVIEW_ID}"),
+        )
+        .is_err());
+        assert!(validate_review_apply_confirm(
+            VALID_REVIEW_ID,
+            &format!("apply private review {OTHER_REVIEW_ID}"),
+        )
+        .is_err());
+        assert!(validate_review_apply_confirm(
+            VALID_REVIEW_ID,
+            &format!(" apply private review {VALID_REVIEW_ID}"),
+        )
+        .is_err());
+        assert!(validate_review_apply_confirm(
+            VALID_REVIEW_ID,
+            &format!("apply private review {VALID_REVIEW_ID} "),
+        )
+        .is_err());
+        assert!(validate_review_apply_confirm(VALID_REVIEW_ID, "").is_err());
+        assert!(validate_review_apply_confirm(
+            "review-invalid",
+            "apply private review review-invalid",
+        )
+        .is_err());
+        assert!(validate_review_apply_confirm(
+            "review-0123456789ABCDEF0123456789ABCDEF",
+            "apply private review review-0123456789ABCDEF0123456789ABCDEF",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn record_validator_accepts_applied_true() {
+        let record = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": true,
+            "review_id": VALID_REVIEW_ID,
+        });
+        let validated = validate_review_apply_record(&record, VALID_REVIEW_ID).unwrap();
+        assert_eq!(validated, record);
+    }
+
+    #[test]
+    fn record_validator_accepts_applied_false_with_each_reason() {
+        let expected_reasons = [
+            "invalid_request",
+            "not_found",
+            "digest_mismatch",
+            "verification_failed",
+            "before_mismatch",
+            "invalid_entry_type",
+            "invalid_permissions",
+            "too_large",
+            "directory_changed",
+            "invalid_storage",
+            "canceled",
+            "timed_out",
+        ];
+        assert_eq!(REVIEW_APPLY_REASONS, expected_reasons.as_slice());
+
+        for reason in expected_reasons {
+            let record = json!({
+                "schema": "navi-review-apply-v1",
+                "applied": false,
+                "review_id": VALID_REVIEW_ID,
+                "reason": reason,
+            });
+            let validated = validate_review_apply_record(&record, VALID_REVIEW_ID).unwrap();
+            assert_eq!(validated, record);
+        }
+    }
+
+    #[test]
+    fn record_validator_rejects_wrong_schema() {
+        for bad_schema in [
+            json!("navi-review-cleanup-v1"),
+            json!("navi-review-apply-v2"),
+            json!(123),
+        ] {
+            let record = json!({
+                "schema": bad_schema,
+                "applied": true,
+                "review_id": VALID_REVIEW_ID,
+            });
+            assert!(validate_review_apply_record(&record, VALID_REVIEW_ID).is_err());
+        }
+    }
+
+    #[test]
+    fn record_validator_rejects_extra_key() {
+        let applied_true = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": true,
+            "review_id": VALID_REVIEW_ID,
+            "extra": "unexpected",
+        });
+        assert!(validate_review_apply_record(&applied_true, VALID_REVIEW_ID).is_err());
+
+        let applied_false = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": false,
+            "review_id": VALID_REVIEW_ID,
+            "reason": "not_found",
+            "extra": "unexpected",
+        });
+        assert!(validate_review_apply_record(&applied_false, VALID_REVIEW_ID).is_err());
+    }
+
+    #[test]
+    fn record_validator_rejects_missing_key() {
+        let missing_schema = json!({
+            "applied": true,
+            "review_id": VALID_REVIEW_ID,
+        });
+        assert!(validate_review_apply_record(&missing_schema, VALID_REVIEW_ID).is_err());
+
+        let missing_applied = json!({
+            "schema": "navi-review-apply-v1",
+            "review_id": VALID_REVIEW_ID,
+        });
+        assert!(validate_review_apply_record(&missing_applied, VALID_REVIEW_ID).is_err());
+
+        let missing_review_id = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": true,
+        });
+        assert!(validate_review_apply_record(&missing_review_id, VALID_REVIEW_ID).is_err());
+
+        let missing_reason = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": false,
+            "review_id": VALID_REVIEW_ID,
+        });
+        assert!(validate_review_apply_record(&missing_reason, VALID_REVIEW_ID).is_err());
+
+        let wrong_fourth_key = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": false,
+            "review_id": VALID_REVIEW_ID,
+            "other": "not_found",
+        });
+        assert!(validate_review_apply_record(&wrong_fourth_key, VALID_REVIEW_ID).is_err());
+    }
+
+    #[test]
+    fn record_validator_rejects_wrong_review_id() {
+        let mismatched = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": true,
+            "review_id": OTHER_REVIEW_ID,
+        });
+        assert!(validate_review_apply_record(&mismatched, VALID_REVIEW_ID).is_err());
+
+        let invalid_expected = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": true,
+            "review_id": "review-invalid",
+        });
+        assert!(validate_review_apply_record(&invalid_expected, "review-invalid").is_err());
+    }
+
+    #[test]
+    fn record_validator_rejects_oversize() {
+        let padding = "a".repeat(REVIEW_APPLY_MAX_REPLY_BYTES);
+        let record = json!({
+            "schema": "navi-review-apply-v1",
+            "applied": false,
+            "review_id": VALID_REVIEW_ID,
+            "reason": padding,
+        });
+        assert!(serde_json::to_vec(&record).unwrap().len() > REVIEW_APPLY_MAX_REPLY_BYTES);
+        let err = validate_review_apply_record(&record, VALID_REVIEW_ID).unwrap_err();
+        assert!(err.to_string().contains("size bound"));
+    }
+
+    #[test]
+    fn record_validator_rejects_bad_reason() {
+        for bad_reason in [json!("unknown_reason"), json!(""), json!(null), json!(42)] {
+            let record = json!({
+                "schema": "navi-review-apply-v1",
+                "applied": false,
+                "review_id": VALID_REVIEW_ID,
+                "reason": bad_reason,
+            });
+            assert!(validate_review_apply_record(&record, VALID_REVIEW_ID).is_err());
+        }
+    }
+
+    #[test]
+    fn record_validator_rejects_applied_true_with_reason() {
+        for reason in [json!("not_found"), json!(null)] {
+            let record = json!({
+                "schema": "navi-review-apply-v1",
+                "applied": true,
+                "review_id": VALID_REVIEW_ID,
+                "reason": reason,
+            });
+            assert!(validate_review_apply_record(&record, VALID_REVIEW_ID).is_err());
+        }
     }
 }

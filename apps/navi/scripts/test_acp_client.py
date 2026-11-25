@@ -306,7 +306,7 @@ class AcpClientTest(unittest.TestCase):
         try:
             record = self.wait_for_record(lambda r: r.get("type") == "permission",
                                           "permission record")
-            self.assertEqual(record["id"], "tc_perm")
+            self.assertTrue(record["id"].startswith("acp-perm-"))
             self.assertEqual(record["session"], "sess_fake_1")
             self.assertEqual(record["tool"], "Run shell")
             self.assertEqual(record["input"]["rawInput"], {"command": "ls"})

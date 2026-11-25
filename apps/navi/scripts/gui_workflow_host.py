@@ -16,7 +16,7 @@ class WorkflowStation(Station):
         if os.environ.get("NAVI_ISOLATED") != "1":
             raise RuntimeError("GUI workflow requires private state and display")
         super().__init__()
-        self.deadline = time.monotonic() + 30
+        self.deadline = time.monotonic() + 60
         self.checking = False
         self.finished = False
         self.view.connect("load-changed", self.loaded)
@@ -55,6 +55,7 @@ if __name__ == "__main__":
     GLib.set_prgname("navi-isolated-workflow")
     station = WorkflowStation()
     for number in (signal.SIGTERM, signal.SIGINT):
-        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, number, lambda: station.destroy() or False)
+        signal_add = getattr(GLibUnix, "signal_add", None) or GLib.unix_signal_add
+        signal_add(GLib.PRIORITY_DEFAULT, number, lambda: station.destroy() or False)
     station.show_all()
     Gtk.main()

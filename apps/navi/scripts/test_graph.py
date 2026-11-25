@@ -5,6 +5,7 @@ canned line, and one real tmux server. Every assertion is made over the socket,
 so the daemon's own store and scoring are what is being measured.
 """
 import json
+import shutil
 import os
 from pathlib import Path
 import socket
@@ -33,6 +34,10 @@ class GraphTests(unittest.TestCase):
         self.home = self.folder / "home"
         self.stubbin = self.home / ".local/bin"
         self.stubbin.mkdir(parents=True)
+        tmux = shutil.which("tmux")
+        if not tmux:
+            self.skipTest("tmux is required for isolated terminal tests")
+        (self.stubbin / "tmux").symlink_to(tmux)
         (self.home / ".npm-global/bin").mkdir(parents=True)
         self.stub = self.stubbin / "stub-harness"
         self.stub.write_text(STUB)

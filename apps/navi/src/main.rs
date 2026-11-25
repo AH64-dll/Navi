@@ -1,3 +1,7 @@
+mod project_snapshot_context;
+mod attachment_snapshots;
+mod browser_host;
+mod project_host;
 mod adapters;
 mod chief;
 mod desk;
@@ -76,6 +80,10 @@ pub struct App {
     pub runtime: PathBuf,
     pub isolated: bool,
     chief_process: Mutex<Option<Child>>,
+    browser_host: Mutex<Option<Arc<browser_host::BrowserHost>>>,
+    acp_host: Mutex<Option<Arc<browser_host::BrowserHost>>>,
+    project_host: Mutex<Option<Arc<project_host::ProjectHost>>>,
+    project_epoch: AtomicU64,
     command_lock: Mutex<()>,
     command_queue: Mutex<VecDeque<Value>>,
     assistant_dir: Mutex<Option<String>>,
@@ -266,6 +274,7 @@ impl App {
             .stderr(Stdio::null())
             .status();
         let db = Connection::open(data.join("station.sqlite3")).map_err(|e| e.to_string())?;
+        attachment_snapshots::initialize(&db)?;
         db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, profile TEXT NOT NULL, cwd TEXT NOT NULL, created INTEGER NOT NULL);").map_err(|e| e.to_string())?;
         let default = json!({
             "model": {"name":"d1-3B Q4", "endpoint":"http://127.0.0.1:8461/v1/systemone", "minimum_probability":0.65,
@@ -413,6 +422,10 @@ impl App {
             runtime,
             isolated,
             chief_process: Mutex::new(None),
+            browser_host: Mutex::new(None),
+            acp_host: Mutex::new(None),
+            project_host: Mutex::new(None),
+            project_epoch: AtomicU64::new(0),
             command_lock: Mutex::new(()),
             command_queue: Mutex::new(VecDeque::new()),
             assistant_dir: Mutex::new(None),
@@ -1186,7 +1199,10 @@ impl App {
 
     /// Stop every child we own and clear its pid file. Called on SIGTERM/INT.
     pub fn shutdown(&self) {
+        if let Some(host)=self.project_host.lock().unwrap().take(){host.cancel();}
         self.shutting_down.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(host)=self.browser_host.lock().unwrap().take() {host.stop();}
+        if let Some(host)=self.acp_host.lock().unwrap().take() {host.stop();}
         if let Some(mut child) = self.bridge_child.lock().unwrap().take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -1532,7 +1548,7 @@ impl App {
                     return Err("Command must contain 1 to 2000 bytes".into());
                 }
                 chief::validate_attachments(&p["attachments"])?;
-                if request["op"] == "command"
+                if request["op"] == "command" && p["harness"]!="pi-project"
                     && let Some(persona) = self.persona_switch(text)?
                 {
                     return Ok(
@@ -1550,6 +1566,7 @@ impl App {
             }
             "cancel" => {
                 self.generation.fetch_add(1, Ordering::SeqCst);
+                if let Some(host)=self.project_host.lock().unwrap().take() {host.cancel();}
                 let _ = fs::write(self.runtime.join("voice.cancel"), now().to_string());
                 let dropped = self.command_queue.lock().unwrap().drain(..).count();
                 self.state.lock().unwrap().browser_queue.clear();
@@ -1617,6 +1634,36 @@ impl App {
             "oc_integration_oauth_complete" => self.oc_integration_oauth_complete(p),
             "oc_integration_connect_key" => self.oc_integration_connect_key(p),
             "oc_contract_check" => self.oc_contract_check(),
+            "pi_preview_workspace" => self.owner_preview_workspace(p,None),
+            "pi_review_inventory" => self.owner_review_inventory(p,None),
+            "pi_review_cleanup" => self.owner_review_cleanup(p,None),
+            "pi_review_apply" => self.owner_review_apply(p,None),
+            "pi_review_preview" => self.owner_review_preview(p,None),
+            "pi_review_testrun" => self.owner_review_testrun(p,None),
+            "pi_preview_validate" => self.owner_preview_validate(p,None),
+            "pi_project_read" => self.owner_project_read(p),
+            "pi_browser_start" => {
+                let mut slot=self.browser_host.lock().unwrap();
+                if slot.is_some() {return Ok(json!({"started":true,"existing":true}));}
+                let bundle=std::env::var("NAVI_STATION_HOST_BUNDLE").map(PathBuf::from)
+                    .unwrap_or_else(|_|self.root.join("../../packages/navi/dist/station-host.mjs"));
+                let host=Arc::new(browser_host::BrowserHost::start(&bundle)?);
+                let deadline=std::time::Instant::now()+Duration::from_secs(5);
+                loop {
+                    if std::time::Instant::now()>deadline {host.stop();return Err("Browser host startup timed out".into());}
+                    if let Some(record)=host.receive()? {
+                        if record["type"]=="startup_error" {return Err(record["text"].as_str().unwrap_or("Pi browser setup failed").into());}
+                        if record["type"]=="ready" {*slot=Some(host);return Ok(record);}
+                    }
+                }
+            }
+            "pi_browser_status" => {
+                Ok(self.browser_host.lock().unwrap().as_ref().map(|host|host.status()).unwrap_or(json!({"running":false,"link":"disconnected","attached":false})))
+            }
+            "pi_browser_stop" => {
+                if let Some(host)=self.browser_host.lock().unwrap().take() {host.stop();}
+                Ok(json!({"stopped":true}))
+            }
             "browser_agent_start" => {
                 let _ = Command::new("firefox")
                     .args(["-CreateProfile", "navi-agent"])
@@ -1821,6 +1868,7 @@ fn serve() -> Result<()> {
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
         return Err("Navi daemon already running".into());
     }
+    attachment_snapshots::cleanup(&app.state.lock().unwrap().db,&app.runtime,None)?;
     let socket = app.runtime.join("station.sock");
     if socket.exists() {
         fs::remove_file(&socket).map_err(|e| e.to_string())?;
@@ -1837,8 +1885,25 @@ fn serve() -> Result<()> {
                 let mut reader = BufReader::new(&mut stream).take((MAX_MESSAGE + 1) as u64);
                 let mut line = String::new();
                 let reply = match reader.read_line(&mut line) {
-                    Ok(_) if line.len() <= MAX_MESSAGE => serde_json::from_str(&line)
-                        .map(|r| response(&app, r))
+                    Ok(_) if line.len() <= MAX_MESSAGE => serde_json::from_str::<Value>(&line)
+                        .map(|r| {
+                            if r["op"]!="pi_project_read"&&r["op"]!="pi_preview_validate"&&r["op"]!="pi_preview_workspace"&&r["op"]!="pi_review_inventory"&&r["op"]!="pi_review_cleanup"&&r["op"]!="pi_review_apply"&&r["op"]!="pi_review_preview"&&r["op"]!="pi_review_testrun" {return response(&app,r);}
+                            let connected=Arc::new(std::sync::atomic::AtomicBool::new(true));
+                            let finished=Arc::new(std::sync::atomic::AtomicBool::new(false));
+                            let Ok(watch)=stream.try_clone() else {return json!({"ok":false,"error":"Owner connection unavailable"});};
+                            let alive=connected.clone();let done=finished.clone();
+                            let monitor=std::thread::spawn(move || {
+                                while !done.load(Ordering::SeqCst) {
+                                    let mut byte=0u8;
+                                    let n=unsafe{libc::recv(watch.as_raw_fd(),&mut byte as *mut u8 as *mut libc::c_void,1,libc::MSG_PEEK|libc::MSG_DONTWAIT)};
+                                    if n==0 || (n<0 && !matches!(std::io::Error::last_os_error().kind(),std::io::ErrorKind::WouldBlock|std::io::ErrorKind::Interrupted)) {alive.store(false,Ordering::SeqCst);break;}
+                                    std::thread::sleep(Duration::from_millis(25));
+                                }
+                            });
+                            let result=if r["op"]=="pi_review_testrun" {app.owner_review_testrun(&r["params"],Some(&connected))}else if r["op"]=="pi_review_preview" {app.owner_review_preview(&r["params"],Some(&connected))}else if r["op"]=="pi_review_apply" {app.owner_review_apply(&r["params"],Some(&connected))}else if r["op"]=="pi_review_cleanup" {app.owner_review_cleanup(&r["params"],Some(&connected))}else if r["op"]=="pi_review_inventory" {app.owner_review_inventory(&r["params"],Some(&connected))}else if r["op"]=="pi_preview_workspace" {app.owner_preview_workspace(&r["params"],Some(&connected))}else if r["op"]=="pi_preview_validate" {app.owner_preview_validate(&r["params"],Some(&connected))}else{app.owner_project_read_connected(&r["params"],Some(&connected))};
+                            finished.store(true,Ordering::SeqCst);let _=monitor.join();
+                            match result {Ok(value)=>json!({"ok":true,"result":value}),Err(error)=>json!({"ok":false,"error":error})}
+                        })
                         .unwrap_or(json!({"ok":false,"error":"Invalid JSON"})),
                     _ => json!({"ok":false,"error":"Request too large or timed out"}),
                 };

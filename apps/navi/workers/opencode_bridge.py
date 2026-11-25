@@ -139,14 +139,15 @@ class BridgeServer:
                           session_file=gw.session_file, directory=args.get("directory"))
             return sub.form_cancel(args.get("id"), args.get("session"), args.get("message"))
         if op == "sessions":
-            return gw.sessions(
-                directory=args.get("directory"),
+            sub = Gateway(base_url=gw.base_url, password=gw.password, autospawn=False,
+                          session_file=gw.session_file, directory=args.get("directory"))
+            return sub.sessions(
                 search=args.get("search"),
                 archived=args.get("archived"),
                 limit=args.get("limit"),
             )
         if op == "session_get":
-            return gw.session_get(args.get("session"))
+            return gw.session_info(args.get("session"))
         if op == "session_messages":
             return gw.session_messages(args.get("session"), limit=args.get("limit"))
         if op == "session_select":

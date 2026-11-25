@@ -151,7 +151,7 @@ class DeskTests(unittest.TestCase):
         settings = self.station.call("status")["result"]["settings"]
         for profile in settings["profiles"]:
             if profile["id"] == "codex":
-                profile.update(executable="/bin/bash", args=[])
+                profile.update(executable="/bin/bash", args=["-c", "while :; do sleep 1; done"], link=False)
         self.assertTrue(self.station.call("settings", settings)["ok"])
         self.command("open codex in zen relay to fix the login bug")
         sessions = self.station.call("status")["result"]["sessions"]

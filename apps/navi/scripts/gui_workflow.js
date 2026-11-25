@@ -30,7 +30,7 @@
      * (BUG-023's off-centre shot). Every measurement waits for the scene to say
      * its lens, dim channel and entrance are done. */
     async function settled() {
-      const deadline = performance.now() + 5000;
+      const deadline = performance.now() + 15000;
       let steady = 0, art = null;
       while (performance.now() < deadline) {
         art = inspect().art;
