@@ -1,9 +1,9 @@
 import { Editor, type EditorOptions, type EditorTheme, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.ts";
-import type { WorkingStatusIndicator } from "./status-indicator.ts";
+import type { StatusIndicator } from "./status-indicator.ts";
 
 export type CustomEditorOptions = EditorOptions & {
-	/** Render the streaming working status in the editor's top border. */
+	/** Render working, compaction, summarization, and retry status in the editor's top border. */
 	embedWorkingStatus?: boolean;
 };
 
@@ -12,7 +12,7 @@ export type CustomEditorOptions = EditorOptions & {
  */
 export class CustomEditor extends Editor {
 	private keybindings: KeybindingsManager;
-	private workingStatusIndicator: WorkingStatusIndicator | undefined;
+	private workingStatusIndicator: StatusIndicator | undefined;
 	public readonly embedWorkingStatus: boolean;
 	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
 
@@ -29,7 +29,7 @@ export class CustomEditor extends Editor {
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;
 	}
 
-	setWorkingStatusIndicator(indicator: WorkingStatusIndicator | undefined): void {
+	setWorkingStatusIndicator(indicator: StatusIndicator | undefined): void {
 		this.workingStatusIndicator = indicator;
 	}
 
@@ -91,6 +91,16 @@ export class CustomEditor extends Editor {
 			return;
 		}
 
+		// Selection page keys move an open autocomplete menu before app actions run.
+		// This lets users bind Ctrl+V even though it pastes images by default.
+		if (
+			this.isShowingAutocomplete() &&
+			(this.keybindings.matches(data, "tui.select.pageUp") || this.keybindings.matches(data, "tui.select.pageDown"))
+		) {
+			super.handleInput(data);
+			return;
+		}
+
 		// Check for clipboard paste keybinding
 		if (this.keybindings.matches(data, "app.clipboard.pasteImage")) {
 			this.onPasteImage?.();
@@ -134,9 +144,24 @@ export class CustomEditor extends Editor {
 			return;
 		}
 
+		// Follow-up submit (Alt+Enter) - apply the selected autocomplete suggestion just like Enter does
+		const followUpHandler = this.actionHandlers.get("app.message.followUp");
+		if (followUpHandler && this.keybindings.matches(data, "app.message.followUp")) {
+			if (this.confirmAutocomplete() === "applied") {
+				return;
+			}
+			followUpHandler();
+			return;
+		}
+
 		// Check all other app actions
 		for (const [action, handler] of this.actionHandlers) {
-			if (action !== "app.interrupt" && action !== "app.exit" && this.keybindings.matches(data, action)) {
+			if (
+				action !== "app.interrupt" &&
+				action !== "app.exit" &&
+				action !== "app.message.followUp" &&
+				this.keybindings.matches(data, action)
+			) {
 				handler();
 				return;
 			}

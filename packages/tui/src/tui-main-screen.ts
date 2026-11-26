@@ -5,6 +5,9 @@ import { deleteKittyImage, isImageLine } from "./terminal-image.ts";
 import { type TUI, TuiBase, type TuiStopOptions } from "./tui.ts";
 import { visibleWidth } from "./utils.ts";
 
+/** OSC 133 prompt markers at the start of a rendered line. Fullscreen uses them for prompt navigation. */
+const OSC133_ZONE_PREFIX = /^(?:\x1b\]133;[ABC](?:\x07|\x1b\\))+/;
+
 const KITTY_SEQUENCE_PREFIX = "\x1b_G";
 const MAX_RENDER_WRITE_CHARS = 1024 * 1024;
 
@@ -261,7 +264,9 @@ export class TuiMainScreen extends TuiBase implements TUI {
 		};
 
 		// Render all components to get new lines
-		let newLines = this.render(width);
+		// Resolve fake cursors before compositing so overlays and line slicing see plain SGR codes
+		// Drop OSC 133 markers: the terminal reads 133;A as a new shell prompt, which ends program status (OSC 7501)
+		let newLines = this.resolveFakeCursors(this.render(width).map((line) => line.replace(OSC133_ZONE_PREFIX, "")));
 
 		// Composite overlays into the rendered lines (before differential compare)
 		if (this.hasOverlayEntries) {
@@ -493,11 +498,10 @@ export class TuiMainScreen extends TuiBase implements TUI {
 			const isImage = isImageLine(line);
 			const imageReservedRows = isImage ? this.getKittyImageReservedRows(newLines, i, renderEnd) : 1;
 			if (imageReservedRows > 1) {
-				const imageStartScreenRow = i - viewportTop;
-				if (imageStartScreenRow < 0 || imageStartScreenRow + imageReservedRows > height) {
-					logRedraw(
-						`kitty image pre-clear would scroll (${imageStartScreenRow} + ${imageReservedRows} > ${height})`,
-					);
+				// Pre-clearing may scroll the screen when the image is appended at the bottom, like any appended line.
+				// Moving back up to the image's first row only fails when the image is taller than the screen.
+				if (imageReservedRows > height) {
+					logRedraw(`kitty image taller than screen (${imageReservedRows} > ${height})`);
 					fullRender(true);
 					return;
 				}
@@ -526,8 +530,14 @@ export class TuiMainScreen extends TuiBase implements TUI {
 					...newLines.map((l, idx) => `[${idx}] (w=${visibleWidth(l)}) ${l}`),
 					"",
 				].join("\n");
-				fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
-				fs.writeFileSync(crashLogPath, crashData);
+				// A failed write (full or unwritable temp dir) must not hide the width error or skip `stop()`.
+				let crashLogStatus = `Debug log written to: ${crashLogPath}`;
+				try {
+					fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
+					fs.writeFileSync(crashLogPath, crashData);
+				} catch (error) {
+					crashLogStatus = `Could not write debug log to ${crashLogPath}: ${error instanceof Error ? error.message : String(error)}`;
+				}
 
 				// Clean up terminal state before throwing
 				this.stop();
@@ -538,7 +548,7 @@ export class TuiMainScreen extends TuiBase implements TUI {
 					"This is likely caused by a custom TUI component not truncating its output.",
 					"Use visibleWidth() to measure and truncateToWidth() to truncate lines.",
 					"",
-					`Debug log written to: ${crashLogPath}`,
+					crashLogStatus,
 				].join("\n");
 				throw new Error(errorMsg);
 			}

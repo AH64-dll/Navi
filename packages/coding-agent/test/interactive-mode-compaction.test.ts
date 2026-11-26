@@ -7,7 +7,7 @@ import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 describe("InteractiveMode compaction events", () => {
-	test("uses the cache miss notice setting for compaction and branch summary costs", () => {
+	test("uses the compaction cost notice setting for compaction and branch summary costs", () => {
 		const usage: Usage = {
 			input: 10,
 			output: 20,
@@ -17,7 +17,7 @@ describe("InteractiveMode compaction events", () => {
 			cost: { input: 0.01, output: 0.02, cacheRead: 0.03, cacheWrite: 0.065, total: 0.125 },
 		};
 		const addCompactionCostNotice = Reflect.get(InteractiveMode.prototype, "addCompactionCostNotice") as (
-			this: { chatContainer: Container; settingsManager: { getShowCacheMissNotices(): boolean } },
+			this: { chatContainer: Container; settingsManager: { getNotices(): { compactionCosts: boolean } } },
 			notice: {
 				type: "compaction_cost";
 				kind: "compaction" | "branch_summary";
@@ -28,7 +28,7 @@ describe("InteractiveMode compaction events", () => {
 		initTheme("dark");
 		const enabled = {
 			chatContainer: new Container(),
-			settingsManager: { getShowCacheMissNotices: () => true },
+			settingsManager: { getNotices: () => ({ compactionCosts: true }) },
 		};
 		addCompactionCostNotice.call(enabled, { type: "compaction_cost", kind: "compaction", usage });
 		addCompactionCostNotice.call(enabled, {
@@ -42,7 +42,7 @@ describe("InteractiveMode compaction events", () => {
 
 		const disabled = {
 			chatContainer: new Container(),
-			settingsManager: { getShowCacheMissNotices: () => false },
+			settingsManager: { getNotices: () => ({ compactionCosts: false }) },
 		};
 		addCompactionCostNotice.call(disabled, { type: "compaction_cost", kind: "compaction", usage });
 		expect(disabled.chatContainer.children).toHaveLength(0);
@@ -102,8 +102,15 @@ describe("InteractiveMode compaction events", () => {
 				expect.objectContaining({ role: "compactionSummary", summary: "previous summary" }),
 				{ type: "compaction_cost", kind: "compaction", usage: previousUsage },
 			],
+			expect.any(Map),
 			{},
 		);
+		const [items, messageMeta] = fakeThis.renderSessionItems.mock.calls[0] as [
+			unknown[],
+			Map<unknown, { id: string; timestamp: string }>,
+		];
+		expect(messageMeta.get(items[0])).toEqual({ id: "current", timestamp: "2025-01-02T00:00:00Z" });
+		expect(messageMeta.get(items[2])).toEqual({ id: "previous", timestamp: "2025-01-01T00:00:00Z" });
 	});
 
 	test("renders retained entries and appends the latest summary cost at the bottom", async () => {
@@ -138,6 +145,7 @@ describe("InteractiveMode compaction events", () => {
 		const fakeThis = {
 			isInitialized: true,
 			footer: { invalidate: vi.fn() },
+			programStatus: { handleEvent: vi.fn() },
 			autoCompactionEscapeHandler: undefined as (() => void) | undefined,
 			autoCompactionLoader: undefined,
 			defaultEditor: {},
@@ -201,6 +209,7 @@ describe("InteractiveMode compaction events", () => {
 		const fakeThis = {
 			isInitialized: true,
 			footer: { invalidate: vi.fn() },
+			programStatus: { handleEvent: vi.fn() },
 			activeStatusIndicator: undefined,
 			workingVisible: true,
 			showWorkingStatusIndicator: vi.fn(),
@@ -226,6 +235,24 @@ describe("InteractiveMode compaction events", () => {
 		expect(fakeThis.showWorkingStatusIndicator).toHaveBeenCalledTimes(1);
 		expect(fakeThis.clearStatusIndicator).toHaveBeenCalledTimes(1);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(2);
+	});
+
+	// Regression test for #9340.
+	test("routes interactive response aborts through AgentSession", () => {
+		const abort = vi.fn(async () => {});
+		const ui = {
+			clearAllQueues: () => ({ steering: [], followUp: [] }),
+			updatePendingMessagesDisplay: vi.fn(),
+			session: { abort },
+		};
+		const restoreQueuedMessagesToEditor = Reflect.get(InteractiveMode.prototype, "restoreQueuedMessagesToEditor") as (
+			this: typeof ui,
+			options?: { abort?: boolean },
+		) => number;
+
+		restoreQueuedMessagesToEditor.call(ui, { abort: true });
+
+		expect(abort).toHaveBeenCalledOnce();
 	});
 
 	test("preserves steering behavior when flushing into an active agent run", async () => {

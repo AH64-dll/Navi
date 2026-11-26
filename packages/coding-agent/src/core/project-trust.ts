@@ -1,6 +1,7 @@
 import { APP_NAME, CONFIG_DIR_NAME } from "../config.ts";
 import { emitProjectTrustEvent } from "./extensions/runner.ts";
 import type { LoadExtensionsResult, ProjectTrustContext } from "./extensions/types.ts";
+import { SETTINGS_DEFAULTS } from "./settings-defaults.ts";
 import type { DefaultProjectTrust } from "./settings-manager.ts";
 import {
 	getProjectTrustOptions,
@@ -33,6 +34,7 @@ async function selectProjectTrustOption(
 	const selected = await ctx.ui.select(
 		formatProjectTrustPrompt(cwd),
 		options.map((option) => option.label),
+		{ blockedKind: "permission" },
 	);
 	return options.find((option) => option.label === selected);
 }
@@ -48,7 +50,7 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
 		return options.trustOverride;
 	}
 	if (!hasTrustRequiringProjectResources(options.cwd)) {
-		return true;
+		return options.trustStore.get(options.cwd) ?? true;
 	}
 
 	if (options.extensionsResult) {
@@ -74,7 +76,7 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
 		return decision;
 	}
 
-	switch (options.defaultProjectTrust ?? "ask") {
+	switch (options.defaultProjectTrust ?? SETTINGS_DEFAULTS.defaultProjectTrust) {
 		case "always":
 			return true;
 		case "never":

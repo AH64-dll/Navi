@@ -6,6 +6,7 @@ import { GITHUB_COPILOT_MODELS } from "../../providers/github-copilot.models.ts"
 import { sleep } from "../../utils/sleep.ts";
 import type { OAuthAuth, OAuthCredential, ProviderAuthInteraction } from "../types.ts";
 import { pollOAuthDeviceCodeFlow } from "./device-code.ts";
+import { trustedHttpUrl } from "./trusted-url.ts";
 
 const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("SXYxLmI1MDdhMDhjODdlY2ZlOTg=");
@@ -108,11 +109,16 @@ function parseGitHubCopilotModelCatalog(raw: unknown, allowPolicyFallback: boole
 		return [
 			{
 				id,
+				type: capabilities?.type,
 				pickerEnabled: item.model_picker_enabled === true,
 				policyState: asRecord(item.policy)?.state,
 			},
 		];
 	});
+	// Decision models are never picker-enabled; the catalog lists only those the account can call.
+	const classifierModelIds = accountModels
+		.filter((model) => model.type === "decisions" && model.policyState !== "disabled")
+		.map((model) => model.id);
 	const pickerModelIds = accountModels
 		.filter((model) => model.pickerEnabled && model.policyState !== "disabled")
 		.map((model) => model.id);
@@ -129,7 +135,7 @@ function parseGitHubCopilotModelCatalog(raw: unknown, allowPolicyFallback: boole
 				(model.pickerEnabled || usePolicyFallback),
 		)
 		.map((model) => model.id);
-	return { availableModelIds, policyModelIds };
+	return { availableModelIds, classifierModelIds, policyModelIds };
 }
 
 async function fetchWithRateLimitRetry(
@@ -239,22 +245,15 @@ async function startDeviceFlow(domain: string, signal: AbortSignal): Promise<Dev
 		throw new Error("Invalid device code response fields");
 	}
 
-	// The verification URI is opened in the user's browser and to prevent `open` from
-	// opening an executable or similar, we force it to be a URL.
-	let parsedUri: URL;
-	try {
-		parsedUri = new URL(verificationUri);
-	} catch {
-		throw new Error("Untrusted verification_uri in device code response");
-	}
-	if (parsedUri.protocol !== "https:" && parsedUri.protocol !== "http:") {
+	const trustedVerificationUri = trustedHttpUrl(verificationUri);
+	if (!trustedVerificationUri) {
 		throw new Error("Untrusted verification_uri in device code response");
 	}
 
 	return {
 		device_code: deviceCode,
 		user_code: userCode,
-		verification_uri: parsedUri.href,
+		verification_uri: trustedVerificationUri,
 		interval,
 		expires_in: expiresIn,
 	};
@@ -356,13 +355,16 @@ async function refreshGitHubCopilotToken(
 	signal: AbortSignal,
 ): Promise<OAuthCredential> {
 	const credentials = await refreshGitHubCopilotAccessToken(refreshToken, enterpriseDomain, signal);
-	const { availableModelIds } = await fetchGitHubCopilotModels(credentials.access, enterpriseDomain, signal, {
-		maxRetries: 0,
-		maxElapsedMs: 0,
-	});
+	const { availableModelIds, classifierModelIds } = await fetchGitHubCopilotModels(
+		credentials.access,
+		enterpriseDomain,
+		signal,
+		{ maxRetries: 0, maxElapsedMs: 0 },
+	);
 	return {
 		...credentials,
 		availableModelIds,
+		availableClassifierModelIds: classifierModelIds,
 	};
 }
 
@@ -481,6 +483,7 @@ async function loginGitHubCopilot(interaction: ProviderAuthInteraction): Promise
 	return {
 		...credentials,
 		availableModelIds: [...new Set([...models.availableModelIds, ...enabledModelIds])],
+		availableClassifierModelIds: models.classifierModelIds,
 	};
 }
 

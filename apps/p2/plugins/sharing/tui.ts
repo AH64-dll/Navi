@@ -1,0 +1,299 @@
+// Sharing in the TUI (p2-tui-port.md P11a), after the web's share sheet. A TUI guest counts as connected while its
+// worker holds GuestPresence, as a guest's web page does (section 4.1; the owner's does nothing), held from a
+// slot surface (after the link is live), not during facet load. The guest's name and access show in the header and,
+// read-only, in place of the editor (the chat surface).
+//
+// `/share` (owner): the session's two links and the guests connected now. Enter copies a link (creating it first)
+// through the launcher's `copy` (its consent screen shows the link); a first read/write link on a remote environment is
+// confirmed first. Through Radius without a tunnel host the copied link is a new invite (`ShareInvite`): Enter first
+// asks how long it is valid. Ctrl+R resets a link (new token, its guests lose access, its invites are withdrawn),
+// Ctrl+D removes a guest; both confirmed.
+//
+// While the brain is connected to Radius, `/share <email> [full]` shares the session with a person, who opens it in
+// Radius signed in with that email. The overlay lists them; Enter copies the session's Radius address to send them.
+
+import { BACKGROUND_CONTEXT, follow, live, whenLive } from "@p2/app/v1";
+import type { TuiCommand, TuiContext } from "@p2/app/v1/tui";
+import { confirm, grantNotice, ListOverlay, type ListRow, lineText, TuiScope, tuiFacet } from "@p2/app/v1/tui";
+import { GuestPresence, ShareInvite, type ShareMode, Sharing } from "./contract.ts";
+import { DEFAULT_INVITE_SECONDS, INVITE_DURATIONS, validUntil } from "./durations.ts";
+
+const LABEL: Record<ShareMode, string> = { view: "Read-only", full: "Read/write" };
+type Link = { mode: ShareMode; token: string; url: string };
+type Guest = { id: string; name: string; mode: ShareMode };
+const MODES = new Set<string>(["view", "full"]);
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+function openShare(ctx: TuiContext): void {
+	const session = ctx.identity.session;
+	if (!session) return;
+	const sharing = ctx.host.hold(Sharing, { session }, BACKGROUND_CONTEXT);
+	const invites = ctx.host.hold(ShareInvite, { session }, BACKGROUND_CONTEXT);
+	const owner = () => live(sharing);
+	let links: Link[] | undefined;
+	let guests: Guest[] = [];
+	let people: Guest[] = [];
+	let peopleUrl: string | null = null;
+	let env: string | null = null;
+	let status = "";
+	const stops = [
+		follow(sharing.links, (value) => {
+			links = value ?? undefined;
+			ctx.requestRender();
+		}),
+		follow(sharing.guests, (value) => {
+			guests = value ?? [];
+			ctx.requestRender();
+		}),
+		follow(sharing.env, (value) => {
+			env = value ?? null;
+			ctx.requestRender();
+		}),
+		follow(sharing.people, (value) => {
+			people = value ?? [];
+			ctx.requestRender();
+		}),
+		follow(sharing.peopleUrl, (value) => {
+			peopleUrl = value ?? null;
+			ctx.requestRender();
+		}),
+	];
+	void whenLive(sharing).catch((error: unknown) => {
+		status = message(error);
+		ctx.requestRender();
+	});
+	const fail = (error: unknown) => {
+		status = message(error);
+		ctx.requestRender();
+	};
+	/** The URL to hand out for the link of `mode`, created first when missing (confirmed for read/write remotely). */
+	const linkOf = async (mode: ShareMode): Promise<{ url: string; expiresAt: number | null } | undefined> => {
+		const service = live(invites);
+		if (!service) return undefined;
+		const remote = mode === "full" && env !== null && !links?.some((link) => link.mode === mode);
+		if (
+			remote &&
+			!(await confirm(ctx, [
+				"Create a read/write link?",
+				`Guests can make the agent run commands and change files on the remote environment "${lineText(env ?? "")}".`,
+			]))
+		)
+			return undefined;
+		const validFor = service.invites.value ? await chooseDuration(ctx, mode) : DEFAULT_INVITE_SECONDS;
+		if (validFor === undefined) return undefined;
+		return service.invite({ mode, validFor, ...(remote ? { remoteConfirmed: true } : {}) }, BACKGROUND_CONTEXT);
+	};
+	const copy = async (mode: ShareMode) => {
+		status = "";
+		const link = await linkOf(mode);
+		if (!link) return;
+		const result = await ctx.grant("copy", { text: link.url, label: `${LABEL[mode]} share link` });
+		const invite = link.expiresAt === null ? "" : ` (an invite, valid until ${validUntil(link.expiresAt)})`;
+		grantNotice(ctx, `${LABEL[mode]} link copied${invite}`, result);
+	};
+	const reset = async (mode: ShareMode) => {
+		const service = owner();
+		if (!service || !links?.some((link) => link.mode === mode)) return;
+		if (
+			!(await confirm(ctx, [
+				`New ${LABEL[mode].toLowerCase()} link?`,
+				"Guests who joined through the old one lose access.",
+			]))
+		)
+			return;
+		await service.link(
+			{ mode, reset: true, ...(env !== null && mode === "full" ? { remoteConfirmed: true } : {}) },
+			BACKGROUND_CONTEXT,
+		);
+		ctx.notify(`${LABEL[mode]} link reset`);
+	};
+	const copyPeopleUrl = async () => {
+		if (!peopleUrl) return;
+		const result = await ctx.grant("copy", { text: peopleUrl, label: "Radius address of this session" });
+		grantNotice(ctx, "Radius address copied", result);
+	};
+	const remove = async (guest: Guest, person: boolean) => {
+		const service = owner();
+		if (!service) return;
+		if (
+			!(await confirm(ctx, [
+				`Remove ${lineText(guest.name)}?`,
+				person
+					? "They lose access to this session; share it again to give it back."
+					: "This identity is blocked; the link keeps working for others.",
+			]))
+		)
+			return;
+		await service.remove({ guestId: guest.id }, BACKGROUND_CONTEXT);
+		ctx.notify(`Removed ${lineText(guest.name)}`);
+	};
+	const linkMode = (row: ListRow | undefined): ShareMode | undefined =>
+		row?.key === "link:view" ? "view" : row?.key === "link:full" ? "full" : undefined;
+	const guestOf = (row: ListRow | undefined) => guests.find((guest) => `guest:${guest.id}` === row?.key);
+	const personOf = (row: ListRow | undefined) => people.find((person) => `person:${person.id}` === row?.key);
+	const overlay = ctx.overlay(
+		"share",
+		new ListOverlay(ctx, {
+			title: () => `Share · ${guests.length} guest${guests.length === 1 ? "" : "s"} connected`,
+			rows: () => [
+				...(["view", "full"] as const).map((mode) => {
+					const exists = links?.some((link) => link.mode === mode) ?? false;
+					return {
+						key: `link:${mode}`,
+						label: `${LABEL[mode]} link`,
+						detail: links === undefined ? "…" : exists ? "enter copies" : "enter creates and copies",
+						...(mode === "full" ? { color: "warning" as const } : {}),
+					};
+				}),
+				...people.map((person) => ({
+					key: `person:${person.id}`,
+					label: person.name,
+					detail: `${person.mode === "full" ? "read/write" : "read-only"} · enter copies the Radius address`,
+					...(person.mode === "full" ? { color: "warning" as const } : {}),
+				})),
+				// People are listed above; the connected guests here joined through links.
+				...guests
+					.filter((guest) => !people.some((person) => person.id === guest.id))
+					.map((guest) => ({
+						key: `guest:${guest.id}`,
+						label: `${guest.name} (unverified name)`,
+						detail: guest.mode === "full" ? "read/write" : "read-only",
+						color: "muted" as const,
+					})),
+			],
+			onSelect: (row) => {
+				const mode = linkMode(row);
+				if (mode) void copy(mode).catch(fail);
+				else if (personOf(row)) void copyPeopleUrl().catch(fail);
+			},
+			actions: [
+				{
+					key: "ctrl+r",
+					label: "reset link",
+					run: (row) => {
+						const mode = linkMode(row);
+						if (mode) void reset(mode).catch(fail);
+					},
+				},
+				{
+					key: "ctrl+d",
+					label: "remove guest",
+					run: (row) => {
+						const person = personOf(row);
+						const guest = person ?? guestOf(row);
+						if (guest) void remove(guest, person !== undefined).catch(fail);
+					},
+				},
+			],
+			footer: () => [
+				ctx.theme.current.fg(
+					"dim",
+					`  Anyone with a link joins this session and its subagents under a name they choose. Read/write lets them make the agent run commands and change files on ${env ? `the remote environment "${lineText(env)}"` : "this host"}.`,
+				),
+				ctx.theme.current.fg(
+					"dim",
+					peopleUrl
+						? "  /share <email> [full] shares it with a person, who opens it in Radius signed in with that email."
+						: "  Connect this brain to Radius to share sessions with people by email.",
+				),
+				...(status ? [ctx.theme.current.fg("error", `  ${lineText(status)}`)] : []),
+			],
+			onClose: () => {
+				for (const stop of stops) stop();
+				sharing.release();
+				invites.release();
+				overlay.close();
+			},
+		}),
+		{ width: "100%", anchor: "bottom-center" },
+	);
+}
+
+/** Asks how long the invite for the link of `mode` is valid: its seconds, or undefined when closed without a choice. */
+function chooseDuration(ctx: TuiContext, mode: ShareMode): Promise<number | undefined> {
+	return new Promise((resolve) => {
+		let chosen: number | undefined;
+		const overlay = ctx.overlay(
+			"share-duration",
+			new ListOverlay(ctx, {
+				title: `${LABEL[mode]} link valid for`,
+				rows: () =>
+					INVITE_DURATIONS.map(({ seconds, label }) => ({
+						key: String(seconds),
+						label,
+						...(seconds === DEFAULT_INVITE_SECONDS ? { detail: "default" } : {}),
+					})),
+				onSelect: (row) => {
+					chosen = Number(row.key);
+					overlay.close();
+					resolve(chosen);
+				},
+				footer: () => [ctx.theme.current.fg("dim", "  Anyone with the link can join until then.")],
+				onClose: () => {
+					overlay.close();
+					resolve(chosen);
+				},
+			}),
+			{ width: "60%", anchor: "center" },
+		);
+	});
+}
+
+/** `/share <email> [full]`: shares the session with a person through Radius (read-only unless `full`). */
+async function shareWith(ctx: TuiContext, args: string): Promise<void> {
+	const session = ctx.identity.session;
+	if (!session) return;
+	const [email = "", mode = "view", ...rest] = args.split(/\s+/);
+	if (!MODES.has(mode) || rest.length) {
+		ctx.notify("Usage: /share <email> [full]");
+		return;
+	}
+	const sharing = ctx.host.hold(Sharing, { session }, BACKGROUND_CONTEXT);
+	try {
+		await whenLive(sharing);
+		if (!sharing.peopleUrl.value) {
+			ctx.notify("Connect this brain to Radius and open it there once to share with people by email");
+			return;
+		}
+		const env = sharing.env.value;
+		const remote = mode === "full" && env !== null && env !== undefined;
+		if (
+			remote &&
+			!(await confirm(ctx, [
+				`Share read/write with ${lineText(email)}?`,
+				`They can make the agent run commands and change files on the remote environment "${lineText(env)}".`,
+			]))
+		)
+			return;
+		await sharing.share(
+			{ email, mode: mode as ShareMode, ...(remote ? { remoteConfirmed: true } : {}) },
+			BACKGROUND_CONTEXT,
+		);
+		ctx.notify(`Shared with ${lineText(email)}; they find it in Radius`);
+	} catch (error) {
+		ctx.notify(message(error));
+	} finally {
+		sharing.release();
+	}
+}
+
+export const SHARE_COMMANDS: Record<string, TuiCommand> = {
+	"p2.share": {
+		title: "Share this session",
+		category: "Session",
+		when: "owner && chat && !overlay",
+		slash: { name: "share", argumentHint: "[email [full]]" },
+		run: (ctx, args) => (args?.trim() ? shareWith(ctx, args.trim()) : openShare(ctx)),
+	},
+};
+
+export default tuiFacet(
+	"widget-above:sharing",
+	(runtime) => {
+		const scope = new TuiScope(runtime);
+		scope.watch(GuestPresence, {}, () => {});
+		return { render: () => [], invalidate() {}, dispose: () => scope.dispose() };
+	},
+	SHARE_COMMANDS,
+);

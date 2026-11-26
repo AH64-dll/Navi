@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { type PiMessagesOptions, stream, streamSimple } from "../src/api/pi-messages.ts";
 import type { Api, AssistantMessageEvent, Context, Model, StopReason } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 type RecordedRequest = {
 	url: string;
@@ -115,6 +116,7 @@ describe("pi-messages", () => {
 					reason: "toolUse",
 					usage,
 					responseId: "resp_1",
+					responseModel: "claude-opus-5-5",
 					providerThinkingLevel: "high",
 				},
 			],
@@ -123,7 +125,7 @@ describe("pi-messages", () => {
 
 		const events: AssistantMessageEvent[] = [];
 		const partialStopReasons: StopReason[] = [];
-		const eventStream = stream(model, context, {
+		const eventStream = stream(model, normalizeContext(context), {
 			apiKey: "test-key",
 			sessionId: "session-1",
 			toolChoice: "auto",
@@ -144,6 +146,7 @@ describe("pi-messages", () => {
 		expect(message.responseId).toBe("resp_1");
 		expect(message.providerThinkingLevel).toBe("high");
 		expect(message.model).toBe("auto");
+		expect(message.responseModel).toBe("claude-opus-5-5");
 		expect(message.provider).toBe("radius");
 		expect(message.content).toEqual([
 			{ type: "text", text: "Hello", textSignature: undefined },
@@ -164,6 +167,52 @@ describe("pi-messages", () => {
 		});
 	});
 
+	it("forwards parsed wire events in order before converting them", async () => {
+		const wireEvents = [
+			{ type: "start" },
+			{ type: "text_start", contentIndex: 0 },
+			{ type: "text_delta", contentIndex: 0, delta: "Hello", gatewayField: "upstream-value" },
+			{ type: "text_end", contentIndex: 0, content: "Hello" },
+			{ type: "done", reason: "stop", usage, responseId: "resp_1" },
+		];
+		const { baseUrl } = await startServer({ events: wireEvents });
+		const model = createModel(baseUrl);
+		const received: unknown[] = [];
+		const eventModels: Model<Api>[] = [];
+		const message = await streamSimple(model, normalizeContext(context), {
+			apiKey: "test-key",
+			onProviderStreamEvent: async (event, eventModel) => {
+				await Promise.resolve();
+				received.push(event);
+				eventModels.push(eventModel);
+			},
+		}).result();
+
+		expect(received).toEqual(wireEvents);
+		expect(eventModels).toEqual(wireEvents.map(() => model));
+		expect(message.stopReason).toBe("stop");
+		expect(message.responseId).toBe("resp_1");
+		expect(message).not.toHaveProperty("responseModel");
+		expect(message.content).toEqual([{ type: "text", text: "Hello", textSignature: undefined }]);
+	});
+
+	// Regression test for #12224: the shared SSE decoder must keep skipping events whose data parses to null.
+	it("skips wire events whose data is null", async () => {
+		const { baseUrl } = await startServer({
+			events: [{ type: "start" }, null, { type: "done", reason: "stop", usage, responseId: "resp_1" }],
+		});
+		const received: unknown[] = [];
+		const message = await streamSimple(createModel(baseUrl), normalizeContext(context), {
+			apiKey: "test-key",
+			onProviderStreamEvent: (event) => {
+				received.push(event);
+			},
+		}).result();
+
+		expect(received).toEqual([{ type: "start" }, { type: "done", reason: "stop", usage, responseId: "resp_1" }]);
+		expect(message.stopReason).toBe("stop");
+	});
+
 	it("appends debug=1 and reports response headers via onResponse", async () => {
 		const { baseUrl, requests } = await startServer({
 			headers: { "x-pi-gateway-upstream-provider": "anthropic" },
@@ -179,7 +228,7 @@ describe("pi-messages", () => {
 				observedHeaders = response.headers;
 			},
 		} satisfies PiMessagesOptions;
-		const message = await streamSimple(model, context, options).result();
+		const message = await streamSimple(model, normalizeContext(context), options).result();
 
 		expect(message.stopReason).toBe("stop");
 		expect(requests[0].url).toBe("/v1/messages?debug=1");
@@ -193,7 +242,7 @@ describe("pi-messages", () => {
 		});
 		const model = createModel(baseUrl);
 
-		const message = await stream(model, context, { apiKey: "stale" }).result();
+		const message = await stream(model, normalizeContext(context), { apiKey: "stale" }).result();
 
 		expect(message.stopReason).toBe("error");
 		expect(message.errorMessage).toContain("401");
@@ -205,24 +254,62 @@ describe("pi-messages", () => {
 
 	it("propagates server-sent error events", async () => {
 		const { baseUrl } = await startServer({
-			events: [{ type: "start" }, { type: "error", reason: "error", usage, errorMessage: "Upstream failed" }],
+			events: [
+				{ type: "start" },
+				{
+					type: "error",
+					reason: "error",
+					usage,
+					errorMessage: "Upstream failed",
+					responseModel: "claude-opus-5-5",
+				},
+			],
 		});
 		const model = createModel(baseUrl);
 
-		const message = await stream(model, context, { apiKey: "test-key" }).result();
+		const message = await stream(model, normalizeContext(context), { apiKey: "test-key" }).result();
 
 		expect(message.stopReason).toBe("error");
 		expect(message.errorMessage).toBe("Upstream failed");
 		expect(message.usage).toEqual(usage);
+		expect(message.responseModel).toBe("claude-opus-5-5");
 	});
 
 	it("errors when no API key is provided", async () => {
 		const model = createModel("http://127.0.0.1:1/v1");
 
-		const message = await stream(model, context).result();
+		const message = await stream(model, normalizeContext(context)).result();
 
 		expect(message.stopReason).toBe("error");
 		expect(message.errorMessage).toContain("No API key provided");
+	});
+
+	it("rejects content indexes that are not the next or an existing block", async () => {
+		const cases: unknown[][] = [
+			[{ type: "text_start", contentIndex: 4294967000 }],
+			[{ type: "text_start", contentIndex: "__proto__" }],
+			[
+				{ type: "text_start", contentIndex: 0 },
+				{
+					type: "toolcall_end",
+					contentIndex: "__proto__",
+					toolCall: { polluted: true },
+				},
+			],
+			[{ type: "text_delta", contentIndex: 0, delta: "x" }],
+		];
+		for (const events of cases) {
+			const { baseUrl } = await startServer({
+				events: [{ type: "start" }, ...events, { type: "done", reason: "stop", usage }],
+			});
+			const message = await stream(createModel(baseUrl), normalizeContext(context), { apiKey: "test-key" }).result();
+			server?.close();
+
+			expect(message.stopReason).toBe("error");
+			expect(message.errorMessage).toContain("Invalid contentIndex");
+			expect(message.content.length).toBeLessThanOrEqual(1);
+		}
+		expect(([] as unknown as Record<string, unknown>).polluted).toBeUndefined();
 	});
 
 	it("errors when the stream ends without a terminal event", async () => {
@@ -235,7 +322,7 @@ describe("pi-messages", () => {
 		});
 		const model = createModel(baseUrl);
 
-		const message = await stream(model, context, { apiKey: "test-key" }).result();
+		const message = await stream(model, normalizeContext(context), { apiKey: "test-key" }).result();
 
 		expect(message.stopReason).toBe("error");
 		expect(message.errorMessage).toContain("stream ended without a terminal event");

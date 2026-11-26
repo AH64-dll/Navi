@@ -1,10 +1,11 @@
-import { arch, platform, release } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { stream as streamAnthropic } from "../src/api/anthropic-messages.ts";
 import { ANTHROPIC_AUTH_TOKEN_ENV, ANTHROPIC_OAUTH_TOKEN_ENV } from "../src/env-api-keys.ts";
 import { createModels } from "../src/models.ts";
 import { anthropicProvider } from "../src/providers/anthropic.ts";
-import type { Context, Model } from "../src/types.ts";
+import type { Model } from "../src/types.ts";
+import { formatUserAgent } from "../src/utils/identity.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const mockState = vi.hoisted(() => ({
 	constructorOpts: undefined as Record<string, unknown> | undefined,
@@ -54,13 +55,13 @@ vi.mock("@anthropic-ai/sdk", () => {
 	return { default: FakeAnthropic };
 });
 
-const PI_USER_AGENT = `pi (${platform()} ${release()}; ${arch()})`;
+const PI_USER_AGENT = formatUserAgent();
 const neverAbortedSignal = new AbortController().signal;
 
-const context: Context = {
+const context = normalizeContext({
 	systemPrompt: "System prompt.",
 	messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
-};
+});
 
 const anthropicModel: Model<"anthropic-messages"> = {
 	id: "claude-test",

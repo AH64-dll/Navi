@@ -8,7 +8,7 @@
 		"node": ">=22.20.0"
 	},
 	"scripts": {
-		"check": "tsgo --noEmit -p tsconfig.json && tsgo --noEmit -p browser/tsconfig.json && tsgo --noEmit -p browser/tsconfig.test.json",
+		"check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p browser/tsconfig.json && tsc --noEmit -p browser/tsconfig.test.json",
 		"test:unit": "node --test test/*.test.ts browser/test/*.test.ts",
 		"package:extension": "node scripts/package-extension.mjs",
 		"serve": "node src/cli/main.ts serve"

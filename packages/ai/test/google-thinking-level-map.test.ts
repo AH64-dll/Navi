@@ -3,18 +3,12 @@ import { describe, expect, it } from "vitest";
 import { streamSimple as streamSimpleGoogle } from "../src/api/google-generative-ai.ts";
 import { resolveGoogleThinkingLevel } from "../src/api/google-shared.ts";
 import { streamSimple as streamSimpleVertex } from "../src/api/google-vertex.ts";
-import type {
-	Context,
-	Model,
-	ModelThinkingLevel,
-	ThinkingBudgets,
-	ThinkingLevel,
-	ThinkingLevelMap,
-} from "../src/types.ts";
+import type { Model, ThinkingBudgets, ThinkingLevel, ThinkingLevelMap } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
-const context: Context = {
+const context = normalizeContext({
 	messages: [{ role: "user", content: "Hello", timestamp: 0 }],
-};
+});
 
 function googleModel(id: string, thinkingLevelMap: ThinkingLevelMap): Model<"google-generative-ai"> {
 	return {
@@ -50,7 +44,7 @@ function vertexModel(id: string, thinkingLevelMap: ThinkingLevelMap): Model<"goo
 
 async function captureGooglePayload(
 	model: Model<"google-generative-ai">,
-	reasoning: ThinkingLevel,
+	reasoning?: ThinkingLevel,
 	thinkingBudgets?: ThinkingBudgets,
 ): Promise<GenerateContentParameters> {
 	let payload: GenerateContentParameters | undefined;
@@ -71,7 +65,7 @@ async function captureGooglePayload(
 
 async function captureVertexPayload(
 	model: Model<"google-vertex">,
-	reasoning: ThinkingLevel,
+	reasoning?: ThinkingLevel,
 	thinkingBudgets?: ThinkingBudgets,
 ): Promise<GenerateContentParameters> {
 	let payload: GenerateContentParameters | undefined;
@@ -90,19 +84,30 @@ async function captureVertexPayload(
 	return payload;
 }
 
+const googleAdapters = [
+	{
+		name: "Google Generative AI",
+		capture: (id: string, thinkingLevelMap: ThinkingLevelMap, reasoning?: ThinkingLevel) =>
+			captureGooglePayload(googleModel(id, thinkingLevelMap), reasoning),
+	},
+	{
+		name: "Google Vertex",
+		capture: (id: string, thinkingLevelMap: ThinkingLevelMap, reasoning?: ThinkingLevel) =>
+			captureVertexPayload(vertexModel(id, thinkingLevelMap), reasoning),
+	},
+] as const;
+
 describe("Google thinking level maps", () => {
 	it("exhaustively resolves supported logical levels and mapping values", () => {
 		const defaultExpectations = {
-			off: "high",
 			minimal: "minimal",
 			low: "low",
 			medium: "medium",
 			high: "high",
-		} as const satisfies Partial<Record<ModelThinkingLevel, ThinkingLevel>>;
+			xhigh: "xhigh",
+		} as const satisfies Partial<Record<ThinkingLevel, ThinkingLevel>>;
 		for (const [level, expected] of Object.entries(defaultExpectations)) {
-			expect(resolveGoogleThinkingLevel(googleModel("gemini-3.7-flash", {}), level as ModelThinkingLevel)).toBe(
-				expected,
-			);
+			expect(resolveGoogleThinkingLevel(googleModel("gemini-3.7-flash", {}), level as ThinkingLevel)).toBe(expected);
 		}
 
 		const mappedExpectations = {
@@ -110,10 +115,12 @@ describe("Google thinking level maps", () => {
 			low: "low",
 			medium: "medium",
 			high: "high",
+			xhigh: "xhigh",
 			MINIMAL: "minimal",
 			LOW: "low",
 			MEDIUM: "medium",
 			HIGH: "high",
+			XHIGH: "xhigh",
 		} as const;
 		for (const [mapped, expected] of Object.entries(mappedExpectations)) {
 			const model = googleModel("gemini-3.7-flash", { high: mapped, xhigh: mapped, max: mapped });
@@ -129,6 +136,55 @@ describe("Google thinking level maps", () => {
 		expect(() => resolveGoogleThinkingLevel(googleModel("gemini-3.7-flash", {}), "max")).toThrow(
 			"Unsupported Google thinking level mapping for test-google/gemini-3.7-flash: max -> undefined",
 		);
+	});
+
+	// Regression test for https://github.com/earendil-works/pi/issues/9455
+	it.each(googleAdapters)("uses the lowest supported $name level when reasoning is omitted", async ({ capture }) => {
+		const payload = await capture("gemini-3.8-flash", {
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: null,
+			max: null,
+		});
+
+		expect(payload.config?.thinkingConfig).toEqual({ thinkingLevel: "LOW" });
+	});
+
+	it.each(googleAdapters)("preserves native medium effort for Gemini 3.1 Pro on $name", async ({ capture }) => {
+		const payload = await capture(
+			"gemini-3.1-pro-preview",
+			{ off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: null, max: null },
+			"medium",
+		);
+
+		expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "MEDIUM" });
+	});
+
+	it.each(googleAdapters)("disables Gemini 2.5 thinking when reasoning is omitted on $name", async ({ capture }) => {
+		const payload = await capture("gemini-2.5-flash", {});
+
+		expect(payload.config?.thinkingConfig).toEqual({ thinkingBudget: 0 });
+	});
+
+	// Regression test for https://github.com/earendil-works/pi/issues/10890
+	it.each(googleAdapters)("uses thinking levels for Gemini 4 models on $name", async ({ capture }) => {
+		const payload = await capture("gemini-4-argon", {}, "medium");
+
+		expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "MEDIUM" });
+	});
+
+	// Regression test for https://github.com/earendil-works/pi/issues/12184
+	it.each(googleAdapters)("sends xhigh as XHIGH for Gemini 4 models that support it on $name", async ({ capture }) => {
+		const payload = await capture(
+			"gemini-4-hydrogen",
+			{ off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: null },
+			"xhigh",
+		);
+
+		expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "XHIGH" });
 	});
 
 	it.each(["xhigh", "max"] as const)("maps Google Generative AI %s to a supported level", async (reasoning) => {
@@ -154,10 +210,30 @@ describe("Google thinking level maps", () => {
 		expect(payload).toMatchObject({ config: { thinkingConfig: { thinkingBudget: 1234 } } });
 	});
 
+	it("uses the high token budget for xhigh on Google Generative AI", async () => {
+		const payload = await captureGooglePayload(googleModel("gemini-2.5-flash", { xhigh: "xhigh" }), "xhigh", {
+			high: 1234,
+		});
+
+		expect(payload).toMatchObject({ config: { thinkingConfig: { thinkingBudget: 1234 } } });
+	});
+
 	it("maps Google Vertex extended levels", async () => {
 		const payload = await captureVertexPayload(vertexModel("gemini-3.7-flash", { xhigh: "high" }), "xhigh");
 
 		expect(payload).toMatchObject({ config: { thinkingConfig: { includeThoughts: true, thinkingLevel: "HIGH" } } });
+	});
+
+	it("uses the high token budget for xhigh on Google Vertex", async () => {
+		const payload = await captureVertexPayload(vertexModel("gemini-2.5-pro", { xhigh: "xhigh" }), "xhigh");
+
+		expect(payload).toMatchObject({ config: { thinkingConfig: { thinkingBudget: 32768 } } });
+	});
+
+	it("uses Gemini 2.5 Flash-Lite token budgets on Google Vertex", async () => {
+		const payload = await captureVertexPayload(vertexModel("gemini-2.5-flash-lite", {}), "minimal");
+
+		expect(payload).toMatchObject({ config: { thinkingConfig: { thinkingBudget: 512 } } });
 	});
 
 	it("uses mapped Google Vertex levels for token budgets", async () => {

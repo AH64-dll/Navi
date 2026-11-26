@@ -12,9 +12,21 @@ import { getAgentDir } from "../config.ts";
 import { raceWithAbortSignal } from "../utils/abort.ts";
 import { getFileRevision, normalizePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
-import { isCommandConfigValue, resolveConfigValue } from "./resolve-config-value.ts";
+import { clearConfigValueCacheEntry, isCommandConfigValue, resolveConfigValue } from "./resolve-config-value.ts";
 
 type AuthStorageData = Record<string, Credential>;
+
+// On Windows, a just-removed lock directory can stay "delete pending" while another process
+// (antivirus, indexer, another pi checking the lock) still has it open. mkdir then fails with
+// EPERM until that handle closes. Retry this briefly so real permission errors still fail fast.
+const MAX_EPERM_RETRIES = 5;
+
+function getRetryableLockErrorCode(error: unknown): "ELOCKED" | "EPERM" | undefined {
+	const code = error instanceof Error && "code" in error ? error.code : undefined;
+	if (code === "ELOCKED") return code;
+	if (code === "EPERM" && process.platform === "win32") return code;
+	return undefined;
+}
 
 type LockResult<T> = {
 	result: T;
@@ -69,28 +81,18 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 	private acquireLockSyncWithRetry(path: string): () => void {
 		const maxAttempts = 10;
 		const delayMs = 20;
-		let lastError: unknown;
-
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		for (let attempt = 1; ; attempt++) {
 			try {
-				return lockfile.lockSync(path, { realpath: false });
+				// Lock the resolved file so symlinked aliases of auth.json share one lock (#11655).
+				return lockfile.lockSync(path);
 			} catch (error) {
-				const code =
-					typeof error === "object" && error !== null && "code" in error
-						? String((error as { code?: unknown }).code)
-						: undefined;
-				if (code !== "ELOCKED" || attempt === maxAttempts) {
-					throw error;
-				}
-				lastError = error;
+				if (!getRetryableLockErrorCode(error) || attempt === maxAttempts) throw error;
 				const start = Date.now();
 				while (Date.now() - start < delayMs) {
 					// Sleep synchronously to avoid changing callers to async.
 				}
 			}
 		}
-
-		throw (lastError as Error) ?? new Error("Failed to acquire auth storage lock");
 	}
 
 	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
@@ -121,24 +123,24 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 		const maxDelayMs = 2_000;
 		const deadline = Date.now() + staleMs;
 		let retry = 0;
+		let epermRetries = 0;
 		while (true) {
 			signal?.throwIfAborted();
 			let release: (() => Promise<void>) | undefined;
 			try {
+				// Lock the resolved file so symlinked aliases of auth.json share one lock (#11655).
 				release = await lockfile.lock(this.authPath, {
-					realpath: false,
 					retries: 0,
 					stale: staleMs,
 					onCompromised,
 				});
 			} catch (error) {
 				signal?.throwIfAborted();
-				const code =
-					typeof error === "object" && error !== null && "code" in error
-						? String((error as { code?: unknown }).code)
-						: undefined;
+				const code = getRetryableLockErrorCode(error);
 				const remainingMs = deadline - Date.now();
-				if (code !== "ELOCKED" || remainingMs <= 0) throw error;
+				if (!code || remainingMs <= 0) throw error;
+				// The 30s deadline is for waiting on another holder; cap EPERM retries separately.
+				if (code === "EPERM" && ++epermRetries > MAX_EPERM_RETRIES) throw error;
 				const baseDelayMs = Math.min(10 * 2 ** retry, maxDelayMs / 2);
 				retry++;
 				const delayMs = Math.min(Math.round(baseDelayMs * (1 + Math.random())), remainingMs);
@@ -453,6 +455,7 @@ export class AuthStorage implements CredentialStore {
 	): Promise<Credential | undefined> {
 		let latestData = this.readState.data;
 		let revision: string | undefined;
+		let written: Credential | undefined;
 		const result = await this.storage.withLockAsync(async (content) => {
 			const currentData = this.parseStorageData(content);
 			const next = await fn(currentData[provider]);
@@ -464,9 +467,13 @@ export class AuthStorage implements CredentialStore {
 
 			const merged: AuthStorageData = { ...currentData, [provider]: next };
 			latestData = merged;
+			written = next;
 			return { result: next, next: JSON.stringify(merged, null, 2) };
 		}, options);
 		this.updateReadState(latestData, revision);
+		// Command results are cached for the process. Saving a `!command` key, even the same one, runs it
+		// again, so signing in to a secrets manager and saving the key again recovers from a failure.
+		if (written?.type === "api_key" && written.key) clearConfigValueCacheEntry(written.key);
 		return result;
 	}
 

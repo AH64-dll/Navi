@@ -1,5 +1,12 @@
 import type { AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall, type Model, type Usage } from "@earendil-works/pi-ai";
+import {
+	fauxAssistantMessage,
+	fauxToolCall,
+	getCurrentSystemPrompt,
+	type JsonObject,
+	type Model,
+	type Usage,
+} from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BuildSystemPromptOptions, ExtensionAPI } from "../../src/index.ts";
@@ -190,6 +197,35 @@ describe("AgentSession model and extension characterization", () => {
 		expect(harness.session.thinkingLevel).toBe("high");
 	});
 
+	// Regression test for https://github.com/earendil-works/pi/issues/11806
+	it("cycles to the only scoped model and to the first scoped model from outside the scope", async () => {
+		const harness = await createHarness({
+			models: [
+				{ id: "faux-1", name: "One" },
+				{ id: "faux-2", name: "Two" },
+				{ id: "faux-3", name: "Three" },
+			],
+		});
+		harnesses.push(harness);
+		const modelTwo = harness.getModel("faux-2")!;
+		const modelThree = harness.getModel("faux-3")!;
+
+		harness.session.setScopedModels([{ model: modelTwo }]);
+		expect((await harness.session.cycleModel())?.model.id).toBe("faux-2");
+		expect(harness.session.model?.id).toBe("faux-2");
+		expect(await harness.session.cycleModel()).toBeUndefined();
+		expect(harness.session.model?.id).toBe("faux-2");
+
+		await harness.session.setModel(harness.getModel("faux-1")!);
+		harness.session.setScopedModels([{ model: modelTwo }, { model: modelThree }]);
+		await harness.session.cycleModel();
+		expect(harness.session.model?.id).toBe("faux-2");
+
+		await harness.session.setModel(harness.getModel("faux-1")!);
+		await harness.session.cycleModel("backward");
+		expect(harness.session.model?.id).toBe("faux-3");
+	});
+
 	it("clamps thinking levels to model capabilities and cycles available levels", async () => {
 		const harness = await createHarness({ models: [{ id: "faux-1", reasoning: false }] });
 		harnesses.push(harness);
@@ -339,7 +375,12 @@ describe("AgentSession model and extension characterization", () => {
 
 		expect(getAssistantTexts(harness)).toContain("patched result");
 		const toolResult = harness.session.messages.find(
-			(message) => message.role === "toolResult" && message.details?.patched === true,
+			(message) =>
+				message.role === "toolResult" &&
+				typeof message.details === "object" &&
+				message.details !== null &&
+				!Array.isArray(message.details) &&
+				(message.details as JsonObject).patched === true,
 		);
 		expect(observedToolUsage).toEqual(toolUsage);
 		expect(toolResult).toBeDefined();
@@ -474,7 +515,7 @@ describe("AgentSession model and extension characterization", () => {
 		let sawInjectedUserMessage = false;
 		harness.setResponses([
 			(context) => {
-				providerSystemPrompt = context.systemPrompt ?? "";
+				providerSystemPrompt = getCurrentSystemPrompt(context.messages);
 				sawInjectedUserMessage = context.messages.some(
 					(message) =>
 						message.role === "user" &&

@@ -4,10 +4,10 @@ import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
-import { APP_NAME, getBinDir } from "../config.ts";
+import { getBinDir, VERSION } from "../config.ts";
 import { fetchWithRetry } from "./management-http.ts";
+import { getPiUserAgent } from "./pi-user-agent.ts";
 
-const TOOLS_DIR = getBinDir();
 const NETWORK_TIMEOUT_MS = 10_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 
@@ -23,7 +23,19 @@ interface ToolConfig {
 	binaryName: string; // Name of the binary inside the archive
 	systemBinaryNames?: string[]; // Alternative system command names to try before downloading
 	tagPrefix: string; // Prefix for tags (e.g., "v" for v1.0.0, "" for 1.0.0)
-	getAssetName: (version: string, plat: string, architecture: string) => string | null;
+	getAssetName: (version: string, target: string) => string;
+}
+
+// Map Node's platform/arch to the release target suffix shared by fd and ripgrep.
+// Only x64 and arm64 are mapped. Other architectures (e.g. ARM32 `arm`, `ia32`)
+// must not fall back to x86-64 binaries (#11209).
+function getReleaseTarget(plat: string, architecture: string): string | undefined {
+	const archStr = architecture === "arm64" ? "aarch64" : architecture === "x64" ? "x86_64" : undefined;
+	if (!archStr) return undefined;
+	if (plat === "darwin") return `${archStr}-apple-darwin.tar.gz`;
+	if (plat === "linux") return `${archStr}-unknown-linux-musl.tar.gz`;
+	if (plat === "win32") return `${archStr}-pc-windows-msvc.zip`;
+	return undefined;
 }
 
 const TOOLS: Record<string, ToolConfig> = {
@@ -33,38 +45,14 @@ const TOOLS: Record<string, ToolConfig> = {
 		binaryName: "fd",
 		systemBinaryNames: ["fd", "fdfind"],
 		tagPrefix: "v",
-		getAssetName: (version, plat, architecture) => {
-			if (plat === "darwin") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `fd-v${version}-${archStr}-apple-darwin.tar.gz`;
-			} else if (plat === "linux") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `fd-v${version}-${archStr}-unknown-linux-musl.tar.gz`;
-			} else if (plat === "win32") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `fd-v${version}-${archStr}-pc-windows-msvc.zip`;
-			}
-			return null;
-		},
+		getAssetName: (version, target) => `fd-v${version}-${target}`,
 	},
 	rg: {
 		name: "ripgrep",
 		repo: "BurntSushi/ripgrep",
 		binaryName: "rg",
 		tagPrefix: "",
-		getAssetName: (version, plat, architecture) => {
-			if (plat === "darwin") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `ripgrep-${version}-${archStr}-apple-darwin.tar.gz`;
-			} else if (plat === "linux") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `ripgrep-${version}-${archStr}-unknown-linux-musl.tar.gz`;
-			} else if (plat === "win32") {
-				const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-				return `ripgrep-${version}-${archStr}-pc-windows-msvc.zip`;
-			}
-			return null;
-		},
+		getAssetName: (version, target) => `ripgrep-${version}-${target}`,
 	},
 };
 
@@ -79,13 +67,14 @@ function commandExists(cmd: string): boolean {
 	}
 }
 
-// Get the path to a tool (system-wide or in our tools dir)
+// Get the path to a tool (system-wide or in our tools dir).
+// Reads the agent dir: do not call it while modules load, before main() has applied --agent-dir.
 export function getToolPath(tool: "fd" | "rg"): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 
 	// Check our tools directory first
-	const localPath = join(TOOLS_DIR, config.binaryName + (platform() === "win32" ? ".exe" : ""));
+	const localPath = join(getBinDir(), config.binaryName + (platform() === "win32" ? ".exe" : ""));
 	if (existsSync(localPath)) {
 		return localPath;
 	}
@@ -111,7 +100,7 @@ export async function getLatestVersion(repo: string): Promise<string> {
 	const response = await fetchWithRetry(
 		`https://github.com/${repo}/releases/latest`,
 		{
-			headers: { "User-Agent": `${APP_NAME}-coding-agent` },
+			headers: { "User-Agent": getPiUserAgent(VERSION) },
 			redirect: "manual",
 		},
 		{ timeoutMs: NETWORK_TIMEOUT_MS },
@@ -206,7 +195,7 @@ function extractTarGzArchive(archivePath: string, extractDir: string, assetName:
 }
 
 function getWindowsTarCommand(): string {
-	const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
+	const systemRoot = process.env.SystemRoot;
 	if (systemRoot) {
 		const systemTar = join(systemRoot, "System32", "tar.exe");
 		if (existsSync(systemTar)) {
@@ -261,24 +250,23 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 
 	const plat = platform();
 	const architecture = arch();
+	const target = getReleaseTarget(plat, architecture);
+	if (!target) {
+		throw new Error(`Unsupported platform: ${plat}/${architecture}`);
+	}
 
 	// fd is pinned on darwin/x64, so skip the version lookup there.
 	const version =
 		tool === "fd" && plat === "darwin" && architecture === "x64" ? "10.3.0" : await getLatestVersion(config.repo);
+	const assetName = config.getAssetName(version, target);
 
-	// Get asset name for this platform
-	const assetName = config.getAssetName(version, plat, architecture);
-	if (!assetName) {
-		throw new Error(`Unsupported platform: ${plat}/${architecture}`);
-	}
-
-	// Create tools directory
-	mkdirSync(TOOLS_DIR, { recursive: true });
+	const toolsDir = getBinDir();
+	mkdirSync(toolsDir, { recursive: true });
 
 	const downloadUrl = `https://github.com/${config.repo}/releases/download/${config.tagPrefix}${version}/${assetName}`;
-	const archivePath = join(TOOLS_DIR, assetName);
+	const archivePath = join(toolsDir, assetName);
 	const binaryExt = plat === "win32" ? ".exe" : "";
-	const binaryPath = join(TOOLS_DIR, config.binaryName + binaryExt);
+	const binaryPath = join(toolsDir, config.binaryName + binaryExt);
 
 	// Download
 	await downloadFile(downloadUrl, archivePath);
@@ -286,7 +274,7 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 	// Extract into a unique temp directory. fd and rg downloads can run concurrently
 	// during startup, so sharing a fixed directory causes races.
 	const extractDir = join(
-		TOOLS_DIR,
+		toolsDir,
 		`extract_tmp_${config.binaryName}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
 	);
 	mkdirSync(extractDir, { recursive: true });
@@ -345,6 +333,7 @@ export interface ToolStatus {
  * Ensure a tool is available, downloading if necessary.
  * Reports progress through `onStatus`; status messages are otherwise silent.
  * Returns the tool path, or undefined if unavailable.
+ * Reads the agent dir: do not call it while modules load, before main() has applied --agent-dir.
  */
 export async function ensureTool(
 	tool: "fd" | "rg",
@@ -368,6 +357,15 @@ export async function ensureTool(
 	if (platform() === "android") {
 		const pkgName = TERMUX_PACKAGES[tool] ?? tool;
 		onStatus?.({ type: "warning", message: `${config.name} not found. Install with: pkg install ${pkgName}` });
+		return undefined;
+	}
+
+	// Prebuilt downloads only exist for the targets mapped in getReleaseTarget.
+	if (!getReleaseTarget(platform(), arch())) {
+		onStatus?.({
+			type: "warning",
+			message: `${config.name} not found. Automatic download is not supported on ${platform()}/${arch()}. Install ${config.name} with your system package manager.`,
+		});
 		return undefined;
 	}
 

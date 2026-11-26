@@ -21,9 +21,13 @@ interface SessionShareContext {
 	showError: (message: string) => void;
 }
 
-/** Export the current branch with presentation metadata for Radius. */
-export function exportSessionForShare(filePath: string, session: AgentSession): void {
-	exportSessionToJsonl(session.sessionManager, filePath, (parentId, timestamp) => [
+/** Trailing `pi.share` entry carrying the system prompt and tool schemas for the session viewer. */
+export function createShareTrailingEntries(
+	session: AgentSession,
+	parentId: string | null,
+	timestamp: string,
+): object[] {
+	return [
 		{
 			type: "custom",
 			customType: "pi.share",
@@ -39,12 +43,26 @@ export function exportSessionForShare(filePath: string, session: AgentSession): 
 				})),
 			},
 		},
-	]);
+	];
+}
+
+/** Export the current branch with presentation metadata for Radius. */
+export function exportSessionForShare(filePath: string, session: AgentSession): void {
+	exportSessionToJsonl(session.sessionManager, filePath, (parentId, timestamp) =>
+		createShareTrailingEntries(session, parentId, timestamp),
+	);
 }
 
 /** Share the current session through Radius, falling back to a private gist. */
 export async function shareSession(context: SessionShareContext): Promise<void> {
-	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-share-"));
+	let tempDir: string;
+	try {
+		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-share-"));
+	} catch (error: unknown) {
+		// /share runs from the editor's submit handler, where a thrown error would crash pi.
+		context.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
+		return;
+	}
 	const jsonlFile = path.join(tempDir, "session.jsonl");
 	const htmlFile = path.join(tempDir, "session.html");
 
@@ -55,7 +73,14 @@ export async function shareSession(context: SessionShareContext): Promise<void> 
 			context.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
 			return;
 		}
-		if (await tryShareViaRadius(jsonlFile, context)) return;
+		const destination = context.session.settingsManager.getSessionShareDestination();
+		if (destination !== "gist") {
+			if (await tryShareViaRadius(jsonlFile, context)) return;
+			if (destination === "radius") {
+				context.showError("Radius authentication is not configured. Run '/login radius' first.");
+				return;
+			}
+		}
 
 		try {
 			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
@@ -170,6 +195,8 @@ async function shareViaGist(tmpFile: string, context: SessionShareContext): Prom
 			proc.stderr?.on("data", (data) => {
 				stderr += data.toString();
 			});
+			// A failed spawn emits 'error' and may never emit 'close'; without a listener it crashes pi.
+			proc.on("error", (error) => resolve({ stdout, stderr: stderr || error.message, code: null }));
 			proc.on("close", (code) => resolve({ stdout, stderr, code }));
 		});
 

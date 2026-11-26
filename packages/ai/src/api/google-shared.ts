@@ -2,39 +2,57 @@
  * Shared utilities for Google Generative AI and Google Vertex providers.
  */
 
-import { type Content, FinishReason, FunctionCallingConfigMode, type Part } from "@google/genai";
+import {
+	type Content,
+	FinishReason,
+	FunctionCallingConfigMode,
+	type GenerateContentResponsePromptFeedback,
+	ThinkingLevel as GoogleSdkThinkingLevel,
+	type Part,
+	type ThinkingConfig,
+} from "@google/genai";
+import { clampThinkingLevel } from "../models.ts";
 import type {
-	Context,
+	Api,
 	ImageContent,
 	Model,
-	ModelThinkingLevel,
 	StopReason,
 	StreamOptions,
 	TextContent,
+	ThinkingBudgets,
 	ThinkingLevel,
 	Tool,
+	TranscriptContext,
 } from "../types.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { collapseSystemMessages, withoutInitialSystemMessage } from "../utils/transcript.ts";
 import { getJsonSchemaToolParameters, resolveJsonSchemaStrictSampling } from "./constrained-sampling.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 type GoogleApiType = "google-generative-ai" | "google-vertex";
 
 /**
- * Thinking level for Gemini 3 models.
+ * Thinking level for Gemini models that use `thinkingLevel` instead of `thinkingBudget`.
  * Mirrors Google's ThinkingLevel enum values.
  */
-export type GoogleApiThinkingLevel = "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
-export type ResolvedGoogleThinkingLevel = Exclude<ThinkingLevel, "xhigh" | "max">;
+export type GoogleApiThinkingLevel = "THINKING_LEVEL_UNSPECIFIED" | "MINIMAL" | "LOW" | "MEDIUM" | "HIGH" | "XHIGH";
+export type ResolvedGoogleThinkingLevel = Exclude<ThinkingLevel, "max">;
+
+const GOOGLE_SDK_THINKING_LEVEL_MAP: Record<GoogleApiThinkingLevel, GoogleSdkThinkingLevel> = {
+	THINKING_LEVEL_UNSPECIFIED: GoogleSdkThinkingLevel.THINKING_LEVEL_UNSPECIFIED,
+	MINIMAL: GoogleSdkThinkingLevel.MINIMAL,
+	LOW: GoogleSdkThinkingLevel.LOW,
+	MEDIUM: GoogleSdkThinkingLevel.MEDIUM,
+	HIGH: GoogleSdkThinkingLevel.HIGH,
+	XHIGH: GoogleSdkThinkingLevel.XHIGH,
+};
 
 /** Resolve a supported pi level or model-specific Google mapping to a standard Google level. */
 export function resolveGoogleThinkingLevel<T extends GoogleApiType>(
 	model: Model<T>,
-	level: ModelThinkingLevel,
+	level: ThinkingLevel,
 ): ResolvedGoogleThinkingLevel {
-	if (level === "off") return "high";
-
 	const mapped = model.thinkingLevelMap?.[level];
 	const resolvedLevel = typeof mapped === "string" ? mapped.toLowerCase() : level;
 	switch (resolvedLevel) {
@@ -42,12 +60,107 @@ export function resolveGoogleThinkingLevel<T extends GoogleApiType>(
 		case "low":
 		case "medium":
 		case "high":
+		case "xhigh":
 			return resolvedLevel;
 		default:
 			throw new Error(
 				`Unsupported Google thinking level mapping for ${model.provider}/${model.id}: ${level} -> ${String(mapped)}`,
 			);
 	}
+}
+
+/**
+ * Whether this model uses Gemini's discrete `thinkingLevel` control instead of
+ * the token-based `thinkingBudget` control. Supported levels come from the
+ * model's `thinkingLevelMap`; this only selects the Google wire format.
+ */
+export function usesGoogleThinkingLevel<T extends GoogleApiType>(model: Model<T>): boolean {
+	const id = model.id.toLowerCase();
+	return (
+		// Match Gemini 3 Pro/Flash IDs with or without a minor version, such as
+		// gemini-3-flash-preview, gemini-3.1-pro-preview, and gemini-3.8-flash.
+		/gemini-3(?:\.\d+)?-(?:pro|flash)/.test(id) ||
+		// Match Gemini 4 and later, such as gemini-4-argon (#10890).
+		(getGeminiMajorVersion(id) ?? 0) >= 4 ||
+		id === "gemini-flash-latest" ||
+		id === "gemini-flash-lite-latest" ||
+		// Match both hosted Gemma 4 naming forms: gemma-4-* and gemma4-*.
+		/gemma-?4/.test(id)
+	);
+}
+
+export function toGoogleThinkingLevel(level: ResolvedGoogleThinkingLevel): GoogleApiThinkingLevel {
+	switch (level) {
+		case "minimal":
+			return "MINIMAL";
+		case "low":
+			return "LOW";
+		case "medium":
+			return "MEDIUM";
+		case "high":
+			return "HIGH";
+		case "xhigh":
+			return "XHIGH";
+	}
+}
+
+/** Token budget for Gemini models that use `thinkingBudget`: custom budgets first, then per-model defaults, else -1 (dynamic). */
+export function getGoogleBudget<T extends GoogleApiType>(
+	model: Model<T>,
+	resolvedLevel: ResolvedGoogleThinkingLevel,
+	customBudgets?: ThinkingBudgets,
+): number {
+	// Budgets stop at high, so xhigh uses the high budget.
+	const level = resolvedLevel === "xhigh" ? "high" : resolvedLevel;
+	const customBudget = customBudgets?.[level];
+	if (customBudget !== undefined) return customBudget;
+
+	if (model.id.includes("2.5-pro")) {
+		const budgets: Record<keyof ThinkingBudgets, number> = {
+			minimal: 128,
+			low: 2048,
+			medium: 8192,
+			high: 32768,
+		};
+		return budgets[level];
+	}
+
+	if (model.id.includes("2.5-flash-lite")) {
+		const budgets: Record<keyof ThinkingBudgets, number> = {
+			minimal: 512,
+			low: 2048,
+			medium: 8192,
+			high: 24576,
+		};
+		return budgets[level];
+	}
+
+	if (model.id.includes("2.5-flash")) {
+		const budgets: Record<keyof ThinkingBudgets, number> = {
+			minimal: 128,
+			low: 2048,
+			medium: 8192,
+			high: 24576,
+		};
+		return budgets[level];
+	}
+
+	return -1;
+}
+
+export function toGoogleSdkThinkingLevel(level: GoogleApiThinkingLevel): GoogleSdkThinkingLevel {
+	return GOOGLE_SDK_THINKING_LEVEL_MAP[level];
+}
+
+export function getDisabledGoogleThinkingConfig<T extends GoogleApiType>(model: Model<T>): ThinkingConfig {
+	if (!usesGoogleThinkingLevel(model)) return { thinkingBudget: 0 };
+
+	const fallback = clampThinkingLevel(model, "off");
+	if (fallback === "off") return { thinkingBudget: 0 };
+
+	const resolvedLevel = resolveGoogleThinkingLevel(model, fallback);
+	const apiLevel = toGoogleThinkingLevel(resolvedLevel);
+	return { thinkingLevel: toGoogleSdkThinkingLevel(apiLevel) };
 }
 
 /**
@@ -112,7 +225,8 @@ export function requiresToolCallId(modelId: string): boolean {
 }
 
 function getGeminiMajorVersion(modelId: string): number | undefined {
-	const match = modelId.toLowerCase().match(/^gemini(?:-live)?-(\d+)/);
+	// Unanchored like usesGoogleThinkingLevel: some hosts prefix the ID, e.g. randomprefix-gemini-4-argon (#12321).
+	const match = modelId.toLowerCase().match(/gemini(?:-live)?-(\d+)/);
 	if (!match) return undefined;
 	return Number.parseInt(match[1], 10);
 }
@@ -128,14 +242,16 @@ function supportsMultimodalFunctionResponse(modelId: string): boolean {
 /**
  * Convert internal messages to Gemini Content[] format.
  */
-export function convertMessages<T extends GoogleApiType>(model: Model<T>, context: Context): Content[] {
+export function convertMessages<T extends GoogleApiType>(model: Model<T>, context: TranscriptContext): Content[] {
+	// Gemini has no mid-conversation system messages; the leading prompt is sent as systemInstruction.
+	const conversation = withoutInitialSystemMessage(collapseSystemMessages(context).messages);
 	const contents: Content[] = [];
 	const normalizeToolCallId = (id: string): string => {
 		if (!requiresToolCallId(model.id)) return id;
 		return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 	};
 
-	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
+	const transformedMessages = transformMessages(conversation, model, normalizeToolCallId);
 
 	for (const msg of transformedMessages) {
 		if (msg.role === "user") {
@@ -227,7 +343,7 @@ export function convertMessages<T extends GoogleApiType>(model: Model<T>, contex
 				? msg.content.filter((c): c is ImageContent => c.type === "image")
 				: [];
 
-			const hasText = textResult.length > 0;
+			const hasText = textResult.trim().length > 0;
 			const hasImages = imageContent.length > 0;
 
 			// Gemini 3+ models support multimodal function responses with images nested inside
@@ -307,11 +423,68 @@ function sanitizeForOpenApi(schema: unknown): unknown {
 	return result;
 }
 
+/** Schema keywords whose values map names to subschemas, so their keys are not schema keywords. */
+const JSON_SCHEMA_NAME_MAPS = new Set([
+	"properties",
+	"patternProperties",
+	"$defs",
+	"definitions",
+	"dependentSchemas",
+	"dependencies",
+]);
+
+/** Keywords containing a subschema or an array of subschemas, not literal data. */
+const JSON_SCHEMA_SUBSCHEMAS = new Set([
+	"additionalProperties",
+	"unevaluatedProperties",
+	"propertyNames",
+	"items",
+	"prefixItems",
+	"additionalItems",
+	"unevaluatedItems",
+	"contains",
+	"allOf",
+	"anyOf",
+	"oneOf",
+	"not",
+	"if",
+	"then",
+	"else",
+	"contentSchema",
+]);
+
+/**
+ * Rewrite string and number `const` values to single-value `enum`s.
+ * Gemini ignores `const` in `parametersJsonSchema` but honors `enum`.
+ */
+function rewriteConstAsEnum(schema: unknown, isNameMap = false): unknown {
+	if (Array.isArray(schema)) return schema.map((item) => rewriteConstAsEnum(item));
+	if (typeof schema !== "object" || schema === null) return schema;
+
+	// fromEntries preserves names such as __proto__ as own properties.
+	const result: Record<string, unknown> = Object.fromEntries(
+		Object.entries(schema).map(([key, value]) => {
+			if (isNameMap || JSON_SCHEMA_SUBSCHEMAS.has(key)) return [key, rewriteConstAsEnum(value)];
+			if (JSON_SCHEMA_NAME_MAPS.has(key)) return [key, rewriteConstAsEnum(value, true)];
+			return [key, value];
+		}),
+	);
+	if (!isNameMap && "const" in result && result.enum === undefined) {
+		const value = result.const;
+		if (typeof value === "string" || typeof value === "number") {
+			delete result.const;
+			result.enum = [value];
+		}
+	}
+	return result;
+}
+
 /**
  * Convert tools to Gemini function declarations format.
  *
  * By default uses `parametersJsonSchema` which supports full JSON Schema (including
- * anyOf, oneOf, const, etc.). Set `useParameters` to true to use the legacy `parameters`
+ * anyOf, oneOf, etc.). Gemini ignores `const` there, so string and number `const`
+ * values are sent as single-value `enum`s. Set `useParameters` to true to use the legacy `parameters`
  * field instead (OpenAPI 3.03 Schema). This is needed for Cloud Code Assist with Claude
  * models, where the API translates `parameters` into Anthropic's `input_schema`.
  */
@@ -331,17 +504,20 @@ export function convertTools(
 					description: tool.description,
 					...(useParameters
 						? { parameters: sanitizeForOpenApi(parameters as unknown) }
-						: { parametersJsonSchema: parameters }),
+						: { parametersJsonSchema: rewriteConstAsEnum(parameters) }),
 				};
 			}),
 		},
 	];
 }
 
-/** Gemini 3+ enforces required function parameters in validated tool-calling modes. */
-export function supportsGoogleStrictToolSampling(modelId: string): boolean {
-	const majorVersion = getGeminiMajorVersion(modelId);
-	return majorVersion !== undefined && majorVersion >= 3;
+/**
+ * Gemini 3+ enforces required function parameters in validated tool-calling modes.
+ * `compat.supportsStrictMode` overrides the model ID detection, e.g. for Gemini models served under IDs without the version.
+ */
+export function supportsGoogleStrictToolSampling<T extends GoogleApiType>(model: Model<T>): boolean {
+	const majorVersion = getGeminiMajorVersion(model.id);
+	return model.compat?.supportsStrictMode ?? (majorVersion !== undefined && majorVersion >= 3);
 }
 
 /** Map tool choice string to Gemini FunctionCallingConfigMode. */
@@ -373,6 +549,24 @@ export function resolveGoogleFunctionCallingMode(
 	return toolChoice ? mapToolChoice(toolChoice) : undefined;
 }
 
+/** Format prompt-block metadata returned instead of response candidates. */
+export function formatGooglePromptBlockError(
+	providerName: string,
+	feedback: GenerateContentResponsePromptFeedback,
+): string {
+	const details = [`${providerName} prompt blocked: ${feedback.blockReason ?? "unknown reason"}`];
+	if (feedback.blockReasonMessage) details.push(feedback.blockReasonMessage);
+	if (feedback.safetyRatings?.length) {
+		const ratings = feedback.safetyRatings.flatMap((rating) =>
+			rating.category ? [`${rating.category}${rating.probability ? ` (${rating.probability})` : ""}`] : [],
+		);
+		if (ratings.length > 0) {
+			details.push(`Safety rating${ratings.length === 1 ? "" : "s"}: ${ratings.join(", ")}`);
+		}
+	}
+	return details.join(". ");
+}
+
 /**
  * Map Gemini FinishReason to our StopReason.
  */
@@ -381,6 +575,8 @@ export function mapStopReason(reason: FinishReason): StopReason {
 		case FinishReason.STOP:
 			return "stop";
 		case FinishReason.MAX_TOKENS:
+		// Per-request token limit reached before generation completed; pi does not resume with the continuation token.
+		case FinishReason.CONTINUATION:
 			return "length";
 		case FinishReason.BLOCKLIST:
 		case FinishReason.PROHIBITED_CONTENT:
@@ -396,26 +592,18 @@ export function mapStopReason(reason: FinishReason): StopReason {
 		case FinishReason.LANGUAGE:
 		case FinishReason.MALFORMED_FUNCTION_CALL:
 		case FinishReason.UNEXPECTED_TOOL_CALL:
+		case FinishReason.TOO_MANY_TOOL_CALLS:
 		case FinishReason.NO_IMAGE:
+		case FinishReason.MISSING_THOUGHT_SIGNATURE:
+		case FinishReason.MALFORMED_RESPONSE:
+		case FinishReason.ESCALATION:
+		case FinishReason.PUP_LIMITED_DISABLED:
+		case FinishReason.MODEL_ARMOR:
 			return "error";
 		default: {
 			const _exhaustive: never = reason;
 			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
 		}
-	}
-}
-
-/**
- * Map string finish reason to our StopReason (for raw API responses).
- */
-export function mapStopReasonString(reason: string): StopReason {
-	switch (reason) {
-		case "STOP":
-			return "stop";
-		case "MAX_TOKENS":
-			return "length";
-		default:
-			return "error";
 	}
 }
 
@@ -426,11 +614,13 @@ export function mapStopReasonString(reason: string): StopReason {
  * retryProviderRequest. The SDK's ApiError has a `status` property but no
  * `headers` property, and retryProviderRequest only retries errors that carry
  * both, so normalize the error by adding the missing `headers` before
- * rethrowing.
+ * rethrowing. Failed attempts reach `onResponse` with their status and no
+ * headers.
  */
 export function retryGoogleRequest<T>(
 	request: () => Promise<T>,
-	options?: Pick<StreamOptions, "maxRetries" | "maxRetryDelayMs" | "signal">,
+	model: Model<Api>,
+	options?: Pick<StreamOptions, "maxRetries" | "maxRetryDelayMs" | "signal" | "onResponse">,
 ): Promise<T> {
 	return retryProviderRequest(
 		async () => {
@@ -447,6 +637,7 @@ export function retryGoogleRequest<T>(
 			maxRetries: options?.maxRetries,
 			maxRetryDelayMs: options?.maxRetryDelayMs,
 			signal: options?.signal,
+			onErrorResponse: (errorResponse) => options?.onResponse?.(errorResponse, model),
 		},
 	);
 }

@@ -1,10 +1,11 @@
 import assert from "node:assert";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import { Image } from "../src/components/image.ts";
+import { Input } from "../src/components/input.ts";
 import type { Terminal } from "../src/terminal.ts";
 import {
 	deleteKittyImage,
@@ -13,8 +14,9 @@ import {
 	setCapabilities,
 	setCellDimensions,
 } from "../src/terminal-image.ts";
-import type { Component, TUI } from "../src/tui.ts";
+import { type Component, CURSOR_MARKER, renderFakeCursor, type TUI } from "../src/tui.ts";
 import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import { sliceByColumn } from "../src/utils.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class TestComponent implements Component {
@@ -60,6 +62,7 @@ class BoundedWriteTerminal implements Terminal {
 	clearScreen(): void {}
 	setTitle(_title: string): void {}
 	setProgress(_active: boolean): void {}
+	setProgramStatus(): void {}
 }
 
 class LoggingVirtualTerminal extends VirtualTerminal {
@@ -162,6 +165,40 @@ describe("TUI debug logging", () => {
 });
 
 describe("TUI bounded render output", () => {
+	it("does not write duplicate cursor markers to the terminal", () => {
+		const terminal = new BoundedWriteTerminal();
+		const tui = new TuiMainScreen(terminal);
+		const component = new TestComponent();
+		// Regression for #9257: terminals may render the payload of a leaked APC marker.
+		component.lines = [`\x1b[31m界🙂\x1b[0m${CURSOR_MARKER} world${CURSOR_MARKER}`];
+		tui.addChild(component);
+
+		tui.renderNow();
+
+		const output = terminal.writes.join("");
+		assert.ok(output.includes("\x1b[31m界🙂\x1b[0m world"), "visible styled text should be preserved");
+		assert.ok(!output.includes(CURSOR_MARKER), "internal cursor markers must not reach the terminal");
+		assert.ok(output.includes("\x1b[5G"), "the first marker should keep the cursor at visible column 4");
+	});
+
+	it("does not write cursor markers from other visible or scrollback lines", () => {
+		const terminal = new BoundedWriteTerminal();
+		terminal.rows = 2;
+		const tui = new TuiMainScreen(terminal);
+		const component = new TestComponent();
+		// Regression for #9257: cursor extraction must not leave markers on other rendered lines.
+		component.lines = [`offscreen${CURSOR_MARKER}`, `a${CURSOR_MARKER}`, `visible-b${CURSOR_MARKER}`];
+		tui.addChild(component);
+
+		tui.renderNow();
+
+		const output = terminal.writes.join("");
+		assert.ok(output.includes("offscreen"), "full renders should preserve scrollback content");
+		assert.ok(output.includes("a"), "full renders should preserve other visible lines");
+		assert.ok(!output.includes(CURSOR_MARKER), "internal cursor markers must not reach the terminal");
+		assert.ok(output.includes("\x1b[10G"), "the bottom visible marker should determine the cursor column");
+	});
+
 	it("splits a large full render without changing its output", () => {
 		const terminal = new BoundedWriteTerminal();
 		const tui = new TuiMainScreen(terminal);
@@ -203,6 +240,24 @@ describe("TUI bounded render output", () => {
 		assert.ok(output.startsWith("\x1b[?2026h"));
 		assert.ok(output.endsWith("\x1b[?2026l"));
 		assert.ok(!output.includes("\x1b[2J"), "the update should stay on the differential render path");
+	});
+});
+
+describe("TUI OSC 133 markers", () => {
+	it("does not write OSC 133 prompt markers to the terminal", () => {
+		// Terminals read 133;A as a new shell prompt and drop the OSC 7501 program status.
+		const terminal = new BoundedWriteTerminal();
+		const tui = new TuiMainScreen(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+		component.lines = ["\x1b]133;A\x07prompt", "\x1b]133;B\x07\x1b]133;C\x07output"];
+		tui.renderNow();
+		component.lines = [...component.lines, "\x1b]133;A\x1b\\reply", "\x1b]133;B\x1b\\\x1b]133;C\x1b\\done"];
+		tui.renderNow();
+
+		const output = terminal.writes.join("");
+		assert.ok(!output.includes("\x1b]133;"), "regular mode must not emit OSC 133 markers");
+		for (const text of ["prompt", "output", "reply", "done"]) assert.ok(output.includes(text));
 	});
 });
 
@@ -254,6 +309,44 @@ describe("TUI crash dump without configured log directory", () => {
 			rmSync(crashDir, { recursive: true, force: true });
 		}
 	});
+
+	// #10585: a full or unwritable temp dir must not replace the width error.
+	it("reports the width error when the crash dump cannot be written", async () => {
+		const crashDir = mkdtempSync(join(tmpdir(), "pi-tui-crash-"));
+		// A regular file where the log directory should be makes the dump fail to write.
+		const logDirectory = join(crashDir, "not-a-directory");
+		writeFileSync(logDirectory, "");
+		try {
+			const terminal = new VirtualTerminal(40, 10);
+			let terminalStops = 0;
+			const stopTerminal = terminal.stop.bind(terminal);
+			terminal.stop = () => {
+				terminalStops++;
+				stopTerminal();
+			};
+			const tui: TUI = new TuiMainScreen(terminal, false, logDirectory);
+			const component = new TestComponent();
+			tui.addChild(component);
+			component.lines = ["ok"];
+			tui.start();
+			await terminal.waitForRender();
+
+			component.lines = ["ok", "x".repeat(60)];
+			assert.throws(
+				() => tui.renderNow(),
+				(error: unknown) => {
+					assert.ok(error instanceof Error);
+					assert.match(error.message, /exceeds terminal width/);
+					assert.match(error.message, /Could not write debug log to /);
+					return true;
+				},
+			);
+			// The terminal leaves raw mode before the error propagates.
+			assert.equal(terminalStops, 1);
+		} finally {
+			rmSync(crashDir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("TUI Kitty image cleanup", () => {
@@ -301,7 +394,7 @@ describe("TUI Kitty image cleanup", () => {
 		}
 	});
 
-	it("falls back to full redraw when Kitty image pre-clear would scroll", async () => {
+	it("falls back to full redraw when a Kitty image is taller than the screen", async () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		setCellDimensions({ widthPx: 10, heightPx: 10 });
 		try {
@@ -327,7 +420,7 @@ describe("TUI Kitty image cleanup", () => {
 			tui.requestRender();
 			await terminal.waitForRender();
 
-			assert.ok(tui.fullRedraws > redrawsBeforeImage, "unsafe image pre-clear should force a full redraw");
+			assert.ok(tui.fullRedraws > redrawsBeforeImage, "an image taller than the screen should force a full redraw");
 			assert.ok(terminal.getWrites().includes("\x1b[2J"), "fallback should clear and fully redraw");
 
 			tui.stop();
@@ -337,7 +430,8 @@ describe("TUI Kitty image cleanup", () => {
 		}
 	});
 
-	it("reserves Kitty image rows before drawing during full redraw fallbacks", async () => {
+	// #12548
+	it("appends Kitty images that scroll the screen without a full redraw", async () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		setCellDimensions({ widthPx: 10, heightPx: 10 });
 		try {
@@ -366,7 +460,61 @@ describe("TUI Kitty image cleanup", () => {
 			await terminal.waitForRender();
 
 			const writes = terminal.getWrites();
-			assert.ok(tui.fullRedraws > redrawsBeforeImage, "scrolling image append should force a full redraw");
+			assert.strictEqual(tui.fullRedraws, redrawsBeforeImage, "appended image should stay differential");
+			assert.ok(!writes.includes("\x1b[2J"), "appended image must not clear the screen");
+			assert.ok(!writes.includes("\x1b[3J"), "appended image must not clear the scrollback");
+			assert.ok(
+				writes.includes(`\x1b[2K\r\n\x1b[2K\r\n\x1b[2K\x1b[2A${imageSequence}\x1b[2B`),
+				"reserved rows should scroll into view before the image placement is drawn",
+			);
+
+			const viewport = terminal.getViewport();
+			assert.strictEqual(viewport[0]?.trim(), "l4");
+			assert.strictEqual(viewport[4]?.trim(), "after");
+
+			component.lines = [...component.lines, "more"];
+			tui.requestRender();
+			await terminal.waitForRender();
+			assert.strictEqual(tui.fullRedraws, redrawsBeforeImage, "later output should stay differential");
+			assert.strictEqual(terminal.getViewport()[4]?.trim(), "more");
+
+			tui.stop();
+		} finally {
+			resetCapabilitiesCache();
+			setCellDimensions({ widthPx: 9, heightPx: 18 });
+		}
+	});
+
+	it("reserves Kitty image rows before drawing during full redraws", async () => {
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		setCellDimensions({ widthPx: 10, heightPx: 10 });
+		try {
+			const terminal = new LoggingVirtualTerminal(40, 5);
+			const tui: TUI = new TuiMainScreen(terminal);
+			const component = new TestComponent();
+			tui.addChild(component);
+
+			component.lines = ["l0", "l1", "l2", "l3", "l4"];
+			tui.start();
+			await terminal.waitForRender();
+			const redrawsBeforeImage = tui.fullRedraws;
+			terminal.clearWrites();
+
+			const image = new Image(
+				"AAAA",
+				"image/png",
+				{ fallbackColor: (value) => value },
+				{ maxWidthCells: 3 },
+				{ widthPx: 30, heightPx: 30 },
+			);
+			const imageLines = image.render(40);
+			const imageSequence = imageLines[0];
+			component.lines = ["l0", "l1", "l2", "l3", "l4", ...imageLines, "after"];
+			tui.requestRender(true);
+			await terminal.waitForRender();
+
+			const writes = terminal.getWrites();
+			assert.ok(tui.fullRedraws > redrawsBeforeImage, "forced render should be a full redraw");
 			assert.ok(
 				writes.includes(`\r\n\r\n\x1b[2A${imageSequence}\x1b[2B`),
 				"full redraw should reserve visible image rows before drawing the placement",
@@ -948,5 +1096,74 @@ describe("TUI differential rendering", () => {
 		]);
 
 		tui.stop();
+	});
+});
+
+describe("TUI fake cursor", () => {
+	it("draws the focused fake cursor in reverse video and omits it when the hardware cursor is shown", async () => {
+		const terminal = new LoggingVirtualTerminal(20, 5);
+		const tui: TUI = new TuiMainScreen(terminal);
+		const input = new Input();
+		input.setValue("abc");
+		tui.addChild(input);
+		tui.setFocus(input);
+		tui.start();
+		await terminal.waitForRender();
+		assert.ok(terminal.getWrites().includes("> \x1b[7ma\x1b[27mbc"));
+
+		terminal.clearWrites();
+		tui.setShowHardwareCursor(true);
+		await terminal.waitForRender();
+		assert.ok(!terminal.getWrites().includes("\x1b[7m"));
+		assert.ok(!terminal.getWrites().includes("\x1b_pi:"));
+
+		tui.stop();
+	});
+
+	it("keeps the fake cursor of an unfocused input when the hardware cursor is shown", async () => {
+		const terminal = new LoggingVirtualTerminal(20, 5);
+		const tui: TUI = new TuiMainScreen(terminal, true);
+		const input = new Input();
+		input.setValue("abc");
+		tui.addChild(input);
+		tui.start();
+		await terminal.waitForRender();
+		assert.ok(terminal.getWrites().includes("> \x1b[7ma\x1b[27mbc"));
+		tui.stop();
+	});
+
+	it("omits the focused fake cursor when truncation dropped its end marker", async () => {
+		const terminal = new LoggingVirtualTerminal(20, 5);
+		const tui: TUI = new TuiMainScreen(terminal, true);
+		const base = new TestComponent();
+		base.lines = [sliceByColumn(`ab${CURSOR_MARKER}${renderFakeCursor("c")}def`, 0, 3, true)];
+		tui.addChild(base);
+		tui.start();
+		await terminal.waitForRender();
+		assert.ok(!terminal.getWrites().includes("\x1b[7m"));
+		assert.ok(terminal.getWrites().endsWith("\x1b[3G"));
+		tui.stop();
+	});
+
+	it("keeps the cursor when an overlay ends directly left of it", async () => {
+		for (const showHardwareCursor of [false, true]) {
+			const terminal = new LoggingVirtualTerminal(20, 5);
+			const tui: TUI = new TuiMainScreen(terminal, showHardwareCursor);
+			const base = new TestComponent();
+			base.lines = [`abc${CURSOR_MARKER}${renderFakeCursor("d")}ef`];
+			tui.addChild(base);
+			const overlay = new TestComponent();
+			overlay.lines = ["XXX"];
+			tui.showOverlay(overlay, { row: 0, col: 0, width: 3 });
+			tui.start();
+			await terminal.waitForRender();
+
+			const writes = terminal.getWrites();
+			assert.ok(writes.includes("XXX"));
+			assert.strictEqual(writes.includes("\x1b[7md"), !showHardwareCursor);
+			// The hardware cursor is positioned at column 4 in both modes
+			assert.ok(writes.endsWith("\x1b[4G"));
+			tui.stop();
+		}
 	});
 });
