@@ -1,4 +1,6 @@
 mod adapters;
+mod attachment_snapshots;
+mod browser_host;
 mod chief;
 mod desk;
 mod detector;
@@ -76,6 +78,7 @@ pub struct App {
     pub runtime: PathBuf,
     pub isolated: bool,
     chief_process: Mutex<Option<Child>>,
+    acp_host: Mutex<Option<Arc<browser_host::BrowserHost>>>,
     command_lock: Mutex<()>,
     command_queue: Mutex<VecDeque<Value>>,
     assistant_dir: Mutex<Option<String>>,
@@ -266,6 +269,7 @@ impl App {
             .stderr(Stdio::null())
             .status();
         let db = Connection::open(data.join("station.sqlite3")).map_err(|e| e.to_string())?;
+        attachment_snapshots::initialize(&db)?;
         db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, name TEXT NOT NULL, profile TEXT NOT NULL, cwd TEXT NOT NULL, created INTEGER NOT NULL);").map_err(|e| e.to_string())?;
         let default = json!({
             "model": {"name":"d1-3B Q4", "endpoint":"http://127.0.0.1:8461/v1/systemone", "minimum_probability":0.65,
@@ -413,6 +417,7 @@ impl App {
             runtime,
             isolated,
             chief_process: Mutex::new(None),
+            acp_host: Mutex::new(None),
             command_lock: Mutex::new(()),
             command_queue: Mutex::new(VecDeque::new()),
             assistant_dir: Mutex::new(None),
@@ -1187,6 +1192,9 @@ impl App {
     /// Stop every child we own and clear its pid file. Called on SIGTERM/INT.
     pub fn shutdown(&self) {
         self.shutting_down.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(host) = self.acp_host.lock().unwrap().take() {
+            host.stop();
+        }
         if let Some(mut child) = self.bridge_child.lock().unwrap().take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -1821,6 +1829,7 @@ fn serve() -> Result<()> {
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
         return Err("Navi daemon already running".into());
     }
+    attachment_snapshots::cleanup(&app.state.lock().unwrap().db, &app.runtime, None)?;
     let socket = app.runtime.join("station.sock");
     if socket.exists() {
         fs::remove_file(&socket).map_err(|e| e.to_string())?;

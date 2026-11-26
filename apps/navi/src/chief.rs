@@ -934,43 +934,100 @@ impl App {
         cap_block(&lines.join("\n"))
     }
 
-    /// Decode attachment params into gateway --attachment file paths. `data`
-    /// payloads land in private runtime files; `path` payloads are checked and
-    /// passed through. Limits: 4 files, 2 MiB decoded each.
-    fn prepare_attachments(&self, params: &Value) -> Result<Vec<String>> {
-        let Some(items) = params.as_array() else {
-            return Ok(Vec::new());
-        };
+    /// Decode attachment params into gateway --attachment file paths. Both `data`
+    /// payloads and explicitly selected paths are snapshotted into private
+    /// owned runtime files. Limits: 4 files, 2 MiB decoded each.
+    fn prepare_attachments(&self, params: &Value) -> Result<PreparedAttachments> {
         validate_attachments(params)?;
-        let mut paths = Vec::new();
+        let mut prepared = PreparedAttachments::default();
+        prepared.ledger = Some((self.data.join("station.sqlite3"), self.runtime.clone()));
+        let Some(items) = params.as_array() else {
+            return Ok(prepared);
+        };
         for (index, item) in items.iter().enumerate() {
-            if let Some(path) = item["path"].as_str() {
-                let meta = std::fs::metadata(path).map_err(|error| {
-                    format!("Attachment {} is not readable: {error}", item["name"].as_str().unwrap_or(path))
-                })?;
-                if !meta.is_file() {
-                    return Err("Attachment path must be a file".into());
+            use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+            let (bytes, name) = if let Some(path) = item["path"].as_str() {
+                let input = std::fs::OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                    .open(path)
+                    .map_err(|error| format!("Attachment is not readable: {error}"))?;
+                let meta = input.metadata().map_err(|error| error.to_string())?;
+                if !meta.is_file() || meta.len() > 2 * 1024 * 1024 {
+                    return Err("Attachment must be a regular file of at most 2 MiB".into());
                 }
-                paths.push(path.to_string());
-                continue;
+                let mut bytes = Vec::new();
+                input
+                    .take(2 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| error.to_string())?;
+                let name = std::path::Path::new(path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or("Attachment filename must be UTF-8")?
+                    .to_string();
+                (bytes, name)
+            } else {
+                let data = item["data"]
+                    .as_str()
+                    .ok_or("Attachment data must be a string")?;
+                (
+                    b64_decode(data).ok_or("Attachment data is not valid base64")?,
+                    item["name"].as_str().unwrap_or("attachment").to_string(),
+                )
+            };
+            if bytes.len() > 2 * 1024 * 1024 {
+                return Err("Attachment exceeds 2 MiB".into());
             }
-            let data = item["data"].as_str().unwrap_or_default();
-            let bytes = b64_decode(data).ok_or("Attachment data is not valid base64")?;
-            let name = item["name"].as_str().unwrap_or("attachment");
+            // Snapshot every input. Later path replacement cannot change the
+            // bytes sent to a provider, and only these snapshots are owned.
             let safe: String = name
                 .chars()
-                .map(|c| if matches!(c, '/' | '\\') { '_' } else { c })
+                .take(120)
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
                 .collect();
-            let file = self
-                .runtime
-                .join(format!("attach-{}-{index}-{safe}", crate::id()));
-            std::fs::write(&file, &bytes).map_err(|error| error.to_string())?;
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600))
+            let directory = self.runtime.join(format!("attach-{}-{index}", crate::id()));
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&directory)
                 .map_err(|error| error.to_string())?;
-            paths.push(file.to_string_lossy().into_owned());
+            prepared.directories.push(directory.clone());
+            let basename = if safe.is_empty() || safe == "." || safe == ".." {
+                "attachment"
+            } else {
+                &safe
+            };
+            let file = directory.join(basename);
+            let mut output = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&file)
+                .map_err(|error| error.to_string())?;
+            // Commit ownership before writing any attachment bytes. A SIGKILL
+            // then leaves an exact recoverable inode, never a prefix guess.
+            crate::attachment_snapshots::register(
+                &self.state.lock().unwrap().db,
+                &file,
+                &directory,
+            )?;
+            prepared.scratch.push(file.clone());
+            output
+                .write_all(&bytes)
+                .map_err(|error| error.to_string())?;
+            prepared.paths.push(
+                file.to_str()
+                    .ok_or("Attachment runtime path must be UTF-8")?
+                    .to_string(),
+            );
         }
-        Ok(paths)
+        Ok(prepared)
     }
 
     /// Interrupt the server-side turn for the current assistant directory,
@@ -1446,6 +1503,15 @@ impl App {
         }
         if permission_id.is_empty() || permission_id.chars().any(char::is_control) {
             return Err("Invalid permission id".into());
+        }
+        if permission_id.starts_with("acp-perm-") {
+            let host = self
+                .acp_host
+                .lock()
+                .unwrap()
+                .clone()
+                .ok_or("ACP turn no longer active")?;
+            return host.reply_scoped(permission_id, decision, true);
         }
         let directory = self.assistant_dir.lock().unwrap().clone();
         let mut args = vec![
@@ -2017,7 +2083,7 @@ impl App {
             "--directory".to_string(),
             turn.path.clone(),
         ];
-        for attachment in &turn.attachments {
+        for attachment in &turn.attachments.paths {
             args.push("--attachment".into());
             args.push(attachment.clone());
         }
@@ -2029,11 +2095,6 @@ impl App {
             Some(turn.id.as_str()),
             Some(turn.path.as_str()),
         );
-        // Remove only runtime scratch files we decoded; user paths stay.
-        let scratch = self.runtime.join("attach-").to_string_lossy().into_owned();
-        for path in turn.attachments.iter().filter(|p| p.starts_with(&scratch)) {
-            let _ = std::fs::remove_file(path);
-        }
         match result {
             Ok(done) => {
                 if let Some(session) = done["session"].as_str() {
@@ -2094,16 +2155,28 @@ impl App {
         }
     }
 
-    /// Phase 6: run one turn against an ACP-speaking harness via `workers/acp_client.py`.
-    fn converse_acp(&self, harness: &str, text: &str, turn: &AssistantTurn, generation: u64) -> Result<Value> {
+    /// Phase 6: run one turn against an ACP-speaking harness via `workers/acp_client.py`
+    /// with owner-approved permission routing and process-group teardown.
+    fn converse_acp(
+        &self,
+        harness: &str,
+        text: &str,
+        turn: &AssistantTurn,
+        generation: u64,
+    ) -> Result<Value> {
+        if !turn.attachments.paths.is_empty() {
+            return Err(
+                "ACP attachment forwarding is not supported; use native Pi text or OpenCode".into(),
+            );
+        }
         let caps = crate::adapters::caps(harness);
-        let env_key = format!("NAVI_ACP_CMD_{}", harness.to_uppercase());
-        let cmd_parts: Vec<String> = if let Ok(override_cmd) = std::env::var(&env_key) {
-            override_cmd.split_whitespace().map(str::to_string).collect()
+        let key = format!("NAVI_ACP_CMD_{}", harness.to_uppercase());
+        let parts: Vec<String> = if let Ok(value) = std::env::var(&key) {
+            value.split_whitespace().map(str::to_string).collect()
         } else {
             caps.acp_cmd.iter().map(|s| s.to_string()).collect()
         };
-        if cmd_parts.is_empty() {
+        if parts.is_empty() {
             return Err(format!("Harness {harness} does not support ACP"));
         }
         let prompt = if turn.context.is_empty() {
@@ -2111,96 +2184,135 @@ impl App {
         } else {
             format!("{}\n\n{}", turn.context, text)
         };
-        let mut child = Command::new(self.python())
+        let mut command = Command::new(self.python());
+        command
             .arg(self.root.join("workers/acp_client.py"))
             .arg("--cwd")
             .arg(&turn.path)
             .arg("--prompt")
-            .arg(&prompt)
+            .arg(prompt)
             .arg("--")
-            .args(&cmd_parts)
+            .args(parts)
             .env("NAVI_RUNTIME_DIR", &self.runtime)
-            .env("NAVI_DATA_DIR", &self.data)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("Failed to start ACP client: {e}"))?;
-        let stdout = child.stdout.take().ok_or("ACP client has no stdout")?;
-        let (sender, receiver) = std::sync::mpsc::channel::<String>();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(std::result::Result::ok) {
-                if sender.send(line).is_err() {
-                    break;
-                }
-            }
-        });
+            .env("NAVI_DATA_DIR", &self.data);
+        let host = std::sync::Arc::new(crate::browser_host::BrowserHost::spawn(command)?);
+        *self.acp_host.lock().unwrap() = Some(std::sync::Arc::clone(&host));
         let turn_id = self.begin_turn();
-        let mut turn_acc = GatewayTurn::default();
-        let mut done: Option<Value> = None;
-        loop {
-            if self.generation.load(Ordering::SeqCst) != generation {
-                let _ = child.kill();
-                let _ = child.wait();
-                self.turn_finish(&turn_id, &turn_acc.accumulated);
-                let reply = json!({"text":"Conversation stopped.","persona":harness,"source":"stopped","stopped":true});
-                self.event_for(Some(turn.id.as_str()), None, "reply", "Conversation stopped.", reply.clone());
-                return Ok(reply);
-            }
-            match receiver.recv_timeout(Duration::from_millis(50)) {
-                Ok(line) => {
-                    let Some(mut event) = map_gateway_line(&line) else { continue };
-                    if !turn_acc.record(&mut event) { continue; }
-                    match event {
-                        GatewayLine::Delta(_) => {
-                            self.turn_flush(&turn_id, &turn_acc.accumulated, harness, Some(turn.id.as_str()));
-                        }
-                        GatewayLine::Reasoning(r, first) => {
-                            if first {
-                                self.event_for(Some(turn.id.as_str()), None, "thinking", "Thinking", json!({"reasoning":true}));
-                            }
-                            self.event_for(Some(turn.id.as_str()), None, "reasoning", &r, json!({"text":r}));
-                        }
-                        GatewayLine::ToolStatus { id, name, input, progress } => {
-                            self.event_for(Some(turn.id.as_str()), None, "tool_use", name.as_deref().unwrap_or("tool"),
-                                json!({"id":id,"name":name,"status":"running","input":input,"progress":progress,"final":false}));
-                        }
-                        GatewayLine::ToolFinal { id, name, status, input, output, exit } => {
-                            self.event_for(Some(turn.id.as_str()), None, "tool_use", name.as_deref().unwrap_or("tool"),
-                                json!({"id":id,"name":name,"status":status,"input":input,"output":output,"exit":exit,"final":true}));
-                        }
-                        GatewayLine::Permission { id, tool, input } => {
-                            self.event_for(Some(turn.id.as_str()), None, "approval",
-                                &format!("{} needs approval", tool.as_deref().unwrap_or("A tool")),
-                                json!({"id":id,"tool":tool,"input":input}));
-                        }
-                        GatewayLine::Error(err) => {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            self.turn_finish(&turn_id, &turn_acc.accumulated);
-                            return Err(err);
-                        }
-                        GatewayLine::Done(val) => {
-                            done = Some(*val);
-                            break;
-                        }
-                        _ => {}
-                    }
+        let mut acc = GatewayTurn::default();
+        let deadline = std::time::Instant::now() + Duration::from_secs(195);
+        let result = (|| {
+            let mut count = 0usize;
+            let mut bytes = 0usize;
+            loop {
+                if self.generation.load(Ordering::SeqCst) != generation
+                    || std::time::Instant::now() > deadline
+                {
+                    let _ = host.send(&json!({"type":"cancel"}));
+                    return Err("ACP run stopped or timed out".into());
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                let Some(record) = host.receive()? else {
+                    continue;
+                };
+                count += 1;
+                bytes += record.to_string().len();
+                if count > 16384 || bytes > 8 * 1024 * 1024 {
+                    return Err("ACP stream exceeded its limit".into());
+                }
+                if record["type"] == "permission" {
+                    let id = record["id"].as_str().ok_or("Invalid ACP approval")?;
+                    if !id.starts_with("acp-perm-") || id.len() > 128 {
+                        return Err("Invalid ACP approval id".into());
+                    }
+                    host.permission(id);
+                    self.event_for(
+                        Some(turn.id.as_str()),
+                        record["session"].as_str(),
+                        "approval",
+                        "ACP tool needs approval",
+                        record.clone(),
+                    );
+                    continue;
+                }
+                let Some(mut event) = map_gateway_line(&record.to_string()) else {
+                    continue;
+                };
+                if !acc.record(&mut event) {
+                    continue;
+                }
+                match event {
+                    GatewayLine::Delta(_) => {
+                        self.turn_flush(&turn_id, &acc.accumulated, harness, Some(turn.id.as_str()))
+                    }
+                    GatewayLine::Reasoning(text, _) => {
+                        self.event_for(
+                            Some(turn.id.as_str()),
+                            None,
+                            "reasoning",
+                            &text,
+                            json!({"text":text}),
+                        );
+                    }
+                    GatewayLine::ToolStatus {
+                        id,
+                        name,
+                        input,
+                        progress,
+                    } => {
+                        self.event_for(
+                            Some(turn.id.as_str()),
+                            None,
+                            "tool_use",
+                            name.as_deref().unwrap_or("tool"),
+                            json!({"id":id,"name":name,"input":input,"progress":progress,"status":"running","final":false}),
+                        );
+                    }
+                    GatewayLine::ToolFinal {
+                        id,
+                        name,
+                        status,
+                        input,
+                        output,
+                        exit,
+                    } => {
+                        self.event_for(
+                            Some(turn.id.as_str()),
+                            None,
+                            "tool_use",
+                            name.as_deref().unwrap_or("tool"),
+                            json!({"id":id,"name":name,"input":input,"output":output,"exit":exit,"status":status,"final":true}),
+                        );
+                    }
+                    GatewayLine::Error(error) => return Err(error),
+                    GatewayLine::Done(value) => {
+                        let mut reply = self.completed_turn(&turn_id, *value, &mut acc);
+                        reply["source"] = json!(format!("acp:{harness}"));
+                        reply["persona"] = json!(harness);
+                        self.event_for(
+                            Some(turn.id.as_str()),
+                            None,
+                            "reply",
+                            reply["text"].as_str().unwrap_or(""),
+                            reply.clone(),
+                        );
+                        return Ok(reply);
+                    }
+                    _ => {}
+                }
             }
+        })();
+        host.clear();
+        host.stop();
+        let mut slot = self.acp_host.lock().unwrap();
+        if slot
+            .as_ref()
+            .is_some_and(|current| std::sync::Arc::ptr_eq(current, &host))
+        {
+            slot.take();
         }
-        let _ = child.wait();
-        self.turn_finish(&turn_id, &turn_acc.accumulated);
-        let done_val = self.finish_turn(done.unwrap_or_else(|| json!({})), &mut turn_acc);
-        let reply = json!({
-            "text": done_val["text"], "persona": harness, "source": format!("acp:{harness}"),
-            "session": done_val["session"], "project_id": turn.id,
-        });
-        self.event_for(Some(turn.id.as_str()), done_val["session"].as_str(), "reply",
-            reply["text"].as_str().unwrap_or("No reply"), reply.clone());
-        Ok(reply)
+        if result.is_err() {
+            self.turn_finish(&turn_id, &acc.accumulated);
+        }
+        result
     }
 
     /// Slash messages are OpenCode commands, not chief decisions. They join the
@@ -4762,11 +4874,33 @@ impl App {
     }
 }
 
+#[derive(Default)]
+struct PreparedAttachments {
+    paths: Vec<String>,
+    scratch: Vec<std::path::PathBuf>,
+    directories: Vec<std::path::PathBuf>,
+    ledger: Option<(std::path::PathBuf, std::path::PathBuf)>,
+}
+
+impl Drop for PreparedAttachments {
+    fn drop(&mut self) {
+        // The durable ledger validates inode ownership for normal and crash cleanup.
+        if let Some((database, runtime)) = &self.ledger
+            && let Ok(db) = rusqlite::Connection::open(database)
+        {
+            let _ = crate::attachment_snapshots::cleanup(&db, runtime, Some(&self.scratch));
+        }
+        for path in &self.directories {
+            let _ = std::fs::remove_dir(path);
+        }
+    }
+}
+
 struct AssistantTurn {
     id: String,
     path: String,
     context: String,
-    attachments: Vec<String>,
+    attachments: PreparedAttachments,
 }
 
 /// A gateway failure: `stopped` marks a user Stop so callers can return a

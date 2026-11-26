@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import threading
+import uuid
 
 
 class AcpError(Exception):
@@ -40,13 +41,21 @@ class AcpClient:
         self._write_lock = threading.Lock()
         self._pending = {}
         self._pending_lock = threading.Lock()
+        self._permission_lock = self._pending_lock
+        self._permission_counter = 0
         self._perm_events = {}
         self._perm_answers = {}
+        self._perm_choices = {}
+        self.permission_ack = None
         self._tools = {}
         self.session_id = None
         self._reader_thread = None
+        self._stderr_thread = None
+        self._closed = False
 
     def start(self):
+        if self.proc is not None:
+            raise AcpError("ACP client cannot be restarted")
         self.proc = subprocess.Popen(
             self.command,
             cwd=self.cwd,
@@ -58,8 +67,20 @@ class AcpClient:
         )
         self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
         self._reader_thread.start()
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
+
+    def _drain_stderr(self):
+        # Drain without retaining potentially sensitive harness diagnostics.
+        try:
+            while self.proc.stderr.read(4096):
+                pass
+        except (OSError, ValueError):
+            pass
 
     def stop(self):
+        self._fail_pending("ACP agent stopped")
+        self._cancel_permissions()
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
             try:
@@ -69,30 +90,50 @@ class AcpClient:
                 self.proc.wait()
 
     def _send(self, msg):
-        if not self.proc or not self.proc.stdin:
+        if self._closed or not self.proc or not self.proc.stdin:
             raise AcpError("ACP agent not running")
         line = json.dumps(msg) + "\n"
-        with self._write_lock:
-            self.proc.stdin.write(line)
-            self.proc.stdin.flush()
+        try:
+            with self._write_lock:
+                self.proc.stdin.write(line)
+                self.proc.stdin.flush()
+        except (OSError, ValueError) as exc:
+            self._fail_pending("ACP agent write failed")
+            self._cancel_permissions()
+            raise AcpError("ACP agent write failed") from exc
+
+    def _fail_pending(self, message):
+        with self._pending_lock:
+            self._closed = True
+            pairs = list(self._pending.values())
+            self._pending.clear()
+        for ev, box in pairs:
+            box["error"] = {"message": message}
+            ev.set()
 
     def request(self, method, params=None, timeout=30.0):
-        req_id = self._next_id
-        self._next_id += 1
-        ev = threading.Event()
-        box = {}
+        ev, box = threading.Event(), {}
         with self._pending_lock:
+            if self._closed:
+                raise AcpError("ACP agent connection closed")
+            req_id = self._next_id
+            self._next_id += 1
             self._pending[req_id] = (ev, box)
-        self._send({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params or {}})
-        if not ev.wait(timeout):
+        try:
+            try:
+                self._send({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params or {}})
+            except (OSError, ValueError) as exc:
+                raise AcpError(f"ACP {method} could not be sent") from exc
+            if not ev.wait(timeout):
+                raise AcpError(f"ACP {method} timed out")
+            if "error" in box:
+                err = box["error"]
+                msg = err.get("message") if isinstance(err, dict) else str(err)
+                raise AcpError(f"ACP {method} failed: {msg}")
+            return box.get("result")
+        finally:
             with self._pending_lock:
                 self._pending.pop(req_id, None)
-            raise AcpError(f"ACP {method} timed out")
-        if "error" in box:
-            err = box["error"]
-            msg = err.get("message") if isinstance(err, dict) else str(err)
-            raise AcpError(f"ACP {method} failed: {msg}")
-        return box.get("result")
 
     def notify(self, method, params=None):
         self._send({"jsonrpc": "2.0", "method": method, "params": params or {}})
@@ -103,13 +144,31 @@ class AcpClient:
             msg["error"] = error
         else:
             msg["result"] = result if result is not None else {}
-        self._send(msg)
+        try:
+            self._send(msg)
+            return True
+        except AcpError:
+            return False  # Connection failure already settles all pending callers.
 
     def reply_permission(self, perm_id, decision):
-        self._perm_answers[str(perm_id)] = decision
-        ev = self._perm_events.get(str(perm_id))
-        if ev:
+        key = str(perm_id)
+        with self._permission_lock:
+            ev = self._perm_events.get(key)
+            if ev is None or ev.is_set():
+                return False
+            if decision in ("allow", "always") and decision not in self._perm_choices.get(key, []):
+                self._perm_answers[key] = "cancel"
+                ev.set()
+                return False
+            self._perm_answers[key] = decision if decision in ("allow", "always", "deny") else "cancel"
             ev.set()
+            return True
+
+    def _cancel_permissions(self):
+        with self._permission_lock:
+            for key, ev in self._perm_events.items():
+                self._perm_answers[key] = "cancel"
+                ev.set()
 
     def _handle_agent_request(self, req_id, method, params):
         try:
@@ -136,32 +195,44 @@ class AcpClient:
 
             if method == "session/request_permission":
                 tool_call = params.get("toolCall") or {}
-                perm_id = str(tool_call.get("toolCallId") or f"acp-perm-{req_id}")
                 options = params.get("options") or []
+                if not isinstance(options, list):
+                    options = []
+                options = [o for o in options if isinstance(o, dict) and isinstance(o.get("optionId"), str) and o["optionId"]]
                 ev = threading.Event()
-                self._perm_events[perm_id] = ev
-                self.emit({
-                    "type": "permission",
-                    "id": perm_id,
-                    "session": self.session_id,
-                    "tool": tool_call.get("title") or tool_call.get("kind") or "tool",
-                    "input": {"rawInput": tool_call.get("rawInput"), "options": options},
-                })
-                if not ev.wait(180.0):
-                    self._reply(req_id, {"outcome": {"outcome": "cancelled"}})
-                    return
-                decision = self._perm_answers.pop(perm_id, "deny")
-                if decision in ("allow", "always"):
-                    want_kind = "allow_always" if decision == "always" else "allow_once"
-                    opt = next((o for o in options if o.get("kind") == want_kind), None) or (options[0] if options else None)
-                    if opt and opt.get("optionId"):
-                        self._reply(req_id, {"outcome": {"outcome": "selected", "optionId": opt["optionId"]}})
+                with self._permission_lock:
+                    if self._closed:
                         return
-                reject = next((o for o in options if "reject" in str(o.get("kind", ""))), None)
-                if reject and reject.get("optionId"):
-                    self._reply(req_id, {"outcome": {"outcome": "selected", "optionId": reject["optionId"]}})
-                else:
-                    self._reply(req_id, {"outcome": {"outcome": "cancelled"}})
+                    self._permission_counter += 1
+                    perm_id = "acp-perm-" + uuid.uuid4().hex
+                    self._perm_events[perm_id] = ev
+                    self._perm_choices[perm_id] = [decision for decision, kind in [("allow", "allow_once"), ("always", "allow_always")]
+                                                   if any(o.get("kind") == kind for o in options)]
+                try:
+                    self.emit({
+                        "type": "permission", "id": perm_id, "session": self.session_id,
+                        "tool": tool_call.get("title") or tool_call.get("kind") or "tool",
+                        "input": {"rawInput": tool_call.get("rawInput"), "options": options},
+                        "choices": [decision for decision, kind in [("allow", "allow_once"), ("always", "allow_always"), ("deny", "reject_once")]
+                                    if decision == "deny" or any(o.get("kind") == kind for o in options)],
+                    })
+                    answered = ev.wait(180.0)
+                    with self._permission_lock:
+                        # Close the reply window atomically with timeout selection.
+                        self._perm_events.pop(perm_id, None)
+                        decision = self._perm_answers.pop(perm_id, "cancel") if answered else "cancel"
+                    kind = {"allow": "allow_once", "always": "allow_always", "deny": "reject_once"}.get(decision)
+                    opt = next((o for o in options if o.get("kind") == kind), None) if kind else None
+                    outcome = {"outcome": "selected", "optionId": opt["optionId"]} if opt else {"outcome": "cancelled"}
+                    sent = self._reply(req_id, {"outcome": outcome})
+                    if self.permission_ack:
+                        self.permission_ack({"type": "permission_result", "id": perm_id,
+                                             "replied": answered and sent is True and decision in ("allow", "always", "deny")})
+                finally:
+                    with self._permission_lock:
+                        self._perm_events.pop(perm_id, None)
+                        self._perm_answers.pop(perm_id, None)
+                        self._perm_choices.pop(perm_id, None)
                 return
 
             self._reply(req_id, error={"code": -32601, "message": f"Unsupported method: {method}"})
@@ -174,6 +245,8 @@ class AcpClient:
         if method != "session/update":
             return
         update = (params or {}).get("update") or {}
+        if not isinstance(update, dict):
+            return
         kind = update.get("sessionUpdate")
         if kind == "agent_message_chunk":
             content = update.get("content") or {}
@@ -200,7 +273,7 @@ class AcpClient:
                 if out is None and isinstance(update.get("content"), list):
                     out = "\n".join(
                         str((c.get("content") or {}).get("text", ""))
-                        for c in update["content"] if isinstance(c, dict)
+                        for c in update["content"] if isinstance(c, dict) and isinstance(c.get("content"), dict)
                     ).strip()
                 self.emit({
                     "type": "tool", "id": cid, "name": rec["name"],
@@ -214,32 +287,42 @@ class AcpClient:
                 })
 
     def _read_loop(self):
-        for raw in self.proc.stdout:
-            line = raw.strip()
-            if not line:
-                continue
-            try:
-                msg = json.loads(line)
-            except ValueError:
-                continue
-            if "id" in msg and ("result" in msg or "error" in msg):
-                with self._pending_lock:
-                    pair = self._pending.pop(msg["id"], None)
-                if pair:
-                    ev, box = pair
-                    if "error" in msg:
-                        box["error"] = msg["error"]
+        try:
+            for raw in self.proc.stdout:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(msg, dict):
+                    continue
+                ident = msg.get("id")
+                if "id" in msg and (not isinstance(ident, (int, str)) or isinstance(ident, bool)):
+                    continue
+                if "id" in msg and ("result" in msg or "error" in msg):
+                    with self._pending_lock:
+                        pair = self._pending.pop(ident, None)
+                    if pair:
+                        ev, box = pair
+                        if "error" in msg:
+                            box["error"] = msg["error"]
+                        else:
+                            box["result"] = msg.get("result")
+                        ev.set()
+                elif isinstance(msg.get("method"), str):
+                    params = msg.get("params") or {}
+                    if not isinstance(params, dict):
+                        continue
+                    if "id" in msg:
+                        threading.Thread(target=self._handle_agent_request,
+                                         args=(ident, msg["method"], params), daemon=True).start()
                     else:
-                        box["result"] = msg.get("result")
-                    ev.set()
-            elif "id" in msg and "method" in msg:
-                threading.Thread(
-                    target=self._handle_agent_request,
-                    args=(msg["id"], msg["method"], msg.get("params") or {}),
-                    daemon=True,
-                ).start()
-            elif "method" in msg:
-                self._handle_notification(msg["method"], msg.get("params") or {})
+                        self._handle_notification(msg["method"], params)
+        finally:
+            self._fail_pending("ACP agent connection closed")
+            self._cancel_permissions()
 
     def initialize(self):
         return self.request("initialize", {
@@ -266,8 +349,12 @@ class AcpClient:
         return res or {}
 
     def cancel(self):
-        if self.session_id:
-            self.notify("session/cancel", {"sessionId": self.session_id})
+        self._cancel_permissions()
+        if self.session_id and not self._closed:
+            try:
+                self.notify("session/cancel", {"sessionId": self.session_id})
+            except AcpError:
+                pass
 
 
 def main(argv):
@@ -292,6 +379,7 @@ def main(argv):
         _emit(rec)
 
     client.emit = capture
+    client.permission_ack = _emit
 
     def _stdin_replies():
         for raw in sys.stdin:
@@ -299,17 +387,31 @@ def main(argv):
                 msg = json.loads(raw.strip())
             except ValueError:
                 continue
+            if not isinstance(msg, dict):
+                continue
             if msg.get("type") == "permission_reply" and msg.get("id"):
-                client.reply_permission(msg["id"], msg.get("decision", "deny"))
+                accepted = client.reply_permission(msg["id"], msg.get("decision", "deny"))
+                if not accepted:
+                    _emit({"type": "permission_result", "id": msg["id"], "replied": False})
             elif msg.get("type") == "cancel":
                 client.cancel()
+        client.stop()  # Owner pipe closed, never leave a detached ACP agent.
 
-    threading.Thread(target=_stdin_replies, daemon=True).start()
     try:
         client.start()
+        threading.Thread(target=_stdin_replies, daemon=True).start()
         client.initialize()
         client.new_session()
         res = client.prompt(args.prompt, timeout=args.timeout)
+        # A fast agent can answer the prompt as soon as its permission reply
+        # arrives. Publish the owner acknowledgement before the terminal record.
+        import time
+        until = time.monotonic() + 1.0
+        while time.monotonic() < until:
+            with client._permission_lock:
+                if not client._perm_choices:
+                    break
+            time.sleep(.001)
         _emit({"type": "done", "text": "".join(chunks).strip(), "session": client.session_id,
                "finish": res.get("stopReason") or "end_turn"})
         return 0
