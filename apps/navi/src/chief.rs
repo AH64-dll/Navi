@@ -1146,8 +1146,7 @@ impl App {
                     self.turn_flush(&turn_id, &turn.accumulated, persona, project_id);
                 }
                 if let Some(done) = done {
-                    self.turn_finish(&turn_id, &turn.accumulated);
-                    return Ok(self.finish_turn(done, &mut turn));
+                    return Ok(self.completed_turn(&turn_id, done, &mut turn));
                 }
                 self.turn_finish(&turn_id, &turn.accumulated);
                 return Err(GatewayFailure::new("OpenCode bridge closed unexpectedly", false));
@@ -2105,7 +2104,7 @@ impl App {
             caps.acp_cmd.iter().map(|s| s.to_string()).collect()
         };
         if cmd_parts.is_empty() {
-            return Err(format!("Harness {harness} does not support ACP").into());
+            return Err(format!("Harness {harness} does not support ACP"));
         }
         let prompt = if turn.context.is_empty() {
             text.to_string()

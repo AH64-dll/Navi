@@ -90,6 +90,18 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(cat["result"]["catalog"], "agents")
         self.assertIsInstance(cat["result"]["items"], list)
 
+    def test_project_sessions_and_session_info_over_persistent_bridge(self):
+        directory = os.path.join(self.tmp.name, "project")
+        created, _ = self.rpc("new", {"directory": directory})
+        self.assertTrue(created["ok"], created)
+        sid = created["result"]["session"]
+        sessions, _ = self.rpc("sessions", {"directory": directory})
+        self.assertTrue(sessions["ok"], sessions)
+        self.assertIn("sessions", sessions["result"])
+        info, _ = self.rpc("session_get", {"session": sid})
+        self.assertTrue(info["ok"], info)
+        self.assertEqual(info["result"]["id"], sid)
+
     def test_subscriber_receives_reconnect_and_unsolicited_events(self):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sub:
             sub.settimeout(5.0)

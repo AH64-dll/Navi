@@ -39,6 +39,22 @@ def opencode_unit(opencode, path):
     )
 
 
+
+def station_unit(root, binary, user_default):
+    # Optional owner-written config, not an export snapshot. Never overwrite it.
+    return ("[Unit]\nDescription=Navi orchestration station\n"
+            "After=graphical-session.target navi-terminals.service navi-opencode.service\n"
+            "Wants=navi-terminals.service navi-opencode.service\n\n"
+            "[Service]\nType=simple\n"
+            f"Environment=NAVI_APP_DIR={root}\n"
+            "Environment=NAVI_MANAGED_TERMINALS=1\n"
+            "Environment=NAVI_SYSTEM_PATH=/usr/local/bin:/usr/bin:/bin\n"
+            f"Environment=NAVI_USER_PATH_DEFAULT={user_default}\n"
+            "EnvironmentFile=-%h/.config/navi/runtime.env\n"
+            f"ExecStart={binary} serve\nRestart=on-failure\nRestartSec=2\n"
+            "KillMode=control-group\n\n[Install]\nWantedBy=default.target\n")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-start", action="store_true", help="Install files without starting background services")
@@ -89,7 +105,7 @@ def main():
         # Anything else that needs the server runs this to start it, so nothing starts a second one.
         write(DATA / "bin/opencode-start", "#!/bin/sh\nexec systemctl --user start navi-opencode.service\n", True)
         services.insert(0, "navi-opencode.service")
-    write(Path.home() / ".config/systemd/user/navi-station.service", f"[Unit]\nDescription=Navi orchestration station\nAfter=graphical-session.target navi-terminals.service navi-opencode.service\nWants=navi-terminals.service navi-opencode.service\n\n[Service]\nType=simple\nEnvironment=NAVI_APP_DIR={ROOT}\nEnvironment=NAVI_MANAGED_TERMINALS=1\nEnvironment=NAVI_SYSTEM_PATH=/usr/local/bin:/usr/bin:/bin\nEnvironment=NAVI_USER_PATH_DEFAULT={user_default}\nExecStart={binary} serve\nRestart=on-failure\nRestartSec=2\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n")
+    write(Path.home() / ".config/systemd/user/navi-station.service", station_unit(ROOT, binary, user_default))
     write(Path.home() / ".local/share/applications/navi-station.desktop", f"[Desktop Entry]\nType=Application\nName=Navi Station\nComment=Local voice and terminal orchestration\nExec={launcher}\nTerminal=false\nCategories=Development;Utility;\nStartupWMClass=navi-station\n")
     subprocess.run(["systemctl","--user","daemon-reload"],check=True)
     if not args.no_start:

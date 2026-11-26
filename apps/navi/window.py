@@ -23,8 +23,12 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
-gi.require_version("GLibUnix", "2.0")
-from gi.repository import Gdk, GLib, GLibUnix, Gtk, WebKit2
+from gi.repository import Gdk, GLib, Gtk, WebKit2
+try:
+    gi.require_version("GLibUnix", "2.0")
+    from gi.repository import GLibUnix
+except (ValueError, ImportError):
+    GLibUnix = None  # Older supported GLib exposes unix_signal_add on GLib.
 from workers.ipc import COMMAND_TIMEOUT, DATA, rpc
 
 ROOT = Path(__file__).resolve().parent
