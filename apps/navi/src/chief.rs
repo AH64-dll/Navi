@@ -2164,6 +2164,9 @@ impl App {
         turn: &AssistantTurn,
         generation: u64,
     ) -> Result<Value> {
+        if harness == "pi" {
+            return self.converse_pi(text, turn, generation);
+        }
         if !turn.attachments.paths.is_empty() {
             return Err(
                 "ACP attachment forwarding is not supported; use native Pi text or OpenCode".into(),
@@ -2313,6 +2316,174 @@ impl App {
             self.turn_finish(&turn_id, &acc.accumulated);
         }
         result
+    }
+
+    /// Run one bounded, tool-free turn against Pi's native JSONL RPC via `workers/pi_rpc.py`.
+    fn converse_pi(&self, text: &str, turn: &AssistantTurn, generation: u64) -> Result<Value> {
+        let model = std::env::var("NAVI_PI_MODEL")
+            .map_err(|_| "Select a Pi provider/model with NAVI_PI_MODEL before starting Pi")?;
+        let prompt = if turn.context.is_empty() {
+            text.to_string()
+        } else {
+            format!("{}\n\n{}", turn.context, text)
+        };
+        let mut command = Command::new(self.python());
+        command
+            .arg(self.root.join("workers/pi_rpc.py"))
+            .arg("--model")
+            .arg(model)
+            .arg("--executable")
+            .arg(std::env::var("NAVI_PI_EXECUTABLE").unwrap_or_else(|_| "pi".into()))
+            .arg("--cwd")
+            .arg(&turn.path)
+            .arg("--prompt")
+            .arg(&prompt);
+        for attachment in &turn.attachments.paths {
+            command.arg("--attachment").arg(attachment);
+        }
+        if let Ok(directory) = std::env::var("NAVI_PI_SESSION_DIR") {
+            command.arg("--session-dir").arg(directory);
+        }
+        let mut child = command
+            .env("NAVI_RUNTIME_DIR", &self.runtime)
+            .env("NAVI_DATA_DIR", &self.data)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Failed to start pi client: {e}"))?;
+        let stop_child = |child: &mut std::process::Child| {
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = writeln!(stdin, "{{\"type\":\"cancel\"}}");
+            }
+            let until = std::time::Instant::now() + Duration::from_secs(2);
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_)) => return,
+                    _ if std::time::Instant::now() >= until => break,
+                    _ => std::thread::sleep(Duration::from_millis(10)),
+                }
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+        };
+        let stdout = child.stdout.take().ok_or("Pi client has no stdout")?;
+        let (sender, receiver) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout)
+                .lines()
+                .map_while(std::result::Result::ok)
+            {
+                if sender.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let turn_id = self.begin_turn();
+        let mut turn_acc = GatewayTurn::default();
+        let mut done: Option<Value> = None;
+        let deadline = std::time::Instant::now() + Duration::from_secs(195);
+        loop {
+            if std::time::Instant::now() > deadline {
+                stop_child(&mut child);
+                self.turn_finish(&turn_id, &turn_acc.accumulated);
+                return Err("pi turn timed out".into());
+            }
+            if self.generation.load(Ordering::SeqCst) != generation {
+                stop_child(&mut child);
+                self.turn_finish(&turn_id, &turn_acc.accumulated);
+                let reply = json!({
+                    "text": "Conversation stopped.",
+                    "persona": "pi",
+                    "source": "stopped",
+                    "stopped": true
+                });
+                self.event_for(
+                    Some(turn.id.as_str()),
+                    None,
+                    "reply",
+                    "Conversation stopped.",
+                    reply.clone(),
+                );
+                return Ok(reply);
+            }
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(line) => {
+                    let Some(mut event) = map_gateway_line(&line) else {
+                        continue;
+                    };
+                    if !turn_acc.record(&mut event) {
+                        continue;
+                    }
+                    match event {
+                        GatewayLine::Delta(_) => {
+                            self.turn_flush(
+                                &turn_id,
+                                &turn_acc.accumulated,
+                                "pi",
+                                Some(turn.id.as_str()),
+                            );
+                        }
+                        GatewayLine::Reasoning(r, first) => {
+                            if first {
+                                self.event_for(
+                                    Some(turn.id.as_str()),
+                                    None,
+                                    "thinking",
+                                    "Thinking",
+                                    json!({"reasoning": true}),
+                                );
+                            }
+                            self.event_for(
+                                Some(turn.id.as_str()),
+                                None,
+                                "reasoning",
+                                &r,
+                                json!({"text": r}),
+                            );
+                        }
+                        GatewayLine::Error(err) => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            self.turn_finish(&turn_id, &turn_acc.accumulated);
+                            return Err(err);
+                        }
+                        GatewayLine::Done(val) => {
+                            done = Some(*val);
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        let _ = child.wait();
+        self.turn_finish(&turn_id, &turn_acc.accumulated);
+        let done = done.ok_or_else(|| "pi closed without a completed answer".to_string())?;
+        let done_val = self.completed_turn(&turn_id, done, &mut turn_acc);
+        let reply = json!({
+            "text": done_val["text"],
+            "persona": "pi",
+            "source": "pi-rpc",
+            "session": done_val["session"],
+            "project_id": turn.id,
+            "turn": done_val["turn"],
+            "finish": done_val["finish"],
+            "truncated": done_val["truncated"],
+            "actual_model": done_val["actual_model"],
+            "warnings": done_val["warnings"],
+            "usage": done_val["usage"],
+        });
+        self.event_for(
+            Some(turn.id.as_str()),
+            done_val["session"].as_str(),
+            "reply",
+            reply["text"].as_str().unwrap_or("No reply"),
+            reply.clone(),
+        );
+        Ok(reply)
     }
 
     /// Slash messages are OpenCode commands, not chief decisions. They join the
@@ -5149,7 +5320,10 @@ pub(crate) fn validate_attachments(params: &Value) -> Result<()> {
             return Err("Invalid attachment name".into());
         }
         match (item["path"].as_str(), item["data"].as_str()) {
-            (Some(_), _) | (None, Some(_)) => {}
+            (Some(_), None) | (None, Some(_)) => {}
+            (Some(_), Some(_)) => {
+                return Err("Attachment cannot supply both path and data".into());
+            }
             _ => return Err("Attachment needs a path or data".into()),
         }
         if let Some(data) = item["data"].as_str() {

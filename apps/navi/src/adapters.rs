@@ -36,7 +36,7 @@ const EXTERNAL_ROW_LIMIT: usize = 50;
 
 #[derive(Clone, Copy, Default)]
 pub struct Caps {
-    /// Transport: "opencode", "acp", or "tmux".
+    /// Transport: "opencode", "pi-rpc", "acp", or "tmux".
     pub transport: &'static str,
     /// ACP launch command when transport == "acp".
     pub acp_cmd: &'static [&'static str],
@@ -146,17 +146,21 @@ pub fn caps(harness: &str) -> Caps {
             ],
         },
         "pi" => Caps {
-            transport: "acp",
-            acp_cmd: &["npx", "-y", "pi-acp"],
+            transport: "pi-rpc",
+            acp_cmd: &[],
             preseed_id: false,
             resume_id: true,
             resume_last: true,
             structured_prompt: true,
             fork: false,
             cancel: true,
-            approvals: true,
+            approvals: false,
             models: false,
-            unknowns: &["native id not captured; resume by session file or id prefix"],
+            unknowns: &[
+                "native terminal id not captured; resume by session file or id prefix",
+                "Station conversation requires NAVI_PI_MODEL; tools disabled",
+                "Station persistence requires NAVI_PI_SESSION_DIR; text attachments only",
+            ],
         },
         "opencode" => Caps {
             transport: "opencode",

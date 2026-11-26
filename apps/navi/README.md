@@ -818,3 +818,31 @@ Sources: [LiquidAI d1](https://huggingface.co/LiquidAI/d1-3B),
 [desktop portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html),
 [KWin API](https://develop.kde.org/docs/plasma/kwin/api/),
 [Firefox automation](https://firefox-source-docs.mozilla.org/testing/geckodriver/Usage.html).
+
+## Native Pi conversation route (experimental)
+
+The Pi choice in the conversation selector uses Pi's native JSONL RPC, not pi-acp.
+Automatic retries and automatic compaction are disabled with acknowledged RPC setup before
+any prompt, so background model calls cannot continue outside the turn budget.
+Configure `NAVI_PI_MODEL=provider/model` explicitly and optionally `NAVI_PI_EXECUTABLE`.
+There is no fallback to an OpenCode model or provider. The first implementation disables
+Pi tools, extensions, skill/context discovery. It is conversation-only.
+Explicit UTF-8 text attachments (txt, md, json, csv, log, yaml, yml) are supported,
+up to 4 files, 8 KiB each and 24 KiB total. Binary controls, symlinks, unsupported
+formats and oversized files fail clearly; no automatic file discovery occurs.
+Text is labelled as untrusted data, not instructions or approval. Streamed answers are correlated
+with Station turns, and failures are errors rather than empty success replies.
+
+The existing OpenCode route remains explicit and unchanged. Pi is not yet the default,
+and approved tool execution remains work in progress.
+
+Pi is ephemeral by default. Optional `NAVI_PI_SESSION_DIR` must be an absolute, user-owned
+0700 directory. Sessions are isolated by canonical project path and model, use private files,
+and take a nonblocking writer lock. Do not point it at shared directories. Subprocess fixtures
+verify path reuse. An optional real Pi 0.85.1 test verifies two launches against a loopback
+OpenAI-compatible fixture and confirms prior messages are sent on the second turn.
+This does not verify a real hosted model or authorize its costs.
+Offline tests use fake subprocesses: `python3 apps/navi/scripts/test_pi_rpc.py` and,
+after building navid, `python3 apps/navi/scripts/test_pi_station.py`.
+For the actual installed runtime with no external inference:
+`python3 apps/navi/scripts/test_pi_real_rpc.py --pi /absolute/path/to/pi`.
