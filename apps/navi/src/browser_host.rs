@@ -1,12 +1,12 @@
 use crate::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Arc;
-use std::sync::{mpsc, Mutex};
+use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 pub struct BrowserHost {
@@ -303,16 +303,19 @@ mod tests {
         }"#,
         );
         host.permission("navi-perm-late");
-        assert!(host
-            .reply("navi-perm-late", "allow")
-            .unwrap_err()
-            .contains("unknown"));
+        assert!(
+            host.reply("navi-perm-late", "allow")
+                .unwrap_err()
+                .contains("unknown")
+        );
         assert!(host.child.lock().unwrap().try_wait().unwrap().is_some());
         let _ = std::fs::remove_file(path);
     }
     #[test]
     fn output_burst_fails_closed_and_reaps_child() {
-        let (host,path)=fixture("for(let i=0;i<200;i++)console.log(JSON.stringify({type:'delta',text:'x'}));setInterval(()=>{},1000)");
+        let (host, path) = fixture(
+            "for(let i=0;i<200;i++)console.log(JSON.stringify({type:'delta',text:'x'}));setInterval(()=>{},1000)",
+        );
         std::thread::sleep(Duration::from_millis(200));
         assert!(host.child.lock().unwrap().try_wait().unwrap().is_some());
         host.stop();

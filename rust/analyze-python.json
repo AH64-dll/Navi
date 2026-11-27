@@ -1,0 +1,1703 @@
+{
+  "schema": "rust-anything/analyze@1",
+  "language": "python",
+  "summary": {
+    "packages": 1,
+    "source_files": 17,
+    "test_files": 0,
+    "ui_files": 0,
+    "loc": 6708,
+    "units": 17,
+    "ready": 9,
+    "caution": 8,
+    "blocked": 0,
+    "keep": 0,
+    "parse_errors": 0
+  },
+  "packages": [
+    {
+      "name": "workers",
+      "dir": "",
+      "order": 1,
+      "runtime": "portable",
+      "workspace_deps": [],
+      "test_files": 0,
+      "units": [
+        "acp_client.py",
+        "cloud_stt.py",
+        "desktop.py",
+        "hex_asr.py",
+        "ipc.py",
+        "mail.py",
+        "opencode_bridge.py",
+        "opencode_contract.py",
+        "opencode_gateway.py",
+        "persona.py",
+        "pi_rpc.py",
+        "speech_config.py",
+        "speech_out.py",
+        "tts.py",
+        "voice.py",
+        "voice_stream.py",
+        "windows.py"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "id": "acp_client.py",
+      "package": "workers",
+      "files": [
+        "acp_client.py"
+      ],
+      "loc": 384,
+      "wave": 0,
+      "readiness": 60,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 4,
+          "samples": [
+            "acp_client.py:182",
+            "acp_client.py:184",
+            "acp_client.py:369"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 30,
+          "samples": [
+            "acp_client.py:22",
+            "acp_client.py:30",
+            "acp_client.py:35"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "acp_client.py:68",
+            "acp_client.py:70",
+            "acp_client.py:319"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "acp_client.py:18"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 21,
+          "samples": [
+            "acp_client.py:26",
+            "acp_client.py:58",
+            "acp_client.py:75"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "acp_client.py:207"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 4.4,
+      "priority": 49,
+      "exports": 3,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "cloud_stt.py",
+      "package": "workers",
+      "files": [
+        "cloud_stt.py"
+      ],
+      "loc": 243,
+      "wave": 1,
+      "readiness": 69,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 5,
+          "samples": [
+            "cloud_stt.py:90",
+            "cloud_stt.py:120",
+            "cloud_stt.py:151"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 22,
+          "samples": [
+            "cloud_stt.py:55",
+            "cloud_stt.py:59",
+            "cloud_stt.py:68"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 6,
+          "samples": [
+            "cloud_stt.py:128",
+            "cloud_stt.py:145",
+            "cloud_stt.py:163"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "cloud_stt.py:102",
+            "cloud_stt.py:279"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "speech_config.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 5.8,
+      "priority": 56,
+      "exports": 5,
+      "bridgeable": 5,
+      "notes": [
+        "Imports `speech_config.py`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "desktop.py",
+      "package": "workers",
+      "files": [
+        "desktop.py"
+      ],
+      "loc": 246,
+      "wave": 2,
+      "readiness": 66,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "desktop.py:51",
+            "desktop.py:123"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 15,
+          "samples": [
+            "desktop.py:24",
+            "desktop.py:48",
+            "desktop.py:54"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "desktop.py:74",
+            "desktop.py:75"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 23,
+          "samples": [
+            "desktop.py:65",
+            "desktop.py:89",
+            "desktop.py:92"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "desktop.py:151",
+            "desktop.py:195"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "desktop.py:232"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "ipc.py",
+        "windows.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "gi"
+      ],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 5.7,
+      "priority": 55,
+      "exports": 2,
+      "bridgeable": 1,
+      "notes": [
+        "1 PyPI dependencies not in the crate table: check them by hand.",
+        "Imports `ipc.py`, `windows.py`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "hex_asr.py",
+      "package": "workers",
+      "files": [
+        "hex_asr.py"
+      ],
+      "loc": 138,
+      "wave": 0,
+      "readiness": 88,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "hex_asr.py:46",
+            "hex_asr.py:51",
+            "hex_asr.py:86"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "hex_asr.py:54",
+            "hex_asr.py:80",
+            "hex_asr.py:90"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.7,
+      "priority": 55,
+      "exports": 6,
+      "bridgeable": 4,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "ipc.py",
+      "package": "workers",
+      "files": [
+        "ipc.py"
+      ],
+      "loc": 18,
+      "wave": 0,
+      "readiness": 92,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "ipc.py:16"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "ipc.py:24"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 48,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "mail.py",
+      "package": "workers",
+      "files": [
+        "mail.py"
+      ],
+      "loc": 325,
+      "wave": 1,
+      "readiness": 59,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 4,
+          "samples": [
+            "mail.py:269",
+            "mail.py:302",
+            "mail.py:322"
+          ]
+        },
+        {
+          "risk": "dynamic-regex",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "mail.py:194",
+            "mail.py:314"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 26,
+          "samples": [
+            "mail.py:55",
+            "mail.py:85",
+            "mail.py:91"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "mail.py:51",
+            "mail.py:151"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 27,
+          "samples": [
+            "mail.py:81",
+            "mail.py:92",
+            "mail.py:95"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "persona.py",
+        "speech_config.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 4.3,
+      "priority": 48,
+      "exports": 24,
+      "bridgeable": 21,
+      "notes": [
+        "Imports `persona.py`, `speech_config.py`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "opencode_bridge.py",
+      "package": "workers",
+      "files": [
+        "opencode_bridge.py"
+      ],
+      "loc": 295,
+      "wave": 2,
+      "readiness": 80,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 9,
+          "samples": [
+            "opencode_bridge.py:41",
+            "opencode_bridge.py:58",
+            "opencode_bridge.py:64"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "opencode_bridge.py:259",
+            "opencode_bridge.py:296"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 10,
+          "samples": [
+            "opencode_bridge.py:47",
+            "opencode_bridge.py:215",
+            "opencode_bridge.py:233"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "opencode_contract.py",
+        "opencode_gateway.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 1.7,
+      "priority": 53,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `opencode_contract.py`, `opencode_gateway.py`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "opencode_contract.py",
+      "package": "workers",
+      "files": [
+        "opencode_contract.py"
+      ],
+      "loc": 213,
+      "wave": 1,
+      "readiness": 66,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "opencode_contract.py:119",
+            "opencode_contract.py:247"
+          ]
+        },
+        {
+          "risk": "unordered-iteration",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "opencode_contract.py:82",
+            "opencode_contract.py:109"
+          ]
+        },
+        {
+          "risk": "dynamic-regex",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "opencode_contract.py:187"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 22,
+          "samples": [
+            "opencode_contract.py:94",
+            "opencode_contract.py:99",
+            "opencode_contract.py:107"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "opencode_contract.py:154"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "opencode_gateway.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 6.6,
+      "priority": 56,
+      "exports": 6,
+      "bridgeable": 5,
+      "notes": [
+        "Imports `opencode_gateway.py`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "opencode_gateway.py",
+      "package": "workers",
+      "files": [
+        "opencode_gateway.py"
+      ],
+      "loc": 1699,
+      "wave": 0,
+      "readiness": 5,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 7,
+          "samples": [
+            "opencode_gateway.py:247",
+            "opencode_gateway.py:524",
+            "opencode_gateway.py:1061"
+          ]
+        },
+        {
+          "risk": "unordered-iteration",
+          "severity": "high",
+          "count": 5,
+          "samples": [
+            "opencode_gateway.py:132",
+            "opencode_gateway.py:1429",
+            "opencode_gateway.py:1470"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 131,
+          "samples": [
+            "opencode_gateway.py:173",
+            "opencode_gateway.py:178",
+            "opencode_gateway.py:189"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "opencode_gateway.py:172"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "opencode_gateway.py:980"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 73,
+          "samples": [
+            "opencode_gateway.py:184",
+            "opencode_gateway.py:201",
+            "opencode_gateway.py:224"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 16,
+          "samples": [
+            "opencode_gateway.py:351",
+            "opencode_gateway.py:382",
+            "opencode_gateway.py:576"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 2.7,
+      "priority": 13,
+      "exports": 6,
+      "bridgeable": 2,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "persona.py",
+      "package": "workers",
+      "files": [
+        "persona.py"
+      ],
+      "loc": 224,
+      "wave": 0,
+      "readiness": 57,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 8,
+          "samples": [
+            "persona.py:215",
+            "persona.py:232",
+            "persona.py:235"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "persona.py:36",
+            "persona.py:38"
+          ]
+        },
+        {
+          "risk": "unordered-iteration",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "persona.py:39"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 10,
+          "samples": [
+            "persona.py:64",
+            "persona.py:71",
+            "persona.py:107"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "persona.py:74",
+            "persona.py:96",
+            "persona.py:108"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 7.1,
+      "priority": 53,
+      "exports": 9,
+      "bridgeable": 5,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "pi_rpc.py",
+      "package": "workers",
+      "files": [
+        "pi_rpc.py"
+      ],
+      "loc": 463,
+      "wave": 0,
+      "readiness": 49,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "pi_rpc.py:513"
+          ]
+        },
+        {
+          "risk": "unordered-iteration",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "pi_rpc.py:412"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 32,
+          "samples": [
+            "pi_rpc.py:31",
+            "pi_rpc.py:33",
+            "pi_rpc.py:38"
+          ]
+        },
+        {
+          "risk": "generators",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "pi_rpc.py:347",
+            "pi_rpc.py:382"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "pi_rpc.py:99",
+            "pi_rpc.py:100",
+            "pi_rpc.py:208"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "pi_rpc.py:67"
+          ]
+        },
+        {
+          "risk": "reflection",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "pi_rpc.py:507"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 70,
+          "samples": [
+            "pi_rpc.py:87",
+            "pi_rpc.py:95",
+            "pi_rpc.py:103"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "pi_rpc.py:177",
+            "pi_rpc.py:370",
+            "pi_rpc.py:372"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 4.3,
+      "priority": 43,
+      "exports": 7,
+      "bridgeable": 3,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "speech_config.py",
+      "package": "workers",
+      "files": [
+        "speech_config.py"
+      ],
+      "loc": 161,
+      "wave": 0,
+      "readiness": 79,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "unordered-iteration",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "speech_config.py:190"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "speech_config.py:105",
+            "speech_config.py:139",
+            "speech_config.py:149"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "speech_config.py:60",
+            "speech_config.py:69",
+            "speech_config.py:77"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 4,
+      "density": 3.7,
+      "priority": 57,
+      "exports": 13,
+      "bridgeable": 13,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "speech_out.py",
+      "package": "workers",
+      "files": [
+        "speech_out.py"
+      ],
+      "loc": 65,
+      "wave": 2,
+      "readiness": 93,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "speech_out.py:42"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "speech_out.py:24",
+            "speech_out.py:56"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "speech_out.py:33",
+            "speech_out.py:34"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "persona.py",
+        "tts.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 54,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `persona.py`, `tts.py`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "tts.py",
+      "package": "workers",
+      "files": [
+        "tts.py"
+      ],
+      "loc": 345,
+      "wave": 1,
+      "readiness": 65,
+      "status": "ready",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 19,
+          "samples": [
+            "tts.py:102",
+            "tts.py:107",
+            "tts.py:116"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "tts.py:135"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "tts.py:412"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 14,
+          "samples": [
+            "tts.py:145",
+            "tts.py:155",
+            "tts.py:162"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "persona.py",
+        "speech_config.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "edge-tts",
+        "piper"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 3.2,
+      "priority": 49,
+      "exports": 5,
+      "bridgeable": 5,
+      "notes": [
+        "2 PyPI dependencies not in the crate table: check them by hand.",
+        "Imports `persona.py`, `speech_config.py`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "voice.py",
+      "package": "workers",
+      "files": [
+        "voice.py"
+      ],
+      "loc": 1141,
+      "wave": 3,
+      "readiness": 9,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "unordered-iteration",
+          "severity": "high",
+          "count": 10,
+          "samples": [
+            "voice.py:247",
+            "voice.py:258",
+            "voice.py:262"
+          ]
+        },
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 6,
+          "samples": [
+            "voice.py:286",
+            "voice.py:288",
+            "voice.py:436"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 43,
+          "samples": [
+            "voice.py:67",
+            "voice.py:123",
+            "voice.py:128"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 7,
+          "samples": [
+            "voice.py:226",
+            "voice.py:903",
+            "voice.py:997"
+          ]
+        },
+        {
+          "risk": "division-semantics",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "voice.py:824"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 28,
+          "samples": [
+            "voice.py:43",
+            "voice.py:53",
+            "voice.py:63"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "voice.py:252"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "voice.py:81"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "cloud_stt.py",
+        "hex_asr.py",
+        "ipc.py",
+        "speech_config.py",
+        "speech_out.py",
+        "tts.py",
+        "voice_stream.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "needle",
+        "numpy",
+        "sherpa-onnx",
+        "sounddevice"
+      ],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 3.3,
+      "priority": 16,
+      "exports": 41,
+      "bridgeable": 33,
+      "notes": [
+        "3 PyPI dependencies not in the crate table: check them by hand.",
+        "Imports `cloud_stt.py`, `hex_asr.py`, `ipc.py`, `speech_config.py`, `speech_out.py`, `tts.py`, `voice_stream.py`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "voice_stream.py",
+      "package": "workers",
+      "files": [
+        "voice_stream.py"
+      ],
+      "loc": 691,
+      "wave": 0,
+      "readiness": 46,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 8,
+          "samples": [
+            "voice_stream.py:189",
+            "voice_stream.py:310",
+            "voice_stream.py:361"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 23,
+          "samples": [
+            "voice_stream.py:56",
+            "voice_stream.py:99",
+            "voice_stream.py:133"
+          ]
+        },
+        {
+          "risk": "concurrency",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "voice_stream.py:657",
+            "voice_stream.py:731",
+            "voice_stream.py:783"
+          ]
+        },
+        {
+          "risk": "integer-semantics",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "voice_stream.py:100"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 8,
+          "samples": [
+            "voice_stream.py:412",
+            "voice_stream.py:497",
+            "voice_stream.py:667"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "sherpa-onnx"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 2.6,
+      "priority": 33,
+      "exports": 12,
+      "bridgeable": 2,
+      "notes": [
+        "1 PyPI dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "windows.py",
+      "package": "workers",
+      "files": [
+        "windows.py"
+      ],
+      "loc": 57,
+      "wave": 1,
+      "readiness": 88,
+      "status": "caution",
+      "bridge": "pyo3",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "windows.py:11",
+            "windows.py:20"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "windows.py:33",
+            "windows.py:46",
+            "windows.py:48"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "ipc.py"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "gi"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 51,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 PyPI dependencies not in the crate table: check them by hand.",
+        "Imports `ipc.py`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    }
+  ],
+  "start_here": [
+    "speech_config.py",
+    "cloud_stt.py",
+    "opencode_contract.py",
+    "hex_asr.py",
+    "desktop.py",
+    "persona.py",
+    "tts.py",
+    "mail.py"
+  ],
+  "dependencies": [
+    {
+      "name": "gi",
+      "used_by": 2,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "sherpa-onnx",
+      "used_by": 2,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "edge-tts",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "needle",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "piper",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "sounddevice",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "numpy",
+      "used_by": 2,
+      "crates": "ndarray",
+      "fit": "partial",
+      "note": "Broadcasting and dtype rules differ; check numerics."
+    }
+  ],
+  "whole_app": {
+    "shape": "server",
+    "entry_points": [
+      {
+        "kind": "cli",
+        "path": "acp_client.py",
+        "evidence": "`if __name__ == \"__main__\"` at acp_client.py:425"
+      },
+      {
+        "kind": "server",
+        "path": "desktop.py",
+        "evidence": "`.listen(` at desktop.py:169"
+      },
+      {
+        "kind": "cli",
+        "path": "hex_asr.py",
+        "evidence": "`if __name__ == \"__main__\"` at hex_asr.py:159"
+      },
+      {
+        "kind": "cli",
+        "path": "mail.py",
+        "evidence": "`if __name__ == \"__main__\"` at mail.py:395"
+      },
+      {
+        "kind": "server",
+        "path": "opencode_bridge.py",
+        "evidence": "`.listen(` at opencode_bridge.py:283"
+      },
+      {
+        "kind": "cli",
+        "path": "opencode_contract.py",
+        "evidence": "`if __name__ == \"__main__\"` at opencode_contract.py:246"
+      },
+      {
+        "kind": "cli",
+        "path": "opencode_gateway.py",
+        "evidence": "`if __name__ == \"__main__\"` at opencode_gateway.py:1897"
+      },
+      {
+        "kind": "cli",
+        "path": "persona.py",
+        "evidence": "`if __name__ == \"__main__\"` at persona.py:258"
+      },
+      {
+        "kind": "cli",
+        "path": "pi_rpc.py",
+        "evidence": "`if __name__ == \"__main__\"` at pi_rpc.py:511"
+      },
+      {
+        "kind": "cli",
+        "path": "speech_out.py",
+        "evidence": "`if __name__ == \"__main__\"` at speech_out.py:74"
+      },
+      {
+        "kind": "cli",
+        "path": "voice.py",
+        "evidence": "`if __name__ == \"__main__\"` at voice.py:1391"
+      },
+      {
+        "kind": "cli",
+        "path": "windows.py",
+        "evidence": "`if __name__ == '__main__'` at windows.py:62"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "gi",
+        "names": [
+          "gi"
+        ],
+        "declared": false,
+        "used_by": 2,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "sherpa-onnx",
+        "names": [
+          "sherpa-onnx"
+        ],
+        "declared": false,
+        "used_by": 2,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "edge-tts",
+        "names": [
+          "edge-tts"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "needle",
+        "names": [
+          "needle"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "piper",
+        "names": [
+          "piper"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "sounddevice",
+        "names": [
+          "sounddevice"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "numpy",
+        "names": [
+          "numpy"
+        ],
+        "declared": false,
+        "used_by": 2,
+        "crates": "ndarray",
+        "fit": "partial",
+        "note": "Broadcasting and dtype rules differ; check numerics."
+      }
+    ],
+    "pieces": [
+      {
+        "wave": 0,
+        "units": [
+          "acp_client.py"
+        ],
+        "loc": 384,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "hex_asr.py"
+        ],
+        "loc": 138,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "ipc.py"
+        ],
+        "loc": 18,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "opencode_gateway.py"
+        ],
+        "loc": 1699,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "persona.py"
+        ],
+        "loc": 224,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "pi_rpc.py"
+        ],
+        "loc": 463,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "speech_config.py"
+        ],
+        "loc": 161,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "voice_stream.py"
+        ],
+        "loc": 691,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "cloud_stt.py"
+        ],
+        "loc": 243,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "mail.py"
+        ],
+        "loc": 325,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "opencode_contract.py"
+        ],
+        "loc": 213,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "tts.py"
+        ],
+        "loc": 345,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "windows.py"
+        ],
+        "loc": 57,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "desktop.py"
+        ],
+        "loc": 246,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "opencode_bridge.py"
+        ],
+        "loc": 295,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "speech_out.py"
+        ],
+        "loc": 65,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "voice.py"
+        ],
+        "loc": 1141,
+        "tangled": false
+      }
+    ],
+    "decisions": [
+      {
+        "id": "D1",
+        "topic": "shape",
+        "question": "The app is a server, entered through acp_client.py, desktop.py, hex_asr.py, mail.py, opencode_bridge.py, opencode_contract.py, opencode_gateway.py, persona.py, pi_rpc.py, speech_out.py, voice.py, windows.py. Port every entry point, in that shape?",
+        "recommendation": "Yes: an axum front door (`app front-door`) takes the server over first"
+      },
+      {
+        "id": "D2",
+        "topic": "dependency gi",
+        "question": "Which crate replaces gi (used by 2 units)?",
+        "recommendation": "Research it against primary sources into rust/research/gi.md before porting what uses it"
+      },
+      {
+        "id": "D3",
+        "topic": "dependency sherpa-onnx",
+        "question": "Which crate replaces sherpa-onnx (used by 2 units)?",
+        "recommendation": "Research it against primary sources into rust/research/sherpa-onnx.md before porting what uses it"
+      },
+      {
+        "id": "D4",
+        "topic": "dependency edge-tts",
+        "question": "Which crate replaces edge-tts (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/edge-tts.md before porting what uses it"
+      },
+      {
+        "id": "D5",
+        "topic": "dependency needle",
+        "question": "Which crate replaces needle (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/needle.md before porting what uses it"
+      },
+      {
+        "id": "D6",
+        "topic": "dependency piper",
+        "question": "Which crate replaces piper (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/piper.md before porting what uses it"
+      },
+      {
+        "id": "D7",
+        "topic": "dependency sounddevice",
+        "question": "Which crate replaces sounddevice (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/sounddevice.md before porting what uses it"
+      },
+      {
+        "id": "D8",
+        "topic": "dependency numpy",
+        "question": "numpy maps to ndarray only in part (used by 2 units; Broadcasting and dtype rules differ; check numerics). Use it?",
+        "recommendation": "Use ndarray, and record cases for the behavior it does not cover"
+      }
+    ]
+  }
+}

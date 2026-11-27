@@ -125,9 +125,7 @@ pub fn caps(harness: &str) -> Caps {
             cancel: true,
             approvals: true,
             models: false,
-            unknowns: &[
-                "no documented id preseed; native id scraped from rollout jsonl",
-            ],
+            unknowns: &["no documented id preseed; native id scraped from rollout jsonl"],
         },
         "agy" => Caps {
             transport: "tmux",
@@ -310,9 +308,9 @@ pub fn needs_input(harness: &str, tail: &str) -> bool {
         return false;
     };
     let last = last.trim();
-    prompt_glyphs(harness)
-        .iter()
-        .any(|glyph| last == *glyph || last.ends_with(&format!("{glyph} ")) || last.ends_with(glyph))
+    prompt_glyphs(harness).iter().any(|glyph| {
+        last == *glyph || last.ends_with(&format!("{glyph} ")) || last.ends_with(glyph)
+    })
 }
 
 /// Interrupt keys: soft interrupts a turn, hard interrupts the harness.
@@ -367,13 +365,17 @@ pub fn resolve(executable: &str, launch_dirs: &[String]) -> Result<String> {
     let fail = |state: ExeState, searched: String| -> Result<String> {
         Err(match state {
             ExeState::NotFound => {
-                format!("{executable} is not installed or is absent from PATH (searched: {searched}). Install it, or set its full path under Settings, Harness profiles.")
+                format!(
+                    "{executable} is not installed or is absent from PATH (searched: {searched}). Install it, or set its full path under Settings, Harness profiles."
+                )
             }
             ExeState::NotExecutable => {
                 format!("{executable} was found but is not executable (searched: {searched})")
             }
             ExeState::IsDirectory => {
-                format!("{executable} resolves to a directory, not an executable (searched: {searched})")
+                format!(
+                    "{executable} resolves to a directory, not an executable (searched: {searched})"
+                )
             }
             ExeState::Ok => unreachable!(),
         })
@@ -540,8 +542,20 @@ pub fn valid_env_key(key: &str) -> bool {
 pub fn secret_looking(key: &str) -> bool {
     let key = key.to_ascii_uppercase().replace(['-', '.'], "_");
     [
-        "TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "APIKEY", "AUTH", "CREDENTIAL",
-        "PRIVATE", "COOKIE", "SESSION_KEY", "BEARER", "KEYRING", "CERT",
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "PASSWD",
+        "API_KEY",
+        "APIKEY",
+        "AUTH",
+        "CREDENTIAL",
+        "PRIVATE",
+        "COOKIE",
+        "SESSION_KEY",
+        "BEARER",
+        "KEYRING",
+        "CERT",
     ]
     .iter()
     .any(|needle| key.contains(needle))
@@ -782,8 +796,7 @@ fn scrape_id(home: &Path, adapter: &str, path: &Path, cwd: &str) -> Option<Strin
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 return None;
             }
-            let value: Value =
-                serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+            let value: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
             let id = value["sessionId"]
                 .as_str()
                 .or_else(|| value["session_id"].as_str())?
@@ -812,8 +825,7 @@ fn scrape_id(home: &Path, adapter: &str, path: &Path, cwd: &str) -> Option<Strin
             if path.file_name().and_then(|n| n.to_str()) != Some("last_conversations.json") {
                 return None;
             }
-            let value: Value =
-                serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+            let value: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
             let key = if cwd.is_empty() { "unknown" } else { cwd };
             value
                 .get(key)
@@ -860,9 +872,9 @@ pub fn capture_native_id(
         return None;
     }
     if !registry
-        && roots.iter().all(|root| {
-            !root.exists() && !root.parent().is_some_and(|parent| parent.exists())
-        })
+        && roots
+            .iter()
+            .all(|root| !root.exists() && !root.parent().is_some_and(|parent| parent.exists()))
     {
         return None;
     }
@@ -947,9 +959,9 @@ fn claude_external(home: &Path) -> Vec<Value> {
     files.sort_by_key(|p| std::cmp::Reverse(file_mtime(p)));
     let mut rows = Vec::new();
     for file in files.into_iter().take(EXTERNAL_ROW_LIMIT) {
-        let Ok(value) = serde_json::from_str::<Value>(
-            &std::fs::read_to_string(&file).unwrap_or_default(),
-        ) else {
+        let Ok(value) =
+            serde_json::from_str::<Value>(&std::fs::read_to_string(&file).unwrap_or_default())
+        else {
             continue;
         };
         let Some(native_id) = value["sessionId"]
@@ -1075,7 +1087,12 @@ fn chrono_like(stamp: &str) -> Option<u64> {
         d.next()?.parse().ok()?,
         d.next()?.parse().ok()?,
     );
-    let time = time.trim_end_matches('Z').split('+').next()?.split('-').next()?;
+    let time = time
+        .trim_end_matches('Z')
+        .split('+')
+        .next()?
+        .split('-')
+        .next()?;
     let mut t = time.split(':');
     let (h, min, s): (i64, i64, f64) = (
         t.next()?.parse().ok()?,
@@ -1149,7 +1166,10 @@ pub fn uuid() -> String {
 /// timeout kills everything it started: a surviving grandchild would keep the
 /// pipes open and block the caller far past the deadline. Output is truncated
 /// at the deadline rather than waited for.
-pub fn run_timeout(command: &mut Command, timeout: Duration) -> std::io::Result<std::process::Output> {
+pub fn run_timeout(
+    command: &mut Command,
+    timeout: Duration,
+) -> std::io::Result<std::process::Output> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

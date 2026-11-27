@@ -19,7 +19,8 @@ const PROTOCOL: &str = "2025-06-18";
 const SUPPORTED: [&str; 4] = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 
 /// Tool names as Claude Code exposes them, for `--allowedTools`.
-const CLAUDE_TOOLS: &str = "mcp__navi__navi_progress,mcp__navi__navi_report_progress,mcp__navi__navi_track_task";
+const CLAUDE_TOOLS: &str =
+    "mcp__navi__navi_progress,mcp__navi__navi_report_progress,mcp__navi__navi_track_task";
 
 /// Server instructions: what the model is told when the link starts.
 pub const INSTRUCTIONS: &str = "Navi is the user's desktop station. It tracks how complete this project is, overall and per part, and shows it on screen and by voice. Keep it accurate: after finishing meaningful work, or when asked how far along the project is, call navi_progress to see what is recorded, then navi_report_progress with your honest estimate for each part you assessed and for the whole project. Use navi_track_task when you start, finish, or get blocked on a concrete task. Evidence must name what you checked (files read, tests run, behavior verified). Never inflate: untested or stubbed work is not done.";
@@ -137,7 +138,11 @@ fn call_tool(params: &Value) -> Value {
     // A named project overrides the one the pane or working directory gives.
     let context = || {
         let mut request = context();
-        if let Some(project) = arguments["project"].as_str().map(str::trim).filter(|name| !name.is_empty()) {
+        if let Some(project) = arguments["project"]
+            .as_str()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
             request["project_id"] = json!(project);
         }
         request
@@ -185,8 +190,14 @@ fn handle(message: Value) -> Option<Value> {
     let method = message["method"].as_str()?;
     let result = match method {
         "initialize" => {
-            let requested = message["params"]["protocolVersion"].as_str().unwrap_or(PROTOCOL);
-            let version = if SUPPORTED.contains(&requested) { requested } else { PROTOCOL };
+            let requested = message["params"]["protocolVersion"]
+                .as_str()
+                .unwrap_or(PROTOCOL);
+            let version = if SUPPORTED.contains(&requested) {
+                requested
+            } else {
+                PROTOCOL
+            };
             Ok(json!({
                 "protocolVersion": version,
                 "capabilities": {"tools": {"listChanged": false}},
@@ -232,7 +243,8 @@ pub fn mcp() -> Result<()> {
     Ok(())
 }
 
-const PROGRESS_USAGE: &str = "navid progress                                  show this project's progress
+const PROGRESS_USAGE: &str =
+    "navid progress                                  show this project's progress
 navid progress report <percent> \"<evidence>\" [--part NAME] [--confidence 0-1]
 navid progress task <todo|in_progress|done|blocked> \"<title>\" \"<evidence>\" [--part NAME]
 Add --project NAME outside the project's folder.";
@@ -298,7 +310,11 @@ pub fn progress(args: &[String]) -> Result<()> {
             request["evidence"] = json!(positional[3..].join(" "));
             report_text(&station("progress_report", request)?)
         }
-        Some(other) => return Err(format!("Unknown progress command {other}\n{PROGRESS_USAGE}")),
+        Some(other) => {
+            return Err(format!(
+                "Unknown progress command {other}\n{PROGRESS_USAGE}"
+            ));
+        }
     };
     println!("{output}");
     Ok(())
@@ -426,7 +442,8 @@ pub fn assessment_prompt(adapter: &str, parts: &[String], previous: &str, facts:
     prompt
 }
 
-const LINK_USAGE: &str = "navid link [claude|codex|opencode|pi]   print how to link a harness started outside Navi";
+const LINK_USAGE: &str =
+    "navid link [claude|codex|opencode|pi]   print how to link a harness started outside Navi";
 
 /// This binary's path, for harness configs and pane environments. Linux
 /// reports a binary replaced while it runs (an upgrade, a rebuild) as
@@ -434,7 +451,10 @@ const LINK_USAGE: &str = "navid link [claude|codex|opencode|pi]   print how to l
 /// to name, so the marker is dropped when that path still exists.
 pub fn navid_path() -> Result<PathBuf> {
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-    if let Some(original) = exe.to_str().and_then(|text| text.strip_suffix(" (deleted)")) {
+    if let Some(original) = exe
+        .to_str()
+        .and_then(|text| text.strip_suffix(" (deleted)"))
+    {
         let original = PathBuf::from(original);
         if original.is_file() {
             return Ok(original);
@@ -545,7 +565,10 @@ pub fn link(args: &[String]) -> Result<()> {
 }
 
 fn indent(text: &str) -> String {
-    text.lines().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n")
+    text.lines()
+        .map(|line| format!("  {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Quote for a POSIX shell only when needed.

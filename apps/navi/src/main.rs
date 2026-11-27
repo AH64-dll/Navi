@@ -5,6 +5,7 @@ mod chief;
 mod desk;
 mod detector;
 mod link;
+mod native_runtime;
 mod sessions;
 mod store;
 
@@ -25,8 +26,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub type Result<T, E = String> = std::result::Result<T, E>;
 const MAX_MESSAGE: usize = 4 * 1024 * 1024;
 /// What a client says when the station socket is missing or refused.
-pub const DAEMON_DOWN: &str =
-    "Navi's daemon is not running. Start it with: systemctl --user start navi-station (or: navid serve)";
+pub const DAEMON_DOWN: &str = "Navi's daemon is not running. Start it with: systemctl --user start navi-station (or: navid serve)";
 /// Diagnostic window for the RAM tier of the event feed (BUG-098): one poll's
 /// worth of history, replaced by a coalesced producer so it cannot overflow.
 const EVENT_LIMIT: usize = 100;
@@ -46,7 +46,7 @@ const LEGACY_NAVI_PROMPTS: [&str; 4] = [
 ];
 /// Bumped when a voice default changes and existing installs should get it once.
 const VOICE_DEFAULTS: u64 = 2;
-pub const DEFAULT_ASSISTANT_MODEL: &str ="commandcode/deepseek/deepseek-v4.1-flash";
+pub const DEFAULT_ASSISTANT_MODEL: &str = "commandcode/deepseek/deepseek-v4.1-flash";
 pub const DEFAULT_ASSISTANT_AGENT: &str = "navi";
 pub const AGENT_FILE: &str = "navi.md";
 
@@ -167,7 +167,9 @@ fn command_request_id(value: &Value) -> String {
         .as_str()
         .filter(|text| {
             (1..=64).contains(&text.len())
-                && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                && text
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         })
         .map(str::to_string)
         .unwrap_or_else(|| format!("cmd-{}", id()))
@@ -315,10 +317,18 @@ impl App {
         // no profile uses that id or executable, so one the user removed or
         // renamed under another id is not doubled.
         if let Some(profiles) = settings["profiles"].as_array_mut()
-            && !profiles.iter().any(|profile| profile["id"] == "opencode" || profile["executable"] == "opencode")
+            && !profiles
+                .iter()
+                .any(|profile| profile["id"] == "opencode" || profile["executable"] == "opencode")
         {
-            let at = profiles.iter().position(|profile| profile["id"] == "terminal").unwrap_or(profiles.len());
-            profiles.insert(at, json!({"id":"opencode","name":"OpenCode","executable":"opencode","args":[]}));
+            let at = profiles
+                .iter()
+                .position(|profile| profile["id"] == "terminal")
+                .unwrap_or(profiles.len());
+            profiles.insert(
+                at,
+                json!({"id":"opencode","name":"OpenCode","executable":"opencode","args":[]}),
+            );
         }
         if settings["persona"] == "jarvis" || settings["persona"].is_null() {
             settings["persona"] = json!("navi");
@@ -349,12 +359,12 @@ impl App {
         if let Some(profiles) = settings["profiles"].as_array_mut() {
             for profile in profiles.iter_mut() {
                 if profile["harness"].is_null() {
-                    profile["harness"] = json!(std::path::Path::new(
-                        profile["executable"].as_str().unwrap_or("")
-                    )
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("shell"));
+                    profile["harness"] = json!(
+                        std::path::Path::new(profile["executable"].as_str().unwrap_or(""))
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("shell")
+                    );
                 }
                 if profile["args"].is_null() {
                     profile["args"] = json!([]);
@@ -531,13 +541,19 @@ impl App {
         // answer: the daemon keeps the row, under the id the UI would use, so
         // the chat shows it after the window opens (or replaces it if open).
         if kind == "reply"
-            && let Some(request) = details["request_id"].as_str().filter(|id| id.starts_with("cmd-"))
+            && let Some(request) = details["request_id"]
+                .as_str()
+                .filter(|id| id.starts_with("cmd-"))
         {
             let text = details["text"].as_str().unwrap_or(message);
             // Beside its question first ("open Codex in acme-api" asked in Navi).
             let project = state
                 .db
-                .query_row("SELECT project_id FROM messages WHERE id=?1", [request], |row| row.get::<_, Option<String>>(0))
+                .query_row(
+                    "SELECT project_id FROM messages WHERE id=?1",
+                    [request],
+                    |row| row.get::<_, Option<String>>(0),
+                )
                 .ok()
                 .flatten()
                 .or_else(|| project_id.map(str::to_string))
@@ -750,9 +766,9 @@ impl App {
                     format!("{}-{}", slug, &id()[..4])
                 });
             if pid.len() > 80
-                || !pid
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.'))
+                || !pid.chars().all(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | '.')
+                })
             {
                 return Err(format!("Invalid profile id {pid}"));
             }
@@ -770,15 +786,12 @@ impl App {
             {
                 return Err("Launch arguments must be an array of strings".into());
             }
-            if profile["args"]
-                .as_array()
-                .is_some_and(|a| {
-                    a.iter().any(|arg| {
-                        let text = arg.as_str().unwrap_or_default();
-                        text.len() > 4096 || text.contains('\0')
-                    })
+            if profile["args"].as_array().is_some_and(|a| {
+                a.iter().any(|arg| {
+                    let text = arg.as_str().unwrap_or_default();
+                    text.len() > 4096 || text.contains('\0')
                 })
-            {
+            }) {
                 return Err("A launch argument is invalid".into());
             }
             if !matches!(profile["args_mode"].as_str(), None | Some("argv" | "shell")) {
@@ -816,7 +829,9 @@ impl App {
                 return Err("resume_default must be ask, new, or last".into());
             }
             if let Some(size) = profile["size"].as_object() {
-                let cols_ok = size["cols"].as_u64().is_none_or(|c| (20..=500).contains(&c));
+                let cols_ok = size["cols"]
+                    .as_u64()
+                    .is_none_or(|c| (20..=500).contains(&c));
                 let rows_ok = size["rows"].as_u64().is_none_or(|r| (8..=200).contains(&r));
                 if !(cols_ok && rows_ok) {
                     return Err("Profile size is out of range".into());
@@ -832,10 +847,12 @@ impl App {
                 return Err("interrupt_keys must be an array".into());
             }
             if profile["harness"].is_null() {
-                profile["harness"] = json!(std::path::Path::new(executable)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("shell"));
+                profile["harness"] = json!(
+                    std::path::Path::new(executable)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("shell")
+                );
             }
             normalized_profiles.push(profile);
         }
@@ -901,10 +918,9 @@ impl App {
             // BUG-078: sessions bound to a removed profile keep their history
             // but are flagged so the UI offers a re-link action.
             for pid in &removed {
-                let _ = state.db.execute(
-                    "UPDATE sessions SET orphan=1 WHERE profile=?1",
-                    [pid],
-                );
+                let _ = state
+                    .db
+                    .execute("UPDATE sessions SET orphan=1 WHERE profile=?1", [pid]);
             }
         }
         state
@@ -1007,21 +1023,16 @@ impl App {
         Ok(json!({"cancelled":true}))
     }
 
-    pub fn python(&self) -> PathBuf {
-        let venv = self.data.join("venv/bin/python");
-        if venv.exists() {
-            venv
-        } else {
-            PathBuf::from("python3")
-        }
+    pub fn self_exe(&self) -> PathBuf {
+        std::env::current_exe().unwrap_or_else(|_| PathBuf::from("navid"))
     }
 
     fn spawn_worker(&self, worker: &str) -> Result<Value> {
         // Isolated tests cannot open a mic or a desktop socket; the one hook is a
         // namespaced fake worker so supervision itself remains testable.
-        let script = if self.isolated {
+        let test_script = if self.isolated {
             match std::env::var("NAVI_TEST_WORKER_SCRIPT") {
-                Ok(path) => PathBuf::from(path),
+                Ok(path) => Some(PathBuf::from(path)),
                 Err(_) => {
                     return Err(
                         "Live desktop and microphone workers are disabled in isolated mode".into(),
@@ -1029,7 +1040,7 @@ impl App {
                 }
             }
         } else {
-            self.root.join(format!("workers/{worker}.py"))
+            None
         };
         let mut workers = self.workers.lock().unwrap();
         workers.retain_mut(|(_, child)| child.try_wait().ok().flatten().is_none());
@@ -1037,7 +1048,10 @@ impl App {
             && child.try_wait().ok().flatten().is_none()
         {
             let pid = child.id() as i32;
-            self.desired_workers.lock().unwrap().insert(worker.to_string());
+            self.desired_workers
+                .lock()
+                .unwrap()
+                .insert(worker.to_string());
             self.worker_started
                 .lock()
                 .unwrap()
@@ -1051,7 +1065,10 @@ impl App {
             .and_then(|value| value.trim().parse::<i32>().ok())
             && pid_is_worker(pid, worker)
         {
-            self.desired_workers.lock().unwrap().insert(worker.to_string());
+            self.desired_workers
+                .lock()
+                .unwrap()
+                .insert(worker.to_string());
             self.worker_started
                 .lock()
                 .unwrap()
@@ -1078,21 +1095,25 @@ impl App {
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(format!("The {worker} worker is already running"));
         }
-        let child = Command::new(if worker == "desktop" {
-            PathBuf::from("/usr/bin/python3")
+        let mut cmd = if let Some(script) = test_script {
+            let mut c = Command::new(script);
+            c.arg(worker);
+            c
         } else {
-            self.python()
-        })
-        .arg(script)
-        .env("NAVI_RUNTIME_DIR", &self.runtime)
-        .env("NAVI_DATA_DIR", &self.data)
-        .env("NEEDLE_TELEMETRY", "0")
-        .env("DO_NOT_TRACK", "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|error| error.to_string())?;
+            let mut c = Command::new(self.self_exe());
+            c.arg("worker").arg(worker);
+            c
+        };
+        let child = cmd
+            .env("NAVI_RUNTIME_DIR", &self.runtime)
+            .env("NAVI_DATA_DIR", &self.data)
+            .env("NEEDLE_TELEMETRY", "0")
+            .env("DO_NOT_TRACK", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|error| error.to_string())?;
         let pid = child.id() as i32;
         if let Err(error) = fs::write(&pid_file, pid.to_string()) {
             let mut child = child;
@@ -1105,7 +1126,10 @@ impl App {
             .lock()
             .unwrap()
             .push((worker.to_string(), lock));
-        self.desired_workers.lock().unwrap().insert(worker.to_string());
+        self.desired_workers
+            .lock()
+            .unwrap()
+            .insert(worker.to_string());
         self.worker_started
             .lock()
             .unwrap()
@@ -1191,7 +1215,8 @@ impl App {
 
     /// Stop every child we own and clear its pid file. Called on SIGTERM/INT.
     pub fn shutdown(&self) {
-        self.shutting_down.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutting_down
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         if let Some(host) = self.acp_host.lock().unwrap().take() {
             host.stop();
         }
@@ -1737,7 +1762,8 @@ fn response(app: &App, mut request: Value) -> Value {
     // A command keeps one id from its RPC reply through every event it causes.
     let command = op == "command" && request["params"].is_object();
     if command {
-        request["params"]["request_id"] = json!(command_request_id(&request["params"]["request_id"]));
+        request["params"]["request_id"] =
+            json!(command_request_id(&request["params"]["request_id"]));
     }
     let request_id = request["params"]["request_id"].as_str().map(str::to_string);
     match app.dispatch(request) {
@@ -1789,12 +1815,14 @@ fn serve() -> Result<()> {
         );
     }
     let watchdog = Arc::clone(&app);
-    std::thread::spawn(move || loop {
-        if TERMINATE.load(Ordering::SeqCst) {
-            watchdog.shutdown();
-            std::process::exit(0);
+    std::thread::spawn(move || {
+        loop {
+            if TERMINATE.load(Ordering::SeqCst) {
+                watchdog.shutdown();
+                std::process::exit(0);
+            }
+            std::thread::sleep(Duration::from_millis(100));
         }
-        std::thread::sleep(Duration::from_millis(100));
     });
     let prober = Arc::clone(&app);
     std::thread::spawn(move || {
@@ -1812,9 +1840,11 @@ fn serve() -> Result<()> {
         }
     });
     let supervisor = Arc::clone(&app);
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(2));
-        supervisor.supervise();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(2));
+            supervisor.supervise();
+        }
     });
     // Queued commands run under the command lock from this drain thread
     // (BUG-016); the thread is idle whenever the queue is empty.
@@ -1866,14 +1896,13 @@ fn rpc(request: Value) -> Result<Value> {
 /// `seconds`: how long to wait for the answer. A command runs a whole assistant turn.
 fn rpc_within(request: Value, seconds: u64) -> Result<Value> {
     let (_, runtime) = paths();
-    let mut socket = UnixStream::connect(runtime.join("station.sock")).map_err(|error| {
-        match error.kind() {
+    let mut socket =
+        UnixStream::connect(runtime.join("station.sock")).map_err(|error| match error.kind() {
             std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => {
                 DAEMON_DOWN.to_string()
             }
             _ => error.to_string(),
-        }
-    })?;
+        })?;
     socket
         .set_read_timeout(Some(Duration::from_secs(seconds)))
         .map_err(|e| e.to_string())?;
@@ -1891,14 +1920,22 @@ fn rpc_within(request: Value, seconds: u64) -> Result<Value> {
 /// directory, else the station's. Prints the reply.
 fn ask(text: &str) -> Result<()> {
     if text.trim().is_empty() {
-        return Err("Usage: navid ask \"<command>\", for example navid ask \"how far along are we\"".into());
+        return Err(
+            "Usage: navid ask \"<command>\", for example navid ask \"how far along are we\"".into(),
+        );
     }
     // "cli": the shell's project scopes this command only; the station's
     // remembered project (voice's default) stays as it is.
     let project = shell_project();
-    let reply = rpc_within(json!({"op":"command","params":{"text":text,"project_id":project,"source":"cli"}}), 1830)?;
+    let reply = rpc_within(
+        json!({"op":"command","params":{"text":text,"project_id":project,"source":"cli"}}),
+        1830,
+    )?;
     if reply["ok"] != true {
-        return Err(reply["error"].as_str().unwrap_or("Navi rejected the command").to_string());
+        return Err(reply["error"]
+            .as_str()
+            .unwrap_or("Navi rejected the command")
+            .to_string());
     }
     let result = &reply["result"];
     match result["reply"]["text"].as_str() {
@@ -1911,17 +1948,25 @@ fn ask(text: &str) -> Result<()> {
 
 /// The pane's project, else the registered project holding the working directory.
 fn shell_project() -> Option<String> {
-    std::env::var("NAVI_PROJECT_ID").ok().filter(|id| !id.is_empty()).or_else(|| {
-        let cwd = std::env::current_dir().ok()?;
-        let status = rpc(json!({"op":"status"})).ok()?;
-        status["result"]["projects"]
-            .as_array()?
-            .iter()
-            .filter_map(|project| Some((project["id"].as_str()?, Path::new(project["path"].as_str()?))))
-            .filter(|(_, path)| cwd.starts_with(path))
-            .max_by_key(|(_, path)| path.components().count())
-            .map(|(id, _)| id.to_string())
-    })
+    std::env::var("NAVI_PROJECT_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
+        .or_else(|| {
+            let cwd = std::env::current_dir().ok()?;
+            let status = rpc(json!({"op":"status"})).ok()?;
+            status["result"]["projects"]
+                .as_array()?
+                .iter()
+                .filter_map(|project| {
+                    Some((
+                        project["id"].as_str()?,
+                        Path::new(project["path"].as_str()?),
+                    ))
+                })
+                .filter(|(_, path)| cwd.starts_with(path))
+                .max_by_key(|(_, path)| path.components().count())
+                .map(|(id, _)| id.to_string())
+        })
 }
 
 /// `navid desk "search for cats"`: Navi's direct commands for a shell, which
@@ -1931,9 +1976,13 @@ fn desk_cli(text: &str) -> Result<()> {
         return Err("Usage: navid desk \"<command>\", for example navid desk \"search the web for flights to Cairo\"".into());
     }
     let project = shell_project();
-    let reply = rpc(json!({"op":"desk","params":{"text":text,"project_id":project,"source":"cli"}}))?;
+    let reply =
+        rpc(json!({"op":"desk","params":{"text":text,"project_id":project,"source":"cli"}}))?;
     if reply["ok"] != true {
-        return Err(reply["error"].as_str().unwrap_or("Navi rejected the command").to_string());
+        return Err(reply["error"]
+            .as_str()
+            .unwrap_or("Navi rejected the command")
+            .to_string());
     }
     println!("{}", reply["result"]["text"].as_str().unwrap_or("Done."));
     Ok(())
@@ -1986,6 +2035,9 @@ fn main() {
     let result = match args.get(1).map(String::as_str) {
         Some("serve") => serve(),
         Some("native") => native(),
+        Some("runtime") => native_runtime::cli(&args[2..]),
+        Some("worker") => native_runtime::worker_cli(&args[2..]),
+        Some("browser") => native_runtime::browser_cli(&args[2..]),
         Some("mcp") => link::mcp(),
         Some("progress") => link::progress(&args[2..]),
         Some("link") => link::link(&args[2..]),
@@ -2006,6 +2058,9 @@ fn main() {
         other => {
             let text = "navid serve                   run the station daemon
 navid native                  browser native-messaging host
+navid runtime [status|...]    inspect native Rust workspace runtime
+navid worker <name> [...]     run a native Rust worker (agent|bridge|contract|acp|pi-rpc|desktop|windows|voice|hands)
+navid browser <cmd> [...]     browser bridge CLI (serve|native-setup|diagnostics|version)
 navid mcp                     MCP server a harness starts to report progress
 navid progress [report|task]  read or report progress from a shell (navid progress -h)
 navid link [harness]          print the setup for a harness started outside Navi

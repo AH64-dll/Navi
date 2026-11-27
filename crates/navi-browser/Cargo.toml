@@ -1,0 +1,10 @@
+[package]
+name = "navi-browser"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+navi-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true

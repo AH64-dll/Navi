@@ -1,0 +1,575 @@
+{
+  "schema": "rust-anything/analyze@1",
+  "language": "ts",
+  "summary": {
+    "packages": 1,
+    "source_files": 6,
+    "test_files": 8,
+    "ui_files": 0,
+    "loc": 1773,
+    "units": 6,
+    "ready": 2,
+    "caution": 4,
+    "blocked": 0,
+    "keep": 0,
+    "parse_errors": 0
+  },
+  "packages": [
+    {
+      "name": "@earendil-works/pi-agent-core",
+      "dir": "",
+      "order": 1,
+      "runtime": "portable",
+      "workspace_deps": [],
+      "test_files": 8,
+      "units": [
+        "src/agent-loop.ts",
+        "src/agent.ts",
+        "src/index.ts",
+        "src/proxy.ts",
+        "src/stream-fn.ts",
+        "src/types.ts"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "id": "src/agent-loop.ts",
+      "package": "@earendil-works/pi-agent-core",
+      "files": [
+        "src/agent-loop.ts"
+      ],
+      "loc": 775,
+      "wave": 2,
+      "readiness": 48,
+      "status": "caution",
+      "bridge": "wasm-bindgen",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "src/agent-loop.ts:371"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 91,
+          "samples": [
+            "src/agent-loop.ts:60",
+            "src/agent-loop.ts:99",
+            "src/agent-loop.ts:111"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 9,
+          "samples": [
+            "src/agent-loop.ts:665",
+            "src/agent-loop.ts:671",
+            "src/agent-loop.ts:676"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/agent-loop.ts:35",
+            "src/agent-loop.ts:686",
+            "src/agent-loop.ts:688"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 7,
+          "samples": [
+            "src/agent-loop.ts:87",
+            "src/agent-loop.ts:91",
+            "src/agent-loop.ts:145"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "src/agent-loop.ts:368",
+            "src/agent-loop.ts:831",
+            "src/agent-loop.ts:832"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/agent-loop.ts:832"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/stream-fn.ts",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 1,
+      "fan_in": 2,
+      "density": 1.7,
+      "priority": 47,
+      "exports": 5,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Imports `src/stream-fn.ts`, `src/types.ts`: port them first, or port them together.",
+        "1 test file imports it directly.",
+        "Portable code: wasm-bindgen keeps it running in browsers and Node. It needs the wasm32-unknown-unknown target and wasm-bindgen; `bridge --kind napi` runs with what Node already has."
+      ]
+    },
+    {
+      "id": "src/agent.ts",
+      "package": "@earendil-works/pi-agent-core",
+      "files": [
+        "src/agent.ts"
+      ],
+      "loc": 497,
+      "wave": 3,
+      "readiness": 41,
+      "status": "caution",
+      "bridge": "wasm-bindgen",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 8,
+          "samples": [
+            "src/agent.ts:84",
+            "src/agent.ts:85",
+            "src/agent.ts:99"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 33,
+          "samples": [
+            "src/agent.ts:360",
+            "src/agent.ts:380",
+            "src/agent.ts:381"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 19,
+          "samples": [
+            "src/agent.ts:117",
+            "src/agent.ts:118",
+            "src/agent.ts:120"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 6,
+          "samples": [
+            "src/agent.ts:109",
+            "src/agent.ts:196",
+            "src/agent.ts:373"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/agent.ts:69",
+            "src/agent.ts:98"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 8,
+          "samples": [
+            "src/agent.ts:366",
+            "src/agent.ts:384",
+            "src/agent.ts:395"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "src/agent.ts:438",
+            "src/agent.ts:552"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/agent-loop.ts",
+        "src/stream-fn.ts",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 1.8,
+      "priority": 42,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Imports `src/agent-loop.ts`, `src/stream-fn.ts`, `src/types.ts`: port them first, or port them together.",
+        "Portable code: wasm-bindgen keeps it running in browsers and Node. It needs the wasm32-unknown-unknown target and wasm-bindgen; `bridge --kind napi` runs with what Node already has."
+      ]
+    },
+    {
+      "id": "src/index.ts",
+      "package": "@earendil-works/pi-agent-core",
+      "files": [
+        "src/index.ts"
+      ],
+      "loc": 5,
+      "wave": 4,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "wasm-bindgen",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/agent-loop.ts",
+        "src/agent.ts",
+        "src/proxy.ts",
+        "src/stream-fn.ts",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 3,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 66,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `src/agent-loop.ts`, `src/agent.ts`, `src/proxy.ts`, `src/stream-fn.ts`, `src/types.ts`: port them first, or port them together.",
+        "3 test files import it directly.",
+        "Portable code: wasm-bindgen keeps it running in browsers and Node. It needs the wasm32-unknown-unknown target and wasm-bindgen; `bridge --kind napi` runs with what Node already has."
+      ]
+    },
+    {
+      "id": "src/proxy.ts",
+      "package": "@earendil-works/pi-agent-core",
+      "files": [
+        "src/proxy.ts"
+      ],
+      "loc": 320,
+      "wave": 0,
+      "readiness": 78,
+      "status": "caution",
+      "bridge": "wasm-bindgen",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/proxy.ts:184"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "src/proxy.ts:115",
+            "src/proxy.ts:148",
+            "src/proxy.ts:165"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/proxy.ts:109",
+            "src/proxy.ts:394"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/proxy.ts:180"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 10,
+          "samples": [
+            "src/proxy.ts:147",
+            "src/proxy.ts:164",
+            "src/proxy.ts:172"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "src/proxy.ts:154",
+            "src/proxy.ts:186"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/proxy.ts:132"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 1,
+      "fan_in": 1,
+      "density": 0.9,
+      "priority": 66,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "1 test file imports it directly.",
+        "Portable code: wasm-bindgen keeps it running in browsers and Node. It needs the wasm32-unknown-unknown target and wasm-bindgen; `bridge --kind napi` runs with what Node already has."
+      ]
+    },
+    {
+      "id": "src/stream-fn.ts",
+      "package": "@earendil-works/pi-agent-core",
+      "files": [
+        "src/stream-fn.ts"
+      ],
+      "loc": 11,
+      "wave": 1,
+      "readiness": 99,
+      "status": "caution",
+      "bridge": "wasm-bindgen",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/stream-fn.ts:17"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 58,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `src/types.ts`: port it first, or port them together.",
+        "Portable code: wasm-bindgen keeps it running in browsers and Node. It needs the wasm32-unknown-unknown target and wasm-bindgen; `bridge --kind napi` runs with what Node already has."
+      ]
+    },
+    {
+      "id": "src/types.ts",
+      "package": "@earendil-works/pi-agent-core",
+      "files": [
+        "src/types.ts"
+      ],
+      "loc": 165,
+      "wave": 0,
+      "readiness": 83,
+      "status": "ready",
+      "bridge": "wasm-bindgen",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 18,
+          "samples": [
+            "src/types.ts:33",
+            "src/types.ts:155",
+            "src/types.ts:186"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 16,
+          "samples": [
+            "src/types.ts:127",
+            "src/types.ts:167",
+            "src/types.ts:175"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 4,
+      "fan_in": 4,
+      "density": 0.0,
+      "priority": 66,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "4 test files import it directly.",
+        "Portable code: wasm-bindgen keeps it running in browsers and Node. It needs the wasm32-unknown-unknown target and wasm-bindgen; `bridge --kind napi` runs with what Node already has."
+      ]
+    }
+  ],
+  "start_here": [],
+  "dependencies": [
+    {
+      "name": "@earendil-works/pi-ai",
+      "used_by": 3,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    }
+  ],
+  "whole_app": {
+    "shape": "library",
+    "entry_points": [
+      {
+        "kind": "library",
+        "path": ".",
+        "name": "@earendil-works/pi-agent-core",
+        "evidence": "no main and no server: the package's public API"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "@earendil-works/pi-ai",
+        "names": [
+          "@earendil-works/pi-ai"
+        ],
+        "declared": true,
+        "used_by": 3,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@earendil-works/pi-schema",
+        "names": [
+          "@earendil-works/pi-schema"
+        ],
+        "declared": true,
+        "used_by": 0,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      }
+    ],
+    "pieces": [
+      {
+        "wave": 0,
+        "units": [
+          "src/proxy.ts"
+        ],
+        "loc": 320,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "src/types.ts"
+        ],
+        "loc": 165,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "src/stream-fn.ts"
+        ],
+        "loc": 11,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/agent-loop.ts"
+        ],
+        "loc": 775,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "src/agent.ts"
+        ],
+        "loc": 497,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "src/index.ts"
+        ],
+        "loc": 5,
+        "tangled": false
+      }
+    ],
+    "decisions": [
+      {
+        "id": "D1",
+        "topic": "shape",
+        "question": "The app is a library, entered through @earendil-works/pi-agent-core (.). Port every entry point, in that shape?",
+        "recommendation": "Yes: the Rust crate's public API becomes the library's front door"
+      },
+      {
+        "id": "D2",
+        "topic": "dependency @earendil-works/pi-ai",
+        "question": "Which crate replaces @earendil-works/pi-ai (used by 3 units)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-ai.md before porting what uses it"
+      },
+      {
+        "id": "D3",
+        "topic": "dependency @earendil-works/pi-schema",
+        "question": "Which crate replaces @earendil-works/pi-schema (declared, no unit imports it)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-schema.md before porting what uses it"
+      }
+    ]
+  }
+}

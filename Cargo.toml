@@ -1,0 +1,38 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/navi-types",
+    "crates/navi-ai",
+    "crates/navi-agent",
+    "crates/navi-voice",
+    "crates/navi-connectors",
+    "crates/navi-browser",
+    "crates/navi-sandbox",
+    "crates/navi-hands",
+    "apps/navi",
+]
+exclude = ["rust"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+libc = "=0.2.177"
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+ureq = "=2.12.1"
+navi-types = { path = "crates/navi-types" }
+navi-ai = { path = "crates/navi-ai" }
+navi-agent = { path = "crates/navi-agent" }
+navi-voice = { path = "crates/navi-voice" }
+navi-connectors = { path = "crates/navi-connectors" }
+navi-browser = { path = "crates/navi-browser" }
+navi-sandbox = { path = "crates/navi-sandbox" }
+navi-hands = { path = "crates/navi-hands" }
+
+[profile.release]
+strip = true
+lto = "thin"

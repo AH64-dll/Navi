@@ -1,0 +1,3055 @@
+{
+  "schema": "rust-anything/analyze@1",
+  "language": "ts",
+  "summary": {
+    "packages": 1,
+    "source_files": 275,
+    "test_files": 206,
+    "ui_files": 0,
+    "loc": 27474,
+    "units": 33,
+    "ready": 20,
+    "caution": 9,
+    "blocked": 4,
+    "keep": 0,
+    "parse_errors": 0
+  },
+  "packages": [
+    {
+      "name": "@earendil-works/pi-ai",
+      "dir": "",
+      "order": 1,
+      "runtime": "node",
+      "workspace_deps": [],
+      "test_files": 206,
+      "units": [
+        "catalog/",
+        "catalog/families/",
+        "catalog/providers/",
+        "catalog/sources/",
+        "scripts/",
+        "src/api/",
+        "src/auth/",
+        "src/auth/oauth/",
+        "src/bedrock-provider.ts",
+        "src/bun-oauth.ts",
+        "src/cache-warming.ts",
+        "src/cli.ts",
+        "src/compat.ts",
+        "src/compat/",
+        "src/env-api-keys.ts",
+        "src/image-models.ts",
+        "src/images-api-registry.ts",
+        "src/images.ts",
+        "src/index.ts",
+        "src/lazy-bedrock-provider.ts",
+        "src/lazy-oauth.ts",
+        "src/legacy-api-aliases.ts",
+        "src/model-catalog.ts",
+        "src/models-store.ts",
+        "src/models.generated.ts",
+        "src/models.ts",
+        "src/oauth.ts",
+        "src/providers/",
+        "src/providers/images/",
+        "src/session-resources.ts",
+        "src/telemetry.ts",
+        "src/types.ts",
+        "src/utils/"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "id": "catalog/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "catalog/build.ts",
+        "catalog/define.ts",
+        "catalog/generate.ts",
+        "catalog/reasoning.ts"
+      ],
+      "loc": 536,
+      "wave": 2,
+      "readiness": 62,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "catalog/generate.ts:305"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 21,
+          "samples": [
+            "catalog/build.ts:89",
+            "catalog/build.ts:90",
+            "catalog/build.ts:91"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 13,
+          "samples": [
+            "catalog/build.ts:44",
+            "catalog/define.ts:23",
+            "catalog/define.ts:34"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "catalog/generate.ts:98",
+            "catalog/generate.ts:99"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 13,
+          "samples": [
+            "catalog/generate.ts:125",
+            "catalog/generate.ts:202",
+            "catalog/generate.ts:203"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 12,
+          "samples": [
+            "catalog/build.ts:111",
+            "catalog/build.ts:112",
+            "catalog/build.ts:118"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "catalog/generate.ts:144"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "catalog/families/",
+        "catalog/providers/",
+        "catalog/sources/",
+        "scripts/",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 2,
+      "fan_in": 3,
+      "density": 5.6,
+      "priority": 67,
+      "exports": 8,
+      "bridgeable": 1,
+      "notes": [
+        "Import cycle with catalog/providers/, catalog/sources/, catalog/families/: port them together.",
+        "Imports `catalog/families/`, `catalog/providers/`, `catalog/sources/`, `scripts/`, `src/types.ts`: port them first, or port them together.",
+        "2 test files import it directly."
+      ]
+    },
+    {
+      "id": "catalog/families/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "catalog/families/anthropic.ts",
+        "catalog/families/deepseek.ts",
+        "catalog/families/google.ts",
+        "catalog/families/kimi.ts",
+        "catalog/families/openai.ts"
+      ],
+      "loc": 340,
+      "wave": 2,
+      "readiness": 79,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "catalog/families/anthropic.ts:124",
+            "catalog/families/openai.ts:164"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 8,
+          "samples": [
+            "catalog/families/deepseek.ts:33",
+            "catalog/families/deepseek.ts:40",
+            "catalog/families/openai.ts:63"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "catalog/",
+        "catalog/sources/",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.6,
+      "priority": 58,
+      "exports": 14,
+      "bridgeable": 7,
+      "notes": [
+        "Import cycle with catalog/providers/, catalog/sources/, catalog/: port them together.",
+        "Imports `catalog/`, `catalog/sources/`, `src/types.ts`: port them first, or port them together."
+      ]
+    },
+    {
+      "id": "catalog/providers/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "catalog/providers/amazon-bedrock.ts",
+        "catalog/providers/ant-ling.ts",
+        "catalog/providers/anthropic.ts",
+        "catalog/providers/azure.ts",
+        "catalog/providers/baseten.ts",
+        "catalog/providers/cerebras.ts",
+        "catalog/providers/cloudflare-ai-gateway.ts",
+        "catalog/providers/cloudflare-workers-ai.ts",
+        "catalog/providers/deepseek.ts",
+        "catalog/providers/fireworks.ts",
+        "catalog/providers/github-copilot.ts",
+        "catalog/providers/google-vertex.ts",
+        "catalog/providers/google.ts",
+        "catalog/providers/groq.ts",
+        "catalog/providers/huggingface.ts",
+        "catalog/providers/index.ts",
+        "catalog/providers/kimi-coding.ts",
+        "catalog/providers/meta.ts",
+        "catalog/providers/minimax-cn.ts",
+        "catalog/providers/minimax.ts",
+        "catalog/providers/mistral.ts",
+        "catalog/providers/moonshotai-cn.ts",
+        "catalog/providers/moonshotai.ts",
+        "catalog/providers/nvidia.ts",
+        "catalog/providers/openai-codex.ts",
+        "catalog/providers/openai.ts",
+        "catalog/providers/opencode-go.ts",
+        "catalog/providers/opencode.ts",
+        "catalog/providers/openrouter.ts",
+        "catalog/providers/qwen-token-plan-cn.ts",
+        "catalog/providers/qwen-token-plan-individual-cn.ts",
+        "catalog/providers/qwen-token-plan-individual.ts",
+        "catalog/providers/qwen-token-plan.ts",
+        "catalog/providers/radius.ts",
+        "catalog/providers/together.ts",
+        "catalog/providers/typesafe.ts",
+        "catalog/providers/vercel-ai-gateway.ts",
+        "catalog/providers/xai.ts",
+        "catalog/providers/xiaomi-token-plan-ams.ts",
+        "catalog/providers/xiaomi-token-plan-cn.ts",
+        "catalog/providers/xiaomi-token-plan-sgp.ts",
+        "catalog/providers/xiaomi.ts",
+        "catalog/providers/zai-coding-cn.ts",
+        "catalog/providers/zai.ts"
+      ],
+      "loc": 1814,
+      "wave": 2,
+      "readiness": 40,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 6,
+          "samples": [
+            "catalog/providers/cloudflare-ai-gateway.ts:12",
+            "catalog/providers/cloudflare-ai-gateway.ts:14",
+            "catalog/providers/cloudflare-ai-gateway.ts:15"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 30,
+          "samples": [
+            "catalog/providers/amazon-bedrock.ts:5",
+            "catalog/providers/anthropic.ts:17",
+            "catalog/providers/anthropic.ts:18"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "catalog/providers/opencode.ts:50",
+            "catalog/providers/typesafe.ts:9"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "catalog/",
+        "catalog/families/",
+        "catalog/sources/",
+        "src/api/",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 1,
+      "fan_in": 1,
+      "density": 0.4,
+      "priority": 41,
+      "exports": 8,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Import cycle with catalog/sources/, catalog/families/, catalog/: port them together.",
+        "Imports `catalog/`, `catalog/families/`, `catalog/sources/`, `src/api/`, `src/types.ts`: port them first, or port them together.",
+        "1 test file imports it directly."
+      ]
+    },
+    {
+      "id": "catalog/sources/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "catalog/sources/index.ts",
+        "catalog/sources/models-dev.ts",
+        "catalog/sources/openrouter.ts",
+        "catalog/sources/vercel-ai-gateway.ts"
+      ],
+      "loc": 510,
+      "wave": 2,
+      "readiness": 70,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 25,
+          "samples": [
+            "catalog/sources/index.ts:29",
+            "catalog/sources/index.ts:30",
+            "catalog/sources/index.ts:32"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 10,
+          "samples": [
+            "catalog/sources/index.ts:41",
+            "catalog/sources/index.ts:83",
+            "catalog/sources/index.ts:84"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "catalog/sources/index.ts:61"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 7,
+          "samples": [
+            "catalog/sources/index.ts:31",
+            "catalog/sources/index.ts:52",
+            "catalog/sources/index.ts:62"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "catalog/sources/models-dev.ts:215",
+            "catalog/sources/vercel-ai-gateway.ts:36",
+            "catalog/sources/vercel-ai-gateway.ts:37"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "catalog/",
+        "src/providers/",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 7,
+      "fan_in": 3,
+      "density": 2.0,
+      "priority": 64,
+      "exports": 11,
+      "bridgeable": 4,
+      "notes": [
+        "Import cycle with catalog/providers/, catalog/families/, catalog/: port them together.",
+        "Imports `catalog/`, `src/providers/`, `src/types.ts`: port them first, or port them together.",
+        "7 test files import it directly."
+      ]
+    },
+    {
+      "id": "scripts/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "scripts/check-model-data.ts",
+        "scripts/generate-test-image.ts",
+        "scripts/hydrate-model-catalog.ts",
+        "scripts/model-data.ts"
+      ],
+      "loc": 399,
+      "wave": 0,
+      "readiness": 70,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 4,
+          "samples": [
+            "scripts/model-data.ts:85",
+            "scripts/model-data.ts:202",
+            "scripts/model-data.ts:269"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 20,
+          "samples": [
+            "scripts/hydrate-model-catalog.ts:71",
+            "scripts/model-data.ts:25",
+            "scripts/model-data.ts:33"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 18,
+          "samples": [
+            "scripts/check-model-data.ts:9",
+            "scripts/hydrate-model-catalog.ts:43",
+            "scripts/hydrate-model-catalog.ts:49"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 17,
+          "samples": [
+            "scripts/hydrate-model-catalog.ts:42",
+            "scripts/hydrate-model-catalog.ts:60",
+            "scripts/hydrate-model-catalog.ts:72"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "canvas"
+      ],
+      "direct_tests": 1,
+      "fan_in": 1,
+      "density": 4.0,
+      "priority": 68,
+      "exports": 8,
+      "bridgeable": 8,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "1 test file imports it directly."
+      ]
+    },
+    {
+      "id": "src/api/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/api/anthropic-messages.lazy.ts",
+        "src/api/anthropic-messages.ts",
+        "src/api/azure-openai-config.ts",
+        "src/api/azure-openai-responses.lazy.ts",
+        "src/api/azure-openai-responses.ts",
+        "src/api/bedrock-converse-stream.lazy.ts",
+        "src/api/bedrock-converse-stream.ts",
+        "src/api/classifier-shared.ts",
+        "src/api/cloudflare-ai-binding.ts",
+        "src/api/cloudflare-workers-ai-system-one.lazy.ts",
+        "src/api/cloudflare-workers-ai-system-one.ts",
+        "src/api/cloudflare.ts",
+        "src/api/constrained-sampling.ts",
+        "src/api/github-copilot-headers.ts",
+        "src/api/google-generative-ai.lazy.ts",
+        "src/api/google-generative-ai.ts",
+        "src/api/google-shared.ts",
+        "src/api/google-vertex.lazy.ts",
+        "src/api/google-vertex.ts",
+        "src/api/lazy.ts",
+        "src/api/llama-cpp-classify.lazy.ts",
+        "src/api/llama-cpp-classify.ts",
+        "src/api/mistral-conversations.lazy.ts",
+        "src/api/mistral-conversations.ts",
+        "src/api/openai-codex-responses.lazy.ts",
+        "src/api/openai-codex-responses.ts",
+        "src/api/openai-completions.lazy.ts",
+        "src/api/openai-completions.ts",
+        "src/api/openai-decisions.lazy.ts",
+        "src/api/openai-decisions.ts",
+        "src/api/openai-prompt-cache.ts",
+        "src/api/openai-responses-shared.ts",
+        "src/api/openai-responses.lazy.ts",
+        "src/api/openai-responses.ts",
+        "src/api/openrouter-images.lazy.ts",
+        "src/api/openrouter-images.ts",
+        "src/api/pi-decision.lazy.ts",
+        "src/api/pi-decision.ts",
+        "src/api/pi-messages.lazy.ts",
+        "src/api/pi-messages.ts",
+        "src/api/simple-options.ts",
+        "src/api/strict-tool-limits.ts",
+        "src/api/system-one-shared.ts",
+        "src/api/transform-messages.ts",
+        "src/api/typesafe-system-one.lazy.ts",
+        "src/api/typesafe-system-one.ts"
+      ],
+      "loc": 11843,
+      "wave": 1,
+      "readiness": 0,
+      "status": "blocked",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node",
+        "browser"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 26,
+          "samples": [
+            "src/api/anthropic-messages.ts:372",
+            "src/api/anthropic-messages.ts:380",
+            "src/api/anthropic-messages.ts:1322"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "src/api/openai-codex-responses.ts:119",
+            "src/api/openai-codex-responses.ts:131",
+            "src/api/openai-codex-responses.ts:1625"
+          ]
+        },
+        {
+          "risk": "dynamic-code",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/api/bedrock-converse-stream.lazy.ts:14"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 179,
+          "samples": [
+            "src/api/anthropic-messages.ts:402",
+            "src/api/anthropic-messages.ts:410",
+            "src/api/anthropic-messages.ts:433"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 95,
+          "samples": [
+            "src/api/anthropic-messages.ts:135",
+            "src/api/anthropic-messages.ts:275",
+            "src/api/anthropic-messages.ts:279"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 40,
+          "samples": [
+            "src/api/anthropic-messages.ts:899",
+            "src/api/anthropic-messages.ts:1696",
+            "src/api/anthropic-messages.ts:1705"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 33,
+          "samples": [
+            "src/api/anthropic-messages.ts:405",
+            "src/api/anthropic-messages.ts:1511",
+            "src/api/bedrock-converse-stream.lazy.ts:17"
+          ]
+        },
+        {
+          "risk": "generators",
+          "severity": "medium",
+          "count": 18,
+          "samples": [
+            "src/api/anthropic-messages.ts:626",
+            "src/api/anthropic-messages.ts:644",
+            "src/api/anthropic-messages.ts:647"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 10,
+          "samples": [
+            "src/api/anthropic-messages.ts:573",
+            "src/api/constrained-sampling.ts:10",
+            "src/api/mistral-conversations.ts:336"
+          ]
+        },
+        {
+          "risk": "reflection",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/api/mistral-conversations.ts:450"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 262,
+          "samples": [
+            "src/api/anthropic-messages.ts:409",
+            "src/api/anthropic-messages.ts:412",
+            "src/api/anthropic-messages.ts:423"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 45,
+          "samples": [
+            "src/api/anthropic-messages.ts:328",
+            "src/api/anthropic-messages.ts:340",
+            "src/api/anthropic-messages.ts:1057"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 32,
+          "samples": [
+            "src/api/anthropic-messages.ts:427",
+            "src/api/anthropic-messages.ts:720",
+            "src/api/anthropic-messages.ts:822"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/api/openai-codex-responses.ts:1628"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/env-api-keys.ts",
+        "src/models.ts",
+        "src/session-resources.ts",
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@anthropic-ai/sdk",
+        "@aws-sdk/client-bedrock-runtime",
+        "@aws-sdk/credential-provider-node",
+        "@google/genai",
+        "@smithy/node-http-handler",
+        "http-proxy-agent",
+        "https-proxy-agent",
+        "openai"
+      ],
+      "direct_tests": 95,
+      "fan_in": 11,
+      "density": 1.1,
+      "priority": 22,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Uses dynamic code (eval, new Function or computed imports).",
+        "8 npm dependencies not in the crate table: check them by hand.",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/providers/: port them together.",
+        "Imports `src/env-api-keys.ts`, `src/models.ts`, `src/session-resources.ts`, `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "95 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/auth/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/auth/context.ts",
+        "src/auth/credential-store.ts",
+        "src/auth/helpers.ts",
+        "src/auth/resolve.ts",
+        "src/auth/types.ts"
+      ],
+      "loc": 415,
+      "wave": 1,
+      "readiness": 57,
+      "status": "blocked",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/auth/context.ts:36"
+          ]
+        },
+        {
+          "risk": "dynamic-code",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/auth/context.ts:12"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 38,
+          "samples": [
+            "src/auth/context.ts:25",
+            "src/auth/context.ts:30",
+            "src/auth/context.ts:32"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 22,
+          "samples": [
+            "src/auth/context.ts:4",
+            "src/auth/context.ts:8",
+            "src/auth/credential-store.ts:14"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/auth/credential-store.ts:10",
+            "src/auth/credential-store.ts:11"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 13,
+          "samples": [
+            "src/auth/context.ts:31",
+            "src/auth/resolve.ts:131",
+            "src/auth/resolve.ts:139"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/auth/resolve.ts:170"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 16,
+      "fan_in": 5,
+      "density": 0.5,
+      "priority": 54,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Uses dynamic code (eval, new Function or computed imports).",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "16 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/auth/oauth/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/auth/oauth/anthropic.ts",
+        "src/auth/oauth/callback-server.ts",
+        "src/auth/oauth/device-code.ts",
+        "src/auth/oauth/github-copilot.ts",
+        "src/auth/oauth/kimi-coding.ts",
+        "src/auth/oauth/load.ts",
+        "src/auth/oauth/meta.ts",
+        "src/auth/oauth/openai-chatgpt.ts",
+        "src/auth/oauth/openai-codex.ts",
+        "src/auth/oauth/openrouter.ts",
+        "src/auth/oauth/pkce.ts",
+        "src/auth/oauth/radius.ts",
+        "src/auth/oauth/trusted-url.ts",
+        "src/auth/oauth/xai.ts"
+      ],
+      "loc": 2681,
+      "wave": 1,
+      "readiness": 0,
+      "status": "blocked",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "dynamic-code",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/auth/oauth/load.ts:14"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 230,
+          "samples": [
+            "src/auth/oauth/anthropic.ts:76",
+            "src/auth/oauth/anthropic.ts:77",
+            "src/auth/oauth/anthropic.ts:87"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 19,
+          "samples": [
+            "src/auth/oauth/callback-server.ts:28",
+            "src/auth/oauth/callback-server.ts:39",
+            "src/auth/oauth/callback-server.ts:41"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/auth/oauth/callback-server.ts:74",
+            "src/auth/oauth/openai-chatgpt.ts:244"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/auth/oauth/github-copilot.ts:485"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/auth/oauth/radius.ts:62"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 146,
+          "samples": [
+            "src/auth/oauth/anthropic.ts:33",
+            "src/auth/oauth/anthropic.ts:90",
+            "src/auth/oauth/anthropic.ts:104"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 18,
+          "samples": [
+            "src/auth/oauth/anthropic.ts:136",
+            "src/auth/oauth/anthropic.ts:274",
+            "src/auth/oauth/device-code.ts:49"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 17,
+          "samples": [
+            "src/auth/oauth/anthropic.ts:83",
+            "src/auth/oauth/anthropic.ts:125",
+            "src/auth/oauth/anthropic.ts:258"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/auth/",
+        "src/providers/",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 12,
+      "fan_in": 3,
+      "density": 0.2,
+      "priority": 20,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Uses dynamic code (eval, new Function or computed imports).",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/auth/`, `src/providers/`, `src/utils/`: port them first, or port them together.",
+        "12 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/bedrock-provider.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/bedrock-provider.ts"
+      ],
+      "loc": 5,
+      "wave": 2,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/api/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 58,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `src/api/`: port it first, or port them together."
+      ]
+    },
+    {
+      "id": "src/bun-oauth.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/bun-oauth.ts"
+      ],
+      "loc": 23,
+      "wave": 2,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/auth/oauth/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 60,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "Imports `src/auth/oauth/`: port it first, or port them together."
+      ]
+    },
+    {
+      "id": "src/cache-warming.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/cache-warming.ts"
+      ],
+      "loc": 77,
+      "wave": 2,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/models.ts",
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 67,
+      "exports": 5,
+      "bridgeable": 1,
+      "notes": [
+        "Imports `src/models.ts`, `src/types.ts`, `src/utils/`: port them first, or port them together."
+      ]
+    },
+    {
+      "id": "src/cli.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/cli.ts"
+      ],
+      "loc": 115,
+      "wave": 4,
+      "readiness": 83,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "src/cli.ts:88",
+            "src/cli.ts:91",
+            "src/cli.ts:98"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 8,
+          "samples": [
+            "src/cli.ts:16",
+            "src/cli.ts:35",
+            "src/cli.ts:41"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 7,
+          "samples": [
+            "src/cli.ts:21",
+            "src/cli.ts:43",
+            "src/cli.ts:51"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "src/cli.ts:22",
+            "src/cli.ts:32"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/index.ts",
+        "src/providers/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 5.2,
+      "priority": 69,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `src/index.ts`, `src/providers/`: port them first, or port them together."
+      ]
+    },
+    {
+      "id": "src/compat.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/compat.ts"
+      ],
+      "loc": 247,
+      "wave": 5,
+      "readiness": 88,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/compat.ts:164"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/compat.ts:102",
+            "src/compat.ts:193"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/compat.ts:269",
+            "src/compat.ts:295"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/compat.ts:73",
+            "src/compat.ts:79"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "src/compat.ts:110",
+            "src/compat.ts:122",
+            "src/compat.ts:247"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/compat.ts:164"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/api/",
+        "src/env-api-keys.ts",
+        "src/image-models.ts",
+        "src/images-api-registry.ts",
+        "src/images.ts",
+        "src/index.ts",
+        "src/legacy-api-aliases.ts",
+        "src/models.ts",
+        "src/providers/",
+        "src/providers/images/",
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 92,
+      "fan_in": 0,
+      "density": 1.2,
+      "priority": 71,
+      "exports": 11,
+      "bridgeable": 3,
+      "notes": [
+        "Imports `src/api/`, `src/env-api-keys.ts`, `src/image-models.ts`, `src/images-api-registry.ts`, `src/images.ts`, `src/index.ts`, `src/legacy-api-aliases.ts`, `src/models.ts`, `src/providers/`, `src/providers/images/`, `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "92 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/compat/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/compat/extension-oauth-types.ts"
+      ],
+      "loc": 36,
+      "wave": 2,
+      "readiness": 94,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 6,
+          "samples": [
+            "src/compat/extension-oauth-types.ts:40",
+            "src/compat/extension-oauth-types.ts:41",
+            "src/compat/extension-oauth-types.ts:42"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/auth/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 59,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `src/auth/`: port it first, or port them together."
+      ]
+    },
+    {
+      "id": "src/env-api-keys.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/env-api-keys.ts"
+      ],
+      "loc": 145,
+      "wave": 1,
+      "readiness": 96,
+      "status": "blocked",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "dynamic-code",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/env-api-keys.ts:8"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/env-api-keys.ts:6"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 10,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 73,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Uses dynamic code (eval, new Function or computed imports).",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "10 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/image-models.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/image-models.ts"
+      ],
+      "loc": 34,
+      "wave": 2,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "src/image-models.ts:22",
+            "src/image-models.ts:23",
+            "src/image-models.ts:24"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/models.generated.ts",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 1,
+      "fan_in": 1,
+      "density": 5.9,
+      "priority": 81,
+      "exports": 3,
+      "bridgeable": 3,
+      "notes": [
+        "Imports `src/models.generated.ts`, `src/types.ts`: port them first, or port them together.",
+        "1 test file imports it directly."
+      ]
+    },
+    {
+      "id": "src/images-api-registry.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/images-api-registry.ts"
+      ],
+      "loc": 45,
+      "wave": 2,
+      "readiness": 100,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/images-api-registry.ts:24"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/images-api-registry.ts:3"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/images-api-registry.ts:32"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 1,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 70,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `src/types.ts`: port it first, or port them together.",
+        "1 test file imports it directly."
+      ]
+    },
+    {
+      "id": "src/images.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/images.ts"
+      ],
+      "loc": 18,
+      "wave": 4,
+      "readiness": 100,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/images.ts:19"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/images.ts:9"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/images-api-registry.ts",
+        "src/providers/images/",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 4,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 67,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `src/images-api-registry.ts`, `src/providers/images/`, `src/types.ts`: port them first, or port them together.",
+        "4 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/index.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/index.ts"
+      ],
+      "loc": 44,
+      "wave": 3,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/api/",
+        "src/auth/",
+        "src/cache-warming.ts",
+        "src/compat/",
+        "src/models-store.ts",
+        "src/models.ts",
+        "src/providers/",
+        "src/session-resources.ts",
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 1,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 71,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `src/api/`, `src/auth/`, `src/cache-warming.ts`, `src/compat/`, `src/models-store.ts`, `src/models.ts`, `src/providers/`, `src/session-resources.ts`, `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "1 test file imports it directly."
+      ]
+    },
+    {
+      "id": "src/lazy-bedrock-provider.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/lazy-bedrock-provider.ts"
+      ],
+      "loc": 4,
+      "wave": 2,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/api/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 58,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "Imports `src/api/`: port it first, or port them together."
+      ]
+    },
+    {
+      "id": "src/lazy-oauth.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/lazy-oauth.ts"
+      ],
+      "loc": 14,
+      "wave": 2,
+      "readiness": 95,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 18,
+          "samples": [
+            "src/lazy-oauth.ts:13",
+            "src/lazy-oauth.ts:14",
+            "src/lazy-oauth.ts:15"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/auth/oauth/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 57,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "Imports `src/auth/oauth/`: port it first, or port them together."
+      ]
+    },
+    {
+      "id": "src/legacy-api-aliases.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/legacy-api-aliases.ts"
+      ],
+      "loc": 83,
+      "wave": 2,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/api/",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 68,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `src/api/`, `src/types.ts`: port them first, or port them together."
+      ]
+    },
+    {
+      "id": "src/model-catalog.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/model-catalog.ts"
+      ],
+      "loc": 69,
+      "wave": 1,
+      "readiness": 97,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/model-catalog.ts:54",
+            "src/model-catalog.ts:55",
+            "src/model-catalog.ts:56"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 64,
+      "exports": 3,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Import cycle with src/models.generated.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/types.ts`: port it first, or port them together."
+      ]
+    },
+    {
+      "id": "src/models-store.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/models-store.ts"
+      ],
+      "loc": 31,
+      "wave": 1,
+      "readiness": 96,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/models-store.ts:31",
+            "src/models-store.ts:37",
+            "src/models-store.ts:42"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/models-store.ts:23",
+            "src/models-store.ts:24",
+            "src/models-store.ts:25"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/models-store.ts:29"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 5,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 67,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/types.ts`: port it first, or port them together.",
+        "5 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/models.generated.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/models.generated.ts"
+      ],
+      "loc": 310,
+      "wave": 1,
+      "readiness": 99,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/providers/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 2,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 75,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Import cycle with src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/providers/`: port it first, or port them together.",
+        "2 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/models.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/models.ts"
+      ],
+      "loc": 1058,
+      "wave": 1,
+      "readiness": 30,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/models.ts:1332"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 85,
+          "samples": [
+            "src/models.ts:530",
+            "src/models.ts:531",
+            "src/models.ts:532"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 47,
+          "samples": [
+            "src/models.ts:80",
+            "src/models.ts:92",
+            "src/models.ts:122"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 15,
+          "samples": [
+            "src/models.ts:398",
+            "src/models.ts:400",
+            "src/models.ts:409"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/models.ts:909"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 31,
+          "samples": [
+            "src/models.ts:454",
+            "src/models.ts:463",
+            "src/models.ts:476"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "src/models.ts:663",
+            "src/models.ts:671",
+            "src/models.ts:1199"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/api/",
+        "src/auth/",
+        "src/models-store.ts",
+        "src/telemetry.ts",
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 27,
+      "fan_in": 6,
+      "density": 0.9,
+      "priority": 37,
+      "exports": 7,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/api/`, `src/auth/`, `src/models-store.ts`, `src/telemetry.ts`, `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "27 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/oauth.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/oauth.ts"
+      ],
+      "loc": 9,
+      "wave": 3,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "src/compat/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 1,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 66,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `src/compat/`: port it first, or port them together.",
+        "1 test file imports it directly."
+      ]
+    },
+    {
+      "id": "src/providers/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/providers/all.ts",
+        "src/providers/amazon-bedrock.models.ts",
+        "src/providers/amazon-bedrock.ts",
+        "src/providers/ant-ling.models.ts",
+        "src/providers/ant-ling.ts",
+        "src/providers/anthropic.models.ts",
+        "src/providers/anthropic.ts",
+        "src/providers/azure.models.ts",
+        "src/providers/azure.ts",
+        "src/providers/baseten.models.ts",
+        "src/providers/baseten.ts",
+        "src/providers/cerebras.models.ts",
+        "src/providers/cerebras.ts",
+        "src/providers/cloudflare-ai-gateway.models.ts",
+        "src/providers/cloudflare-ai-gateway.ts",
+        "src/providers/cloudflare-auth.ts",
+        "src/providers/cloudflare-stream.ts",
+        "src/providers/cloudflare-workers-ai.models.ts",
+        "src/providers/cloudflare-workers-ai.ts",
+        "src/providers/compat-schema.ts",
+        "src/providers/deepseek.models.ts",
+        "src/providers/deepseek.ts",
+        "src/providers/faux.ts",
+        "src/providers/fireworks.models.ts",
+        "src/providers/fireworks.ts",
+        "src/providers/github-copilot.models.ts",
+        "src/providers/github-copilot.ts",
+        "src/providers/google-vertex.models.ts",
+        "src/providers/google-vertex.ts",
+        "src/providers/google.models.ts",
+        "src/providers/google.ts",
+        "src/providers/groq.models.ts",
+        "src/providers/groq.ts",
+        "src/providers/huggingface.models.ts",
+        "src/providers/huggingface.ts",
+        "src/providers/kimi-coding.models.ts",
+        "src/providers/kimi-coding.ts",
+        "src/providers/meta.models.ts",
+        "src/providers/meta.ts",
+        "src/providers/minimax-cn.models.ts",
+        "src/providers/minimax-cn.ts",
+        "src/providers/minimax.models.ts",
+        "src/providers/minimax.ts",
+        "src/providers/mistral.models.ts",
+        "src/providers/mistral.ts",
+        "src/providers/model-schema.ts",
+        "src/providers/moonshotai-cn.models.ts",
+        "src/providers/moonshotai-cn.ts",
+        "src/providers/moonshotai.models.ts",
+        "src/providers/moonshotai.ts",
+        "src/providers/nvidia.models.ts",
+        "src/providers/nvidia.ts",
+        "src/providers/openai-codex.models.ts",
+        "src/providers/openai-codex.ts",
+        "src/providers/openai.models.ts",
+        "src/providers/openai.ts",
+        "src/providers/opencode-go.models.ts",
+        "src/providers/opencode-go.ts",
+        "src/providers/opencode-headers.ts",
+        "src/providers/opencode.models.ts",
+        "src/providers/opencode.ts",
+        "src/providers/openrouter-api.ts",
+        "src/providers/openrouter.models.ts",
+        "src/providers/openrouter.ts",
+        "src/providers/qwen-token-plan-cn.models.ts",
+        "src/providers/qwen-token-plan-cn.ts",
+        "src/providers/qwen-token-plan-individual-cn.models.ts",
+        "src/providers/qwen-token-plan-individual-cn.ts",
+        "src/providers/qwen-token-plan-individual.models.ts",
+        "src/providers/qwen-token-plan-individual.ts",
+        "src/providers/qwen-token-plan.models.ts",
+        "src/providers/qwen-token-plan.ts",
+        "src/providers/radius-config.ts",
+        "src/providers/radius.models.ts",
+        "src/providers/radius.ts",
+        "src/providers/schema-builders.ts",
+        "src/providers/together.models.ts",
+        "src/providers/together.ts",
+        "src/providers/typesafe.models.ts",
+        "src/providers/typesafe.ts",
+        "src/providers/vercel-ai-gateway.models.ts",
+        "src/providers/vercel-ai-gateway.ts",
+        "src/providers/xai.models.ts",
+        "src/providers/xai.ts",
+        "src/providers/xiaomi-token-plan-ams.models.ts",
+        "src/providers/xiaomi-token-plan-ams.ts",
+        "src/providers/xiaomi-token-plan-cn.models.ts",
+        "src/providers/xiaomi-token-plan-cn.ts",
+        "src/providers/xiaomi-token-plan-sgp.models.ts",
+        "src/providers/xiaomi-token-plan-sgp.ts",
+        "src/providers/xiaomi.models.ts",
+        "src/providers/xiaomi.ts",
+        "src/providers/zai-coding-cn.models.ts",
+        "src/providers/zai-coding-cn.ts",
+        "src/providers/zai.models.ts",
+        "src/providers/zai.ts"
+      ],
+      "loc": 3440,
+      "wave": 1,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "browser"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "src/providers/faux.ts:164",
+            "src/providers/faux.ts:233",
+            "src/providers/faux.ts:295"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 91,
+          "samples": [
+            "src/providers/amazon-bedrock.ts:13",
+            "src/providers/amazon-bedrock.ts:15",
+            "src/providers/amazon-bedrock.ts:28"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 62,
+          "samples": [
+            "src/providers/all.ts:96",
+            "src/providers/all.ts:109",
+            "src/providers/all.ts:116"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 14,
+          "samples": [
+            "src/providers/compat-schema.ts:638",
+            "src/providers/faux.ts:110",
+            "src/providers/faux.ts:138"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/providers/compat-schema.ts:666",
+            "src/providers/openrouter.ts:37",
+            "src/providers/openrouter.ts:42"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 14,
+          "samples": [
+            "src/providers/amazon-bedrock.ts:47",
+            "src/providers/compat-schema.ts:667",
+            "src/providers/compat-schema.ts:676"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 10,
+          "samples": [
+            "src/providers/faux.ts:100",
+            "src/providers/faux.ts:164",
+            "src/providers/faux.ts:293"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "src/providers/faux.ts:190",
+            "src/providers/faux.ts:203",
+            "src/providers/faux.ts:204"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/providers/openrouter-api.ts:42"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/api/",
+        "src/auth/",
+        "src/auth/oauth/",
+        "src/env-api-keys.ts",
+        "src/model-catalog.ts",
+        "src/models.generated.ts",
+        "src/models.ts",
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-schema"
+      ],
+      "direct_tests": 28,
+      "fan_in": 7,
+      "density": 0.6,
+      "priority": 21,
+      "exports": 77,
+      "bridgeable": 10,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "44 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/: port them together.",
+        "Imports `src/api/`, `src/auth/`, `src/auth/oauth/`, `src/env-api-keys.ts`, `src/model-catalog.ts`, `src/models.generated.ts`, `src/models.ts`, `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "28 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/providers/images/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/providers/images/register-builtins.ts"
+      ],
+      "loc": 50,
+      "wave": 3,
+      "readiness": 94,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/providers/images/register-builtins.ts:37",
+            "src/providers/images/register-builtins.ts:43",
+            "src/providers/images/register-builtins.ts:44"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/providers/images/register-builtins.ts:42"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "src/providers/images/register-builtins.ts:26"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/api/",
+        "src/images-api-registry.ts",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 61,
+      "exports": 2,
+      "bridgeable": 1,
+      "notes": [
+        "Imports `src/api/`, `src/images-api-registry.ts`, `src/types.ts`: port them first, or port them together."
+      ]
+    },
+    {
+      "id": "src/session-resources.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/session-resources.ts"
+      ],
+      "loc": 21,
+      "wave": 0,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/session-resources.ts:1",
+            "src/session-resources.ts:5"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/session-resources.ts:3"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "src/session-resources.ts:15",
+            "src/session-resources.ts:22"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 4,
+      "fan_in": 2,
+      "density": 4.8,
+      "priority": 77,
+      "exports": 2,
+      "bridgeable": 1,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "4 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/telemetry.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/telemetry.ts"
+      ],
+      "loc": 202,
+      "wave": 1,
+      "readiness": 92,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/telemetry.ts:138"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/telemetry.ts:139"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/telemetry.ts:136"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "src/telemetry.ts:126",
+            "src/telemetry.ts:160",
+            "src/telemetry.ts:198"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/api/",
+        "src/types.ts",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-telemetry"
+      ],
+      "direct_tests": 1,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 71,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/api/`, `src/types.ts`, `src/utils/`: port them first, or port them together.",
+        "1 test file imports it directly."
+      ]
+    },
+    {
+      "id": "src/types.ts",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/types.ts"
+      ],
+      "loc": 576,
+      "wave": 1,
+      "readiness": 72,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 14,
+          "samples": [
+            "src/types.ts:185",
+            "src/types.ts:191",
+            "src/types.ts:232"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/api/",
+        "src/providers/",
+        "src/utils/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 158,
+      "fan_in": 21,
+      "density": 0.0,
+      "priority": 61,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/utils/, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/api/`, `src/providers/`, `src/utils/`: port them first, or port them together.",
+        "158 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/utils/",
+      "package": "@earendil-works/pi-ai",
+      "files": [
+        "src/utils/abort-signals.ts",
+        "src/utils/abort.ts",
+        "src/utils/diagnostics.ts",
+        "src/utils/error-body.ts",
+        "src/utils/estimate.ts",
+        "src/utils/event-stream.ts",
+        "src/utils/hash.ts",
+        "src/utils/headers.ts",
+        "src/utils/identity.ts",
+        "src/utils/json-parse.ts",
+        "src/utils/model-operations.ts",
+        "src/utils/models-error.ts",
+        "src/utils/node-http-proxy.ts",
+        "src/utils/oauth-page.ts",
+        "src/utils/openrouter-cost.ts",
+        "src/utils/openrouter-finish-reason.ts",
+        "src/utils/overflow.ts",
+        "src/utils/provider-env.ts",
+        "src/utils/provider-retry.ts",
+        "src/utils/retry.ts",
+        "src/utils/sanitize-unicode.ts",
+        "src/utils/sleep.ts",
+        "src/utils/sse.ts",
+        "src/utils/streaming-json.ts",
+        "src/utils/string-enum.ts",
+        "src/utils/text.ts",
+        "src/utils/transcript.ts",
+        "src/utils/uuid.ts",
+        "src/utils/validation.ts",
+        "src/utils/version.ts"
+      ],
+      "loc": 2280,
+      "wave": 1,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 47,
+          "samples": [
+            "src/utils/hash.ts:6",
+            "src/utils/identity.ts:121",
+            "src/utils/json-parse.ts:7"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 24,
+          "samples": [
+            "src/utils/overflow.ts:40",
+            "src/utils/overflow.ts:41",
+            "src/utils/overflow.ts:42"
+          ]
+        },
+        {
+          "risk": "dynamic-regex",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "src/utils/retry.ts:4"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 22,
+          "samples": [
+            "src/utils/abort.ts:20",
+            "src/utils/abort.ts:23",
+            "src/utils/event-stream.ts:38"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 19,
+          "samples": [
+            "src/utils/error-body.ts:145",
+            "src/utils/headers.ts:14",
+            "src/utils/headers.ts:16"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 15,
+          "samples": [
+            "src/utils/abort-signals.ts:3",
+            "src/utils/abort-signals.ts:16",
+            "src/utils/event-stream.ts:28"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 10,
+          "samples": [
+            "src/utils/error-body.ts:124",
+            "src/utils/estimate.ts:98",
+            "src/utils/event-stream.ts:68"
+          ]
+        },
+        {
+          "risk": "generators",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/utils/event-stream.ts:72",
+            "src/utils/event-stream.ts:75",
+            "src/utils/event-stream.ts:81"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/utils/event-stream.ts:97",
+            "src/utils/models-error.ts:5",
+            "src/utils/retry.ts:212"
+          ]
+        },
+        {
+          "risk": "reflection",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "src/utils/error-body.ts:143",
+            "src/utils/event-stream.ts:72",
+            "src/utils/streaming-json.ts:555"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 42,
+          "samples": [
+            "src/utils/event-stream.ts:128",
+            "src/utils/hash.ts:7",
+            "src/utils/hash.ts:8"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 32,
+          "samples": [
+            "src/utils/error-body.ts:172",
+            "src/utils/estimate.ts:23",
+            "src/utils/event-stream.ts:110"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 10,
+          "samples": [
+            "src/utils/error-body.ts:173",
+            "src/utils/estimate.ts:24",
+            "src/utils/json-parse.ts:88"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "src/utils/diagnostics.ts:39",
+            "src/utils/event-stream.ts:98",
+            "src/utils/event-stream.ts:99"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/models.ts",
+        "src/types.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-schema",
+        "partial-json"
+      ],
+      "direct_tests": 82,
+      "fan_in": 11,
+      "density": 3.9,
+      "priority": 28,
+      "exports": 88,
+      "bridgeable": 45,
+      "notes": [
+        "2 npm dependencies not in the crate table: check them by hand.",
+        "Import cycle with src/models.generated.ts, src/model-catalog.ts, src/auth/oauth/, src/telemetry.ts, src/models-store.ts, src/auth/, src/models.ts, src/types.ts, src/env-api-keys.ts, src/api/, src/providers/: port them together.",
+        "Imports `src/models.ts`, `src/types.ts`: port them first, or port them together.",
+        "82 test files import it directly."
+      ]
+    }
+  ],
+  "start_here": [
+    "src/image-models.ts",
+    "src/session-resources.ts",
+    "src/compat.ts",
+    "scripts/",
+    "src/cache-warming.ts",
+    "catalog/",
+    "catalog/sources/",
+    "src/providers/images/",
+    "src/bun-oauth.ts",
+    "catalog/families/"
+  ],
+  "dependencies": [
+    {
+      "name": "@earendil-works/pi-schema",
+      "used_by": 2,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@anthropic-ai/sdk",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@aws-sdk/client-bedrock-runtime",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@aws-sdk/credential-provider-node",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@earendil-works/pi-telemetry",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@google/genai",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@smithy/node-http-handler",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "canvas",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "http-proxy-agent",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "https-proxy-agent",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "openai",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "partial-json",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    }
+  ],
+  "whole_app": {
+    "shape": "server",
+    "entry_points": [
+      {
+        "kind": "cli",
+        "path": "dist/cli.js",
+        "name": "pi-ai",
+        "evidence": "package.json `bin`"
+      },
+      {
+        "kind": "cli",
+        "path": "catalog/generate.ts",
+        "evidence": "`#!/usr/bin/env node` at catalog/generate.ts:1"
+      },
+      {
+        "kind": "cli",
+        "path": "scripts/check-model-data.ts",
+        "evidence": "`#!/usr/bin/env node` at scripts/check-model-data.ts:1"
+      },
+      {
+        "kind": "cli",
+        "path": "scripts/generate-test-image.ts",
+        "evidence": "`#!/usr/bin/env node` at scripts/generate-test-image.ts:1"
+      },
+      {
+        "kind": "cli",
+        "path": "scripts/hydrate-model-catalog.ts",
+        "evidence": "`#!/usr/bin/env node` at scripts/hydrate-model-catalog.ts:1"
+      },
+      {
+        "kind": "server",
+        "path": "src/auth/oauth/callback-server.ts",
+        "evidence": "`createServer(` at src/auth/oauth/callback-server.ts:78"
+      },
+      {
+        "kind": "server",
+        "path": "src/auth/oauth/openai-chatgpt.ts",
+        "evidence": "`createServer(` at src/auth/oauth/openai-chatgpt.ts:94"
+      },
+      {
+        "kind": "cli",
+        "path": "src/cli.ts",
+        "evidence": "`#!/usr/bin/env node` at src/cli.ts:1"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "@earendil-works/pi-schema",
+        "names": [
+          "@earendil-works/pi-schema"
+        ],
+        "declared": true,
+        "used_by": 2,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@anthropic-ai/sdk",
+        "names": [
+          "@anthropic-ai/sdk"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@aws-sdk/client-bedrock-runtime",
+        "names": [
+          "@aws-sdk/client-bedrock-runtime"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@aws-sdk/credential-provider-node",
+        "names": [
+          "@aws-sdk/credential-provider-node"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@earendil-works/pi-telemetry",
+        "names": [
+          "@earendil-works/pi-telemetry"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@google/genai",
+        "names": [
+          "@google/genai"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@smithy/node-http-handler",
+        "names": [
+          "@smithy/node-http-handler"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "canvas",
+        "names": [
+          "canvas"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "http-proxy-agent",
+        "names": [
+          "http-proxy-agent"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "https-proxy-agent",
+        "names": [
+          "https-proxy-agent"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "openai",
+        "names": [
+          "openai"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "partial-json",
+        "names": [
+          "partial-json"
+        ],
+        "declared": true,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      }
+    ],
+    "pieces": [
+      {
+        "wave": 0,
+        "units": [
+          "scripts/"
+        ],
+        "loc": 399,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "src/session-resources.ts"
+        ],
+        "loc": 21,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "src/api/",
+          "src/auth/",
+          "src/auth/oauth/",
+          "src/env-api-keys.ts",
+          "src/model-catalog.ts",
+          "src/models-store.ts",
+          "src/models.generated.ts",
+          "src/models.ts",
+          "src/providers/",
+          "src/telemetry.ts",
+          "src/types.ts",
+          "src/utils/"
+        ],
+        "loc": 23050,
+        "tangled": true
+      },
+      {
+        "wave": 2,
+        "units": [
+          "catalog/",
+          "catalog/families/",
+          "catalog/providers/",
+          "catalog/sources/"
+        ],
+        "loc": 3200,
+        "tangled": true
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/bedrock-provider.ts"
+        ],
+        "loc": 5,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/bun-oauth.ts"
+        ],
+        "loc": 23,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/cache-warming.ts"
+        ],
+        "loc": 77,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/compat/"
+        ],
+        "loc": 36,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/image-models.ts"
+        ],
+        "loc": 34,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/images-api-registry.ts"
+        ],
+        "loc": 45,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/lazy-bedrock-provider.ts"
+        ],
+        "loc": 4,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/lazy-oauth.ts"
+        ],
+        "loc": 14,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/legacy-api-aliases.ts"
+        ],
+        "loc": 83,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "src/index.ts"
+        ],
+        "loc": 44,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "src/oauth.ts"
+        ],
+        "loc": 9,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "src/providers/images/"
+        ],
+        "loc": 50,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "src/cli.ts"
+        ],
+        "loc": 115,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "src/images.ts"
+        ],
+        "loc": 18,
+        "tangled": false
+      },
+      {
+        "wave": 5,
+        "units": [
+          "src/compat.ts"
+        ],
+        "loc": 247,
+        "tangled": false
+      }
+    ],
+    "decisions": [
+      {
+        "id": "D1",
+        "topic": "shape",
+        "question": "The app is a server, entered through pi-ai (dist/cli.js), catalog/generate.ts, scripts/check-model-data.ts, scripts/generate-test-image.ts, scripts/hydrate-model-catalog.ts, src/auth/oauth/callback-server.ts, src/auth/oauth/openai-chatgpt.ts, src/cli.ts. Port every entry point, in that shape?",
+        "recommendation": "Yes: an axum front door (`app front-door`) takes the server over first"
+      },
+      {
+        "id": "D2",
+        "topic": "blocked src/api/",
+        "question": "src/api/ is blocked: Uses dynamic code (eval, new Function or computed imports). Rework that part in Rust, or keep the unit outside?",
+        "recommendation": "Research the blocker first; then port it with the piece that uses it"
+      },
+      {
+        "id": "D3",
+        "topic": "blocked src/auth/",
+        "question": "src/auth/ is blocked: Uses dynamic code (eval, new Function or computed imports). Rework that part in Rust, or keep the unit outside?",
+        "recommendation": "Research the blocker first; then port it with the piece that uses it"
+      },
+      {
+        "id": "D4",
+        "topic": "blocked src/auth/oauth/",
+        "question": "src/auth/oauth/ is blocked: Uses dynamic code (eval, new Function or computed imports). Rework that part in Rust, or keep the unit outside?",
+        "recommendation": "Research the blocker first; then port it with the piece that uses it"
+      },
+      {
+        "id": "D5",
+        "topic": "blocked src/env-api-keys.ts",
+        "question": "src/env-api-keys.ts is blocked: Uses dynamic code (eval, new Function or computed imports). Rework that part in Rust, or keep the unit outside?",
+        "recommendation": "Research the blocker first; then port it with the piece that uses it"
+      },
+      {
+        "id": "D6",
+        "topic": "dependency @earendil-works/pi-schema",
+        "question": "Which crate replaces @earendil-works/pi-schema (used by 2 units)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-schema.md before porting what uses it"
+      },
+      {
+        "id": "D7",
+        "topic": "dependency @anthropic-ai/sdk",
+        "question": "Which crate replaces @anthropic-ai/sdk (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/@anthropic-ai-sdk.md before porting what uses it"
+      },
+      {
+        "id": "D8",
+        "topic": "dependency @aws-sdk/client-bedrock-runtime",
+        "question": "Which crate replaces @aws-sdk/client-bedrock-runtime (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/@aws-sdk-client-bedrock-runtime.md before porting what uses it"
+      },
+      {
+        "id": "D9",
+        "topic": "dependency @aws-sdk/credential-provider-node",
+        "question": "Which crate replaces @aws-sdk/credential-provider-node (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/@aws-sdk-credential-provider-node.md before porting what uses it"
+      },
+      {
+        "id": "D10",
+        "topic": "dependency @earendil-works/pi-telemetry",
+        "question": "Which crate replaces @earendil-works/pi-telemetry (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-telemetry.md before porting what uses it"
+      },
+      {
+        "id": "D11",
+        "topic": "dependency @google/genai",
+        "question": "Which crate replaces @google/genai (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/@google-genai.md before porting what uses it"
+      },
+      {
+        "id": "D12",
+        "topic": "dependency @smithy/node-http-handler",
+        "question": "Which crate replaces @smithy/node-http-handler (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/@smithy-node-http-handler.md before porting what uses it"
+      },
+      {
+        "id": "D13",
+        "topic": "dependency canvas",
+        "question": "Which crate replaces canvas (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/canvas.md before porting what uses it"
+      },
+      {
+        "id": "D14",
+        "topic": "dependency http-proxy-agent",
+        "question": "Which crate replaces http-proxy-agent (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/http-proxy-agent.md before porting what uses it"
+      },
+      {
+        "id": "D15",
+        "topic": "dependency https-proxy-agent",
+        "question": "Which crate replaces https-proxy-agent (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/https-proxy-agent.md before porting what uses it"
+      },
+      {
+        "id": "D16",
+        "topic": "dependency openai",
+        "question": "Which crate replaces openai (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/openai.md before porting what uses it"
+      },
+      {
+        "id": "D17",
+        "topic": "dependency partial-json",
+        "question": "Which crate replaces partial-json (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/partial-json.md before porting what uses it"
+      },
+      {
+        "id": "D18",
+        "topic": "tangled units",
+        "question": "src/api/, src/auth/, src/auth/oauth/, src/env-api-keys.ts, src/model-catalog.ts, src/models-store.ts, src/models.generated.ts, src/models.ts, src/providers/, src/telemetry.ts, src/types.ts, src/utils/ import each other (23050 lines). Port them as one piece?",
+        "recommendation": "Yes: one piece in wave 1, no glue between its parts"
+      },
+      {
+        "id": "D19",
+        "topic": "tangled units",
+        "question": "catalog/, catalog/families/, catalog/providers/, catalog/sources/ import each other (3200 lines). Port them as one piece?",
+        "recommendation": "Yes: one piece in wave 2, no glue between its parts"
+      }
+    ]
+  }
+}

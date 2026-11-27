@@ -1,0 +1,11 @@
+[package]
+name = "navi-hands"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+navi-sandbox.workspace = true
+navi-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true

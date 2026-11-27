@@ -29,18 +29,50 @@ const MAX_FILE_BYTES: u64 = 256 * 1024;
 const MAX_PARTS: usize = 8;
 
 const SKIP_DIRS: &[&str] = &[
-    "node_modules", "target", "dist", "build", "out", "vendor", "__pycache__",
-    "venv", "env", "coverage", "Pods", "DerivedData", "site-packages", "bower_components",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    "vendor",
+    "__pycache__",
+    "venv",
+    "env",
+    "coverage",
+    "Pods",
+    "DerivedData",
+    "site-packages",
+    "bower_components",
 ];
 
 const WORKSPACE_DIRS: &[&str] = &[
-    "packages", "apps", "crates", "services", "libs", "modules", "plugins", "extensions",
+    "packages",
+    "apps",
+    "crates",
+    "services",
+    "libs",
+    "modules",
+    "plugins",
+    "extensions",
 ];
 
 const MANIFESTS: &[&str] = &[
-    "package.json", "Cargo.toml", "pyproject.toml", "setup.py", "go.mod", "pom.xml",
-    "build.gradle", "build.gradle.kts", "Gemfile", "composer.json", "Package.swift",
-    "pubspec.yaml", "mix.exs", "CMakeLists.txt", "Makefile", "deno.json",
+    "package.json",
+    "Cargo.toml",
+    "pyproject.toml",
+    "setup.py",
+    "go.mod",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "Gemfile",
+    "composer.json",
+    "Package.swift",
+    "pubspec.yaml",
+    "mix.exs",
+    "CMakeLists.txt",
+    "Makefile",
+    "deno.json",
 ];
 
 fn language(extension: &str) -> Option<&'static str> {
@@ -79,7 +111,9 @@ fn language(extension: &str) -> Option<&'static str> {
 fn is_test_path(relative: &str) -> bool {
     let lower = relative.to_lowercase();
     let name = lower.rsplit('/').next().unwrap_or(&lower);
-    lower.split('/').any(|part| matches!(part, "test" | "tests" | "__tests__" | "spec" | "e2e"))
+    lower
+        .split('/')
+        .any(|part| matches!(part, "test" | "tests" | "__tests__" | "spec" | "e2e"))
         || name.contains(".test.")
         || name.contains(".spec.")
         || name.contains("_test.")
@@ -136,7 +170,9 @@ fn walk(root: &Path, dir: &Path, depth: usize, scan: &mut Scan) {
             return;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        let Ok(kind) = entry.file_type() else { continue };
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
         if kind.is_symlink() {
             continue;
         }
@@ -159,7 +195,10 @@ fn walk(root: &Path, dir: &Path, depth: usize, scan: &mut Scan) {
             if MANIFESTS.contains(&name.as_str()) {
                 scan.manifests.push(name.clone());
             }
-            if matches!(name.as_str(), ".gitlab-ci.yml" | ".travis.yml" | "azure-pipelines.yml" | "Jenkinsfile") {
+            if matches!(
+                name.as_str(),
+                ".gitlab-ci.yml" | ".travis.yml" | "azure-pipelines.yml" | "Jenkinsfile"
+            ) {
                 scan.ci = true;
             }
             if name.to_lowercase().starts_with("readme") {
@@ -167,15 +206,21 @@ fn walk(root: &Path, dir: &Path, depth: usize, scan: &mut Scan) {
                 scan.readme = Some((name.clone(), size));
             }
         }
-        let extension = name.rsplit_once('.').map(|(_, ext)| ext.to_lowercase()).unwrap_or_default();
+        let extension = name
+            .rsplit_once('.')
+            .map(|(_, ext)| ext.to_lowercase())
+            .unwrap_or_default();
         if matches!(extension.as_str(), "md" | "markdown") {
             if scan.markdown.len() < MAX_MARKDOWN_FILES {
                 scan.markdown.push(path.clone());
             }
             continue;
         }
-        let Some(language) = language(&extension) else { continue };
-        if name.ends_with(".min.js") || name.contains(".bundle.") || name.ends_with(".generated.ts") {
+        let Some(language) = language(&extension) else {
+            continue;
+        };
+        if name.ends_with(".min.js") || name.contains(".bundle.") || name.ends_with(".generated.ts")
+        {
             continue;
         }
         scan.code_files += 1;
@@ -186,8 +231,15 @@ fn walk(root: &Path, dir: &Path, depth: usize, scan: &mut Scan) {
         let mut parts = relative.split('/');
         if let (Some(first), Some(second), Some(_)) = (parts.next(), parts.next(), parts.next()) {
             *scan.dir_files.entry(first.to_string()).or_default() += 1;
-            *scan.dir_files.entry(format!("{first}/{second}")).or_default() += 1;
-        } else if let Some(first) = relative.split('/').next().filter(|_| relative.contains('/')) {
+            *scan
+                .dir_files
+                .entry(format!("{first}/{second}"))
+                .or_default() += 1;
+        } else if let Some(first) = relative
+            .split('/')
+            .next()
+            .filter(|_| relative.contains('/'))
+        {
             *scan.dir_files.entry(first.to_string()).or_default() += 1;
         }
         if scan.text_files_read < MAX_TEXT_FILES {
@@ -234,7 +286,8 @@ fn read_code(path: &Path, relative: &str, scan: &mut Scan) {
         }
         if (marker || stub) && scan.marker_samples.len() < 12 {
             let snippet: String = line.trim().chars().take(100).collect();
-            scan.marker_samples.push(format!("{relative}:{}: {snippet}", number + 1));
+            scan.marker_samples
+                .push(format!("{relative}:{}: {snippet}", number + 1));
         }
     }
 }
@@ -243,7 +296,9 @@ fn read_code(path: &Path, relative: &str, scan: &mut Scan) {
 fn checklists(root: &Path, files: &[PathBuf]) -> Vec<Checklist> {
     let mut lists: Vec<Checklist> = Vec::new();
     for path in files {
-        let Some(text) = read_text(path) else { continue };
+        let Some(text) = read_text(path) else {
+            continue;
+        };
         let file = path
             .strip_prefix(root)
             .map(|path| path.to_string_lossy().into_owned())
@@ -267,7 +322,12 @@ fn checklists(root: &Path, files: &[PathBuf]) -> Vec<Checklist> {
                 continue;
             }
             if let Some(title) = trimmed.strip_prefix('#') {
-                heading = title.trim_start_matches('#').trim().chars().take(80).collect();
+                heading = title
+                    .trim_start_matches('#')
+                    .trim()
+                    .chars()
+                    .take(80)
+                    .collect();
                 continue;
             }
             let item = ["- [", "* [", "+ ["]
@@ -310,7 +370,9 @@ fn checklists(root: &Path, files: &[PathBuf]) -> Vec<Checklist> {
 fn parts(root: &Path, scan: &Scan) -> Vec<(String, String, usize)> {
     let mut found: Vec<(String, String, usize)> = Vec::new();
     for workspace in WORKSPACE_DIRS {
-        let Ok(entries) = fs::read_dir(root.join(workspace)) else { continue };
+        let Ok(entries) = fs::read_dir(root.join(workspace)) else {
+            continue;
+        };
         for entry in entries.filter_map(|entry| entry.ok()) {
             if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 continue;
@@ -331,7 +393,19 @@ fn parts(root: &Path, scan: &Scan) -> Vec<(String, String, usize)> {
             .dir_files
             .iter()
             .filter(|(dir, _)| !dir.contains('/'))
-            .filter(|(dir, _)| !matches!(dir.as_str(), "test" | "tests" | "docs" | "doc" | "examples" | "scripts" | "benches" | "fixtures"))
+            .filter(|(dir, _)| {
+                !matches!(
+                    dir.as_str(),
+                    "test"
+                        | "tests"
+                        | "docs"
+                        | "doc"
+                        | "examples"
+                        | "scripts"
+                        | "benches"
+                        | "fixtures"
+                )
+            })
             .map(|(dir, files)| (dir.clone(), *files))
             .collect();
         top.sort_by_key(|entry| std::cmp::Reverse(entry.1));
@@ -421,9 +495,16 @@ pub fn scan_project(path: &str) -> Result<Value> {
         digest.push(format!("checklists {done}/{total} done"));
     }
     if scan.markers + scan.stubs > 0 {
-        digest.push(format!("{} TODO/FIXME markers, {} stubs", scan.markers, scan.stubs));
+        digest.push(format!(
+            "{} TODO/FIXME markers, {} stubs",
+            scan.markers, scan.stubs
+        ));
     }
-    digest.push(if scan.ci { "CI configured".into() } else { "no CI".to_string() });
+    digest.push(if scan.ci {
+        "CI configured".into()
+    } else {
+        "no CI".to_string()
+    });
     if let Some(count) = commits {
         digest.push(format!("{count} commits"));
     }
@@ -491,7 +572,10 @@ pub fn parse_task_lines(text: &str) -> Vec<(String, &'static str, String, String
             .trim()
             .trim_start_matches(['-', '*', '>', '`', ' '])
             .trim_end_matches('`');
-        let Some(rest) = line.strip_prefix("TASK").or_else(|| line.strip_prefix("Task:")) else {
+        let Some(rest) = line
+            .strip_prefix("TASK")
+            .or_else(|| line.strip_prefix("Task:"))
+        else {
             continue;
         };
         let rest = rest.trim_start_matches(':');
@@ -499,14 +583,24 @@ pub fn parse_task_lines(text: &str) -> Vec<(String, &'static str, String, String
             Some((head, evidence)) => (head, evidence.trim().to_string()),
             None => (rest, String::new()),
         };
-        let Some((part, after)) = quoted(head) else { continue };
+        let Some((part, after)) = quoted(head) else {
+            continue;
+        };
         let after = after.trim_start();
-        let (state, after) = [("in progress", "in_progress"), ("in_progress", "in_progress"),
-            ("todo", "todo"), ("to do", "todo"), ("done", "done"), ("blocked", "blocked")]
-            .into_iter()
-            .find_map(|(word, state)| strip_word(after, &[word]).map(|tail| (state, tail)))
-            .unwrap_or(("todo", after));
-        let Some((title, _)) = quoted(after) else { continue };
+        let (state, after) = [
+            ("in progress", "in_progress"),
+            ("in_progress", "in_progress"),
+            ("todo", "todo"),
+            ("to do", "todo"),
+            ("done", "done"),
+            ("blocked", "blocked"),
+        ]
+        .into_iter()
+        .find_map(|(word, state)| strip_word(after, &[word]).map(|tail| (state, tail)))
+        .unwrap_or(("todo", after));
+        let Some((title, _)) = quoted(after) else {
+            continue;
+        };
         if part.is_empty() || title.is_empty() {
             continue;
         }
@@ -545,14 +639,17 @@ pub fn parse_progress_lines(text: &str) -> Vec<(Option<String>, f64, String)> {
             if let Some(quoted) = tail.strip_prefix('"').or_else(|| tail.strip_prefix('“')) {
                 let end = quoted.find(['"', '”']).unwrap_or(quoted.len());
                 let name = quoted[..end].trim().to_string();
-                let after = quoted.get(end + quoted[end..].chars().next().map_or(0, char::len_utf8)..).unwrap_or("");
+                let after = quoted
+                    .get(end + quoted[end..].chars().next().map_or(0, char::len_utf8)..)
+                    .unwrap_or("");
                 (Some(name), after.trim())
             } else {
                 // Unquoted: everything before the last number is the name.
-                let split = tail
-                    .rfind(|c: char| c.is_whitespace())
-                    .unwrap_or(0);
-                (Some(tail[..split].trim().trim_end_matches(':').to_string()), tail[split..].trim())
+                let split = tail.rfind(|c: char| c.is_whitespace()).unwrap_or(0);
+                (
+                    Some(tail[..split].trim().trim_end_matches(':').to_string()),
+                    tail[split..].trim(),
+                )
             }
         } else {
             continue;
@@ -562,7 +659,9 @@ pub fn parse_progress_lines(text: &str) -> Vec<(Option<String>, f64, String)> {
             .chars()
             .take_while(|c| c.is_ascii_digit() || *c == '.')
             .collect();
-        let Ok(percent) = number.parse::<f64>() else { continue };
+        let Ok(percent) = number.parse::<f64>() else {
+            continue;
+        };
         if !(0.0..=100.0).contains(&percent) || part.as_ref().is_some_and(|name| name.is_empty()) {
             continue;
         }
@@ -610,7 +709,14 @@ impl App {
             && let Some(head) = since.and_then(|time| self.head_at(project_id, time))
             && let Some(log) = store::git(
                 path,
-                &["log", "--no-merges", "--format=%s", "-n", "8", &format!("{head}..HEAD")],
+                &[
+                    "log",
+                    "--no-merges",
+                    "--format=%s",
+                    "-n",
+                    "8",
+                    &format!("{head}..HEAD"),
+                ],
             )
         {
             let subjects: Vec<String> = log
@@ -623,7 +729,12 @@ impl App {
                 text.push_str(&format!(" Commits since then: {}", subjects.join("; ")));
                 let total = store::git(
                     path,
-                    &["rev-list", "--count", "--no-merges", &format!("{head}..HEAD")],
+                    &[
+                        "rev-list",
+                        "--count",
+                        "--no-merges",
+                        &format!("{head}..HEAD"),
+                    ],
                 )
                 .and_then(|count| count.trim().parse::<usize>().ok())
                 .unwrap_or(subjects.len());
@@ -768,7 +879,10 @@ impl App {
             };
             let executable = profile["executable"].as_str().unwrap_or_default();
             let harness = profile["harness"].as_str().unwrap_or_else(|| {
-                Path::new(executable).file_name().and_then(|name| name.to_str()).unwrap_or("")
+                Path::new(executable)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
             });
             let adapter = crate::adapters::adapter_for(harness);
             let label = profile["name"]

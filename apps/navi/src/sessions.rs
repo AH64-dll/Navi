@@ -11,8 +11,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 const INJECT_LIMIT: usize = 32 * 1024;
@@ -207,7 +207,10 @@ fn classify_tail_line(family: &str, line: &str) -> Option<TailVerdict> {
 /// the caller treats as "this line is not a failure".
 fn adjacent_count(tokens: &[&str], index: usize) -> Option<u32> {
     let parse = |token: &str| -> Option<u32> {
-        token.parse::<u32>().ok().filter(|count| *count <= 1_000_000)
+        token
+            .parse::<u32>()
+            .ok()
+            .filter(|count| *count <= 1_000_000)
     };
     if index > 0
         && let Some(count) = parse(tokens[index - 1])
@@ -290,10 +293,7 @@ impl StatusCache {
     pub(crate) fn snapshot(&self) -> Value {
         let panes = self.panes.lock().unwrap();
         let (age_ms, sessions) = match panes.as_ref() {
-            Some((stamp, panes)) => (
-                json!(now().saturating_sub(*stamp)),
-                json!(panes.len()),
-            ),
+            Some((stamp, panes)) => (json!(now().saturating_sub(*stamp)), json!(panes.len())),
             None => (Value::Null, json!(0)),
         };
         drop(panes);
@@ -461,10 +461,7 @@ impl App {
             return;
         }
         for n in (1..LOG_KEEP).rev() {
-            let from = self
-                .data
-                .join("sessions")
-                .join(format!("{target}.log.{n}"));
+            let from = self.data.join("sessions").join(format!("{target}.log.{n}"));
             let to = self
                 .data
                 .join("sessions")
@@ -473,7 +470,10 @@ impl App {
                 let _ = fs::rename(&from, &to);
             }
         }
-        let _ = fs::rename(&log, self.data.join("sessions").join(format!("{target}.log.1")));
+        let _ = fs::rename(
+            &log,
+            self.data.join("sessions").join(format!("{target}.log.1")),
+        );
         // New pipe output recreates the log via append-mode open.
     }
 
@@ -510,10 +510,14 @@ impl App {
                     harness: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
                     native_id: row.get(5)?,
                     native_name: row.get(6)?,
-                    state: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "created".into()),
+                    state: row
+                        .get::<_, Option<String>>(7)?
+                        .unwrap_or_else(|| "created".into()),
                     pid: row.get::<_, Option<i64>>(8)?.map(|p| p as u32),
                     generation: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
-                    origin: row.get::<_, Option<String>>(10)?.unwrap_or_else(|| "navi".into()),
+                    origin: row
+                        .get::<_, Option<String>>(10)?
+                        .unwrap_or_else(|| "navi".into()),
                     exit_status: row.get(11)?,
                     last_active: row.get::<_, Option<i64>>(12)?.map(|v| v as u64),
                     exited: row.get::<_, Option<i64>>(13)?.map(|v| v as u64),
@@ -628,11 +632,9 @@ impl App {
         let state = self.state.lock().unwrap();
         let argv: Option<String> = state
             .db
-            .query_row(
-                "SELECT argv FROM sessions WHERE id=?1",
-                [&row.id],
-                |r| r.get(0),
-            )
+            .query_row("SELECT argv FROM sessions WHERE id=?1", [&row.id], |r| {
+                r.get(0)
+            })
             .optional()
             .unwrap_or(None);
         argv.and_then(|text| serde_json::from_str::<Value>(&text).ok())
@@ -760,11 +762,9 @@ impl App {
             if let Some(id) = record["id"].as_str() {
                 let created: i64 = state
                     .db
-                    .query_row(
-                        "SELECT created FROM sessions WHERE id=?1",
-                        [id],
-                        |r| r.get(0),
-                    )
+                    .query_row("SELECT created FROM sessions WHERE id=?1", [id], |r| {
+                        r.get(0)
+                    })
                     .unwrap_or(0);
                 record["created"] = json!(created);
             }
@@ -963,8 +963,8 @@ impl App {
             argv.insert(1, "-C".to_string());
             argv.insert(2, cwd.to_string());
         }
-        let path = std::fs::canonicalize(cwd)
-            .map_err(|e| format!("Invalid project directory: {e}"))?;
+        let path =
+            std::fs::canonicalize(cwd).map_err(|e| format!("Invalid project directory: {e}"))?;
         if !path.is_dir() {
             return Err("Project path must be a directory".into());
         }
@@ -988,7 +988,10 @@ impl App {
             let mut link_env = BTreeMap::new();
             link_env.insert("NAVI_SESSION_ID".to_string(), target.clone());
             link_env.insert("NAVI_HARNESS".to_string(), adapter.to_string());
-            link_env.insert("NAVI_DATA_DIR".to_string(), self.data.to_string_lossy().into_owned());
+            link_env.insert(
+                "NAVI_DATA_DIR".to_string(),
+                self.data.to_string_lossy().into_owned(),
+            );
             link_env.insert(
                 "NAVI_RUNTIME_DIR".to_string(),
                 self.runtime.to_string_lossy().into_owned(),
@@ -1012,12 +1015,16 @@ impl App {
             env.extend(registration.env);
         }
         let env_keys: Vec<String> = env.keys().cloned().collect();
-        let cols = profile["size"]["cols"].as_u64().unwrap_or(120).clamp(20, 500);
+        let cols = profile["size"]["cols"]
+            .as_u64()
+            .unwrap_or(120)
+            .clamp(20, 500);
         let rows_size = profile["size"]["rows"].as_u64().unwrap_or(32).clamp(8, 200);
         let native_id = spec.preseed_id.clone().or(native_hint);
-        let snapshot = if adapters::capture_roots(Path::new(
-            &std::env::var("HOME").unwrap_or_default(),
-        ), adapter)
+        let snapshot = if adapters::capture_roots(
+            Path::new(&std::env::var("HOME").unwrap_or_default()),
+            adapter,
+        )
         .is_empty()
         {
             adapters::Snapshot::new()
@@ -1216,7 +1223,11 @@ impl App {
                 self.log_event(&target, "native_captured", json!({"native_id":captured}));
             } else if matches!(adapter, "claude" | "codex" | "agy") {
                 warnings.push("native_id_not_captured".into());
-                self.log_event(&target, "native_captured", json!({"native_id":null,"pending":true}));
+                self.log_event(
+                    &target,
+                    "native_captured",
+                    json!({"native_id":null,"pending":true}),
+                );
             }
         } else {
             self.log_event(&target, "native_captured", json!({"native_id":native_id}));
@@ -1272,16 +1283,25 @@ impl App {
     /// progress link and whose executable resolves on the launch PATH.
     pub(crate) fn assessment_profile(&self) -> Option<Value> {
         let dirs = self.launch_dirs();
-        self.settings()["profiles"].as_array()?.iter().find(|profile| {
-            let Some(executable) = profile["executable"].as_str() else {
-                return false;
-            };
-            let harness = profile["harness"].as_str().unwrap_or_else(|| {
-                Path::new(executable).file_name().and_then(|name| name.to_str()).unwrap_or("")
-            });
-            matches!(adapters::adapter_for(harness), "claude" | "codex" | "opencode" | "pi")
-                && adapters::resolve(executable, &dirs).is_ok()
-        }).cloned()
+        self.settings()["profiles"]
+            .as_array()?
+            .iter()
+            .find(|profile| {
+                let Some(executable) = profile["executable"].as_str() else {
+                    return false;
+                };
+                let harness = profile["harness"].as_str().unwrap_or_else(|| {
+                    Path::new(executable)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("")
+                });
+                matches!(
+                    adapters::adapter_for(harness),
+                    "claude" | "codex" | "opencode" | "pi"
+                ) && adapters::resolve(executable, &dirs).is_ok()
+            })
+            .cloned()
     }
 
     pub fn create_session(&self, p: &Value) -> Result<Value> {
@@ -1298,8 +1318,8 @@ impl App {
         let dirs = self.launch_dirs();
         let executable = profile["executable"].as_str().ok_or("Missing executable")?;
         adapters::resolve(executable, &dirs)?;
-        let canonical = std::fs::canonicalize(cwd)
-            .map_err(|e| format!("Invalid project directory: {e}"))?;
+        let canonical =
+            std::fs::canonicalize(cwd).map_err(|e| format!("Invalid project directory: {e}"))?;
         if !canonical.is_dir() {
             return Err("Project path must be a directory".into());
         }
@@ -1317,9 +1337,9 @@ impl App {
             },
             Some("new") => adapters::Resume::New,
             Some("last") => adapters::Resume::Last,
-            Some(other) => adapters::Resume::Id(
-                other.strip_prefix("id:").unwrap_or(other).to_string(),
-            ),
+            Some(other) => {
+                adapters::Resume::Id(other.strip_prefix("id:").unwrap_or(other).to_string())
+            }
         };
         self.launch_managed(
             &profile,
@@ -1439,10 +1459,7 @@ impl App {
         let mut last_screen = String::new();
         let mut last_change = Instant::now();
         while Instant::now() < deadline {
-            let pane = self
-                .panes()
-                .into_iter()
-                .find(|pane| pane.session == target);
+            let pane = self.panes().into_iter().find(|pane| pane.session == target);
             match pane {
                 Some(pane) if !pane.dead => {}
                 _ => return false,
@@ -1484,10 +1501,7 @@ impl App {
             .into_iter()
             .find(|row| row.id == target)
             .ok_or("Unknown session")?;
-        let alive = self
-            .panes()
-            .into_iter()
-            .any(|pane| pane.session == target);
+        let alive = self.panes().into_iter().any(|pane| pane.session == target);
         if alive {
             let _ = self.append_screen(target);
             let killed = self.tmux_ok(&["kill-session", "-t", target]);
@@ -1518,7 +1532,12 @@ impl App {
     /// harness stay, so "Codex" still finds the session by voice.
     pub fn session_rename(&self, p: &Value) -> Result<Value> {
         let target = p["id"].as_str().ok_or("Missing session")?;
-        let name: String = p["name"].as_str().unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ");
+        let name: String = p["name"]
+            .as_str()
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         let name = name.trim_matches(['"', '“', '”', '.']).trim().to_string();
         if name.is_empty() || name.chars().count() > 40 || name.chars().any(char::is_control) {
             return Err("A session name must be 1 to 40 characters".into());
@@ -1532,7 +1551,10 @@ impl App {
             let state = self.state.lock().unwrap();
             state
                 .db
-                .execute("UPDATE sessions SET name=?1 WHERE id=?2", params![name, target])
+                .execute(
+                    "UPDATE sessions SET name=?1 WHERE id=?2",
+                    params![name, target],
+                )
                 .map_err(|e| e.to_string())?;
         }
         self.log_event(target, "renamed", json!({"name":name}));
@@ -1554,11 +1576,7 @@ impl App {
             .into_iter()
             .find(|row| row.id == target)
             .ok_or("Unknown session")?;
-        if self
-            .panes()
-            .into_iter()
-            .any(|pane| pane.session == target)
-        {
+        if self.panes().into_iter().any(|pane| pane.session == target) {
             let _ = self.append_screen(target);
             let _ = self.tmux_ok(&["kill-session", "-t", target]);
         }
@@ -1593,11 +1611,7 @@ impl App {
             .find(|row| row.id == target)
             .ok_or("Unknown session")?;
         let profile = self.profile(&row.profile)?;
-        if self
-            .panes()
-            .into_iter()
-            .any(|pane| pane.session == target)
-        {
+        if self.panes().into_iter().any(|pane| pane.session == target) {
             let _ = self.append_screen(target);
             let _ = self.tmux_ok(&["kill-session", "-t", target]);
         }
@@ -1653,10 +1667,7 @@ impl App {
             )
         } else if let Some(name) = p["name"].as_str().filter(|name| !name.is_empty()) {
             let rows = self.rows(false)?;
-            let matches: Vec<Row> = rows
-                .into_iter()
-                .filter(|row| row.name == name)
-                .collect();
+            let matches: Vec<Row> = rows.into_iter().filter(|row| row.name == name).collect();
             if matches.len() != 1 {
                 return Err(format!("Name matches {} sessions", matches.len()));
             }
@@ -1674,7 +1685,10 @@ impl App {
             };
             (
                 row.profile.clone(),
-                p["cwd"].as_str().map(str::to_string).unwrap_or(row.cwd.clone()),
+                p["cwd"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or(row.cwd.clone()),
                 p["name"]
                     .as_str()
                     .map(str::to_string)
@@ -1691,17 +1705,16 @@ impl App {
             if native.is_none() && p["name"].is_null() {
                 return Err("Resume needs an id, a name, or a harness + native_id".into());
             }
-            let profile_id = self
-                .settings()["profiles"]
+            let profile_id = self.settings()["profiles"]
                 .as_array()
                 .and_then(|profiles| {
                     profiles
                         .iter()
                         .find(|profile| {
                             adapters::adapter_for(
-                                profile["harness"].as_str().unwrap_or(
-                                    profile["executable"].as_str().unwrap_or_default(),
-                                ),
+                                profile["harness"]
+                                    .as_str()
+                                    .unwrap_or(profile["executable"].as_str().unwrap_or_default()),
                             ) == adapters::adapter_for(harness)
                         })
                         .and_then(|profile| profile["id"].as_str().map(str::to_string))
@@ -1727,7 +1740,6 @@ impl App {
         let prompt = p["prompt"].as_str();
         self.launch_managed(&profile, &cwd, &name, kind, native, None, prompt, 0)
     }
-
 
     fn external_cwd(&self, harness: &str, native: Option<&str>) -> Option<String> {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
@@ -1790,16 +1802,14 @@ impl App {
         if p["hard"].as_bool() == Some(true) {
             let deadline = Instant::now() + HARD_KILL_AFTER;
             loop {
-                let pane = self
-                    .panes()
-                    .into_iter()
-                    .find(|pane| pane.session == target);
+                let pane = self.panes().into_iter().find(|pane| pane.session == target);
                 match pane {
                     None => break,
                     Some(pane) if pane.dead => break,
                     Some(pane) => {
                         let launcher = self.launcher_command(&row);
-                        if pane.command == launcher || SHELL_COMMANDS.contains(&pane.command.as_str())
+                        if pane.command == launcher
+                            || SHELL_COMMANDS.contains(&pane.command.as_str())
                         {
                             break;
                         }
@@ -1847,7 +1857,8 @@ impl App {
         let size = meta.len();
         let start = p["since"].as_u64().unwrap_or(0).min(size);
         let mut file = fs::File::open(&log).map_err(|e| e.to_string())?;
-        file.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+        file.seek(SeekFrom::Start(start))
+            .map_err(|e| e.to_string())?;
         let mut buffer = Vec::new();
         file.take(limit + 1)
             .read_to_end(&mut buffer)
@@ -1915,7 +1926,11 @@ impl App {
         let Some(verdict) = parse_tail(&row.harness, &text) else {
             return Ok(out);
         };
-        let kind = if verdict.pass { "test_pass" } else { "test_fail" };
+        let kind = if verdict.pass {
+            "test_pass"
+        } else {
+            "test_fail"
+        };
         let value = if verdict.pass { 1.0 } else { 0.0 };
         let signal = self.add_signal(
             &project_id,
@@ -2313,7 +2328,10 @@ mod tests {
         assert_eq!(pytest.count, Some(3));
         // cargo test
         let cargo = verdict("test result: FAILED. 11 passed; 2 failed; 0 ignored").expect("cargo");
-        assert!(!cargo.pass, "a non-zero failure count outranks the pass on the same line");
+        assert!(
+            !cargo.pass,
+            "a non-zero failure count outranks the pass on the same line"
+        );
         // go test
         let go = verdict("ok  example.com/pkg  0.02s\nPASS").expect("go summary");
         assert!(go.pass);

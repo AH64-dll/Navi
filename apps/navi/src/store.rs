@@ -134,7 +134,8 @@ pub fn migrate(db: &Connection, settings: &Value) -> Result<()> {
     db.execute_batch("BEGIN IMMEDIATE")
         .map_err(|error| error.to_string())?;
     let outcome = (|| -> Result<()> {
-        db.execute_batch(SCHEMA).map_err(|error| error.to_string())?;
+        db.execute_batch(SCHEMA)
+            .map_err(|error| error.to_string())?;
         for (name, declaration) in [
             ("harness", "TEXT"),
             ("native_id", "TEXT"),
@@ -183,7 +184,9 @@ pub fn migrate(db: &Connection, settings: &Value) -> Result<()> {
         Ok(())
     })();
     match outcome {
-        Ok(()) => db.execute_batch("COMMIT").map_err(|error| error.to_string()),
+        Ok(()) => db
+            .execute_batch("COMMIT")
+            .map_err(|error| error.to_string()),
         Err(error) => {
             let _ = db.execute_batch("ROLLBACK");
             Err(error)
@@ -196,8 +199,10 @@ fn ensure_column(db: &Connection, table: &str, name: &str, declaration: &str) ->
     if existing.iter().any(|column| column == name) {
         return Ok(());
     }
-    db.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {name} {declaration}"))
-        .map_err(|error| error.to_string())
+    db.execute_batch(&format!(
+        "ALTER TABLE {table} ADD COLUMN {name} {declaration}"
+    ))
+    .map_err(|error| error.to_string())
 }
 
 fn columns(db: &Connection, table: &str) -> Result<Vec<String>> {
@@ -285,7 +290,9 @@ fn backfill_sessions(db: &Connection) -> Result<()> {
         .prepare("SELECT id,cwd FROM sessions WHERE project_id IS NULL OR project_id=''")
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|error| error.to_string())?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|error| error.to_string())?;
@@ -311,7 +318,9 @@ pub fn project_id_for_path(db: &Connection, cwd: &str) -> Option<String> {
         .prepare("SELECT id,path FROM projects WHERE archived=0")
         .ok()?;
     let rows = statement
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .ok()?
         .collect::<std::result::Result<Vec<_>, _>>()
         .ok()?;
@@ -702,7 +711,11 @@ fn weighted(tasks: &[TaskScore], pick: impl Fn(&TaskScore) -> f64) -> f64 {
     }
     let total: f64 = tasks.iter().map(|task| task.weight).sum();
     if total > 0.0 {
-        tasks.iter().map(|task| pick(task) * task.weight).sum::<f64>() / total
+        tasks
+            .iter()
+            .map(|task| pick(task) * task.weight)
+            .sum::<f64>()
+            / total
     } else {
         tasks.iter().map(&pick).sum::<f64>() / tasks.len() as f64
     }
@@ -1040,14 +1053,24 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
         ));
     }
     if unknown_tasks > 0 {
-        risks.push(format!("{} no evidence", counted_have(unknown_tasks as u64, "task")));
+        risks.push(format!(
+            "{} no evidence",
+            counted_have(unknown_tasks as u64, "task")
+        ));
     }
     if !unassigned.is_empty() {
-        risks.push(format!("{} no part", counted_have(unassigned.len() as u64, "task")));
+        risks.push(format!(
+            "{} no part",
+            counted_have(unassigned.len() as u64, "task")
+        ));
     }
     if counts["blocked"].as_u64().unwrap_or(0) > 0 {
         let blocked = counts["blocked"].as_u64().unwrap_or(0);
-        risks.push(format!("{} {} blocked", counted(blocked, "task"), if blocked == 1 { "is" } else { "are" }));
+        risks.push(format!(
+            "{} {} blocked",
+            counted(blocked, "task"),
+            if blocked == 1 { "is" } else { "are" }
+        ));
     }
     let (why, basis_value) = match (basis, &project_estimate) {
         ("estimate", Some(estimate)) => (
@@ -1064,7 +1087,11 @@ fn graph_score_at(db: &Connection, project_id: &str, at: u64) -> Result<Value> {
                 "Weighted mean of {}; {covered_tasks} of {} {}",
                 counted(contributing as u64, "part"),
                 counted(total_tasks as u64, "task"),
-                if total_tasks == 1 { "carries evidence" } else { "carry evidence" }
+                if total_tasks == 1 {
+                    "carries evidence"
+                } else {
+                    "carry evidence"
+                }
             );
             if standing_in > 0 {
                 text.push_str(&format!(
@@ -1156,15 +1183,17 @@ pub fn progress_sentence(graph: &Value) -> String {
         return format!("{name} has no completion estimate yet.");
     };
     // "About" hedges an estimate; 0% and 100% are exact.
-    let hedge = if (0.5..99.5).contains(&value) { "about " } else { "" };
+    let hedge = if (0.5..99.5).contains(&value) {
+        "about "
+    } else {
+        ""
+    };
     let mut sentence = format!("{name} is {hedge}{}% complete", value.round());
     match graph["basis"]["kind"].as_str() {
-        Some("estimate") => {
-            match graph["basis"]["source"].as_str().unwrap_or("assistant") {
-                "user" => sentence.push_str(" by your estimate"),
-                source => sentence.push_str(&format!(" by {}'s estimate", source_name(source))),
-            }
-        }
+        Some("estimate") => match graph["basis"]["source"].as_str().unwrap_or("assistant") {
+            "user" => sentence.push_str(" by your estimate"),
+            source => sentence.push_str(&format!(" by {}'s estimate", source_name(source))),
+        },
         Some("parts") => match graph["aspects"].as_array().map(Vec::as_slice) {
             Some([only]) => sentence.push_str(&format!(
                 ". Its only part is {}",
@@ -1182,7 +1211,9 @@ pub fn progress_sentence(graph: &Value) -> String {
         .filter_map(|aspect| Some((aspect["title"].as_str()?, aspect["percent"].as_f64()?)))
         .min_by(|left, right| left.1.total_cmp(&right.1));
     if let Some((title, value)) = weakest
-        && graph["aspects"].as_array().is_some_and(|aspects| aspects.len() > 1)
+        && graph["aspects"]
+            .as_array()
+            .is_some_and(|aspects| aspects.len() > 1)
     {
         sentence.push_str(&format!(" Furthest behind: {title} at {}%.", value.round()));
     }
@@ -1259,7 +1290,9 @@ pub fn recent_sentence(graph: &Value, since: u64) -> String {
             "user" => "you".to_string(),
             source => source_name(source),
         };
-        let what = target.and_then(|id| titles.get(id).copied()).unwrap_or("the project");
+        let what = target
+            .and_then(|id| titles.get(id).copied())
+            .unwrap_or("the project");
         let value = signal["value"].as_f64().unwrap_or(0.0) * 100.0;
         estimates.push(format!("{who} put {what} at {}%", value.round()));
     }
@@ -1268,14 +1301,25 @@ pub fn recent_sentence(graph: &Value, since: u64) -> String {
         .filter_map(|signal| signal["task_id"].as_str())
         .collect::<BTreeSet<_>>()
         .len();
-    let commits = signals.iter().filter(|signal| signal["kind"] == "git_commit").count();
+    let commits = signals
+        .iter()
+        .filter(|signal| signal["kind"] == "git_commit")
+        .count();
     let mut changes = Vec::new();
     if !estimates.is_empty() {
-        let shown = estimates.iter().take(4).cloned().collect::<Vec<_>>().join(", ");
+        let shown = estimates
+            .iter()
+            .take(4)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         changes.push(capitalise(&shown));
     }
     if tasks > 0 {
-        changes.push(format!("{tasks} task{} updated", if tasks == 1 { "" } else { "s" }));
+        changes.push(format!(
+            "{tasks} task{} updated",
+            if tasks == 1 { "" } else { "s" }
+        ));
     }
     if commits > 0 {
         let mut text = format!("{commits} commit{}", if commits == 1 { "" } else { "s" });
@@ -1283,7 +1327,12 @@ pub fn recent_sentence(graph: &Value, since: u64) -> String {
         let latest = signals
             .iter()
             .find(|signal| signal["kind"] == "git_commit")
-            .and_then(|signal| signal["evidence"].as_str()?.strip_prefix("HEAD ")?.split_once(' '))
+            .and_then(|signal| {
+                signal["evidence"]
+                    .as_str()?
+                    .strip_prefix("HEAD ")?
+                    .split_once(' ')
+            })
             .map(|(_, subject)| subject.trim())
             .filter(|subject| !subject.is_empty());
         if let Some(subject) = latest {
@@ -1320,9 +1369,19 @@ fn graph_tasks(graph: &Value) -> Vec<(&str, &Value)> {
         .flatten()
         .flat_map(|aspect| {
             let title = aspect["title"].as_str().unwrap_or_default();
-            aspect["items"].as_array().into_iter().flatten().map(move |item| (title, item))
+            aspect["items"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(move |item| (title, item))
         })
-        .chain(graph["unassigned"].as_array().into_iter().flatten().map(|item| ("", item)))
+        .chain(
+            graph["unassigned"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|item| ("", item)),
+        )
         .collect()
 }
 
@@ -1332,7 +1391,11 @@ fn task_list(tasks: &[(&str, &Value)], limit: usize) -> String {
         .take(limit)
         .map(|(part, item)| {
             let title = item["title"].as_str().unwrap_or("Untitled");
-            if part.is_empty() { format!("“{title}”") } else { format!("“{title}” in {part}") }
+            if part.is_empty() {
+                format!("“{title}”")
+            } else {
+                format!("“{title}” in {part}")
+            }
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -1345,8 +1408,10 @@ fn task_list(tasks: &[(&str, &Value)], limit: usize) -> String {
 /// "What's blocked": the blocked tasks, named with their parts.
 pub fn blocked_sentence(graph: &Value) -> String {
     let name = graph["project"]["name"].as_str().unwrap_or("this project");
-    let blocked: Vec<(&str, &Value)> =
-        graph_tasks(graph).into_iter().filter(|(_, item)| item["state"] == "blocked").collect();
+    let blocked: Vec<(&str, &Value)> = graph_tasks(graph)
+        .into_iter()
+        .filter(|(_, item)| item["state"] == "blocked")
+        .collect();
     match blocked.len() {
         0 => format!("Nothing is marked blocked in {name}."),
         1 => format!("1 task is blocked: {}.", task_list(&blocked, 5)),
@@ -1361,18 +1426,30 @@ pub fn done_sentence(graph: &Value) -> String {
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|aspect| aspect["percent"].as_f64().is_some_and(|value| value >= 100.0))
+        .filter(|aspect| {
+            aspect["percent"]
+                .as_f64()
+                .is_some_and(|value| value >= 100.0)
+        })
         .filter_map(|aspect| aspect["title"].as_str())
         .collect();
     let tasks = graph_tasks(graph);
-    let done: Vec<(&str, &Value)> = tasks.iter().copied().filter(|(_, item)| item["state"] == "done").collect();
+    let done: Vec<(&str, &Value)> = tasks
+        .iter()
+        .copied()
+        .filter(|(_, item)| item["state"] == "done")
+        .collect();
     let mut sentence = match finished.as_slice() {
         [] => format!("No part of {name} is at 100% yet."),
         [one] => format!("{one} is finished."),
         many => format!("Finished parts: {}.", many.join(", ")),
     };
     if !tasks.is_empty() {
-        sentence.push_str(&format!(" {} of {} tasks are done", done.len(), tasks.len()));
+        sentence.push_str(&format!(
+            " {} of {} tasks are done",
+            done.len(),
+            tasks.len()
+        ));
         if !done.is_empty() && done.len() <= 5 {
             sentence.push_str(&format!(": {}", task_list(&done, 5)));
         }
@@ -1402,7 +1479,11 @@ pub fn remaining_sentence(graph: &Value) -> String {
         .filter(|item| item["state"] != "done")
         .filter_map(|item| item["title"].as_str())
         .collect();
-    let hedge = if (0.5..99.5).contains(&value) { "about " } else { "" };
+    let hedge = if (0.5..99.5).contains(&value) {
+        "about "
+    } else {
+        ""
+    };
     let mut sentence = format!("{name} is {hedge}{}% complete.", value.round());
     if parts.is_empty() && open.is_empty() {
         sentence.push_str(" Every part is at 100% and no task is open.");
@@ -1471,7 +1552,12 @@ pub fn progress_text(graph: &Value) -> String {
             ));
         }
     }
-    for item in graph["unassigned"].as_array().into_iter().flatten().take(20) {
+    for item in graph["unassigned"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(20)
+    {
         lines.push(format!(
             "- (no part) [{}] {}",
             if item["state"] == "done" { "x" } else { " " },
@@ -1487,7 +1573,12 @@ pub fn progress_text(graph: &Value) -> String {
         .flatten()
         .filter(|signal| signal["kind"] == "git_commit")
         .filter(|signal| signal["time"].as_u64().is_some_and(|time| time > since))
-        .filter_map(|signal| signal["evidence"].as_str()?.strip_prefix("HEAD ")?.split_once(' '))
+        .filter_map(|signal| {
+            signal["evidence"]
+                .as_str()?
+                .strip_prefix("HEAD ")?
+                .split_once(' ')
+        })
         .map(|(_, subject)| subject.trim())
         .filter(|subject| !subject.is_empty())
         .take(5)
@@ -1605,8 +1696,10 @@ fn record_pace(db: &Connection, project_id: &str, percent: Option<f64>, at: u64)
     let per_day = (value - before) / days;
     // Under a twentieth of a point a day is standing still, not a date.
     let eta = (per_day >= 0.05 && value < 100.0).then(|| ((100.0 - value) / per_day).ceil());
-    Ok(json!({"days":days.round(),"from":before,"since":since,"per_day":(per_day * 10.0).round() / 10.0,
-        "eta_days":eta,"history":history}))
+    Ok(
+        json!({"days":days.round(),"from":before,"since":since,"per_day":(per_day * 10.0).round() / 10.0,
+        "eta_days":eta,"history":history}),
+    )
 }
 
 /// "How long until we're done": the pace of the last two weeks and the day
@@ -1628,11 +1721,19 @@ pub fn pace_sentence(graph: &Value) -> String {
         );
     }
     let from = pace["from"].as_f64().unwrap_or(value);
-    let span = if days == 1.0 { "the last day".to_string() } else { format!("the last {days} days") };
+    let span = if days == 1.0 {
+        "the last day".to_string()
+    } else {
+        format!("the last {days} days")
+    };
     let moved = if from.round() == value.round() {
         format!("{name} has stayed at {}% for {span}", value.round())
     } else {
-        format!("{name} went from {}% to {}% in {span}", from.round(), value.round())
+        format!(
+            "{name} went from {}% to {}% in {span}",
+            from.round(),
+            value.round()
+        )
     };
     match pace["eta_days"].as_f64() {
         Some(eta) => {
@@ -1648,7 +1749,9 @@ pub fn pace_sentence(graph: &Value) -> String {
                 pace["per_day"].as_f64().unwrap_or(0.0)
             )
         }
-        None if value < from => format!("{moved}, so it is moving backwards and there is no finish date to project."),
+        None if value < from => {
+            format!("{moved}, so it is moving backwards and there is no finish date to project.")
+        }
         None => format!("{moved}, so there is no finish date to project yet."),
     }
 }
@@ -1697,9 +1800,11 @@ impl App {
             let state = self.state.lock().unwrap();
             let by_path: Option<String> = state
                 .db
-                .query_row("SELECT id FROM projects WHERE path=?1", [&canonical], |row| {
-                    row.get(0)
-                })
+                .query_row(
+                    "SELECT id FROM projects WHERE path=?1",
+                    [&canonical],
+                    |row| row.get(0),
+                )
                 .optional()
                 .map_err(|error| error.to_string())?;
             if by_path.is_some() {
@@ -1798,7 +1903,9 @@ impl App {
                     let subject = git(&path, &["log", "-1", "--format=%s", head])
                         .map(|text| text.trim().chars().take(120).collect::<String>())
                         .unwrap_or_default();
-                    format!("HEAD {} {subject}", &head[..head.len().min(12)]).trim_end().to_string()
+                    format!("HEAD {} {subject}", &head[..head.len().min(12)])
+                        .trim_end()
+                        .to_string()
                 }
                 None => "no commits".to_string(),
             };
@@ -1993,7 +2100,10 @@ impl App {
                 .map_err(|error| error.to_string())?;
         }
         if let Some(next_state) = p["state"].as_str() {
-            if !matches!(next_state, "todo" | "in_progress" | "done" | "blocked" | "dropped") {
+            if !matches!(
+                next_state,
+                "todo" | "in_progress" | "done" | "blocked" | "dropped"
+            ) {
                 return Err("Invalid task state".into());
             }
             state
@@ -2198,7 +2308,10 @@ impl App {
         create: bool,
     ) -> Result<Option<(String, String)>> {
         let state = self.state.lock().unwrap();
-        if let Some(id) = p["aspect_id"].as_str().filter(|value| !value.trim().is_empty()) {
+        if let Some(id) = p["aspect_id"]
+            .as_str()
+            .filter(|value| !value.trim().is_empty())
+        {
             let title: Option<String> = state
                 .db
                 .query_row(
@@ -2218,7 +2331,12 @@ impl App {
             .or_else(|| name.strip_prefix("The "))
             .unwrap_or(&name)
             .to_string();
-        if name.is_empty() || matches!(name.to_lowercase().as_str(), "project" | "overall" | "whole project" | "all") {
+        if name.is_empty()
+            || matches!(
+                name.to_lowercase().as_str(),
+                "project" | "overall" | "whole project" | "all"
+            )
+        {
             return Ok(None);
         }
         let key = slug(&name);
@@ -2238,7 +2356,11 @@ impl App {
         // "station-ui", "Station UI part", "Stations UI": the same part, so
         // a harness's spelling does not split it in two.
         let loose = |text: &str| {
-            let mut word: String = text.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+            let mut word: String = text
+                .to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect();
             if let Some(stem) = word.strip_suffix("part") {
                 word = stem.to_string();
             }
@@ -2250,7 +2372,9 @@ impl App {
             .prepare("SELECT id,title FROM aspects WHERE project_id=?1 ORDER BY created")
             .map_err(|error| error.to_string())?;
         let close: Option<(String, String)> = statement
-            .query_map([project_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map([project_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|error| error.to_string())?
             .filter_map(|row| row.ok())
             .find(|(_, title)| !wanted.is_empty() && loose(title) == wanted);
@@ -2308,7 +2432,10 @@ impl App {
         create: bool,
     ) -> Result<(String, String, String, Option<String>)> {
         let state = self.state.lock().unwrap();
-        if let Some(id) = p["task_id"].as_str().filter(|value| !value.trim().is_empty()) {
+        if let Some(id) = p["task_id"]
+            .as_str()
+            .filter(|value| !value.trim().is_empty())
+        {
             return state
                 .db
                 .query_row(
@@ -2337,7 +2464,12 @@ impl App {
             return Ok(found);
         }
         // "barge in" is "Barge-in": letters and digits decide.
-        let loose = |text: &str| text.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>();
+        let loose = |text: &str| {
+            text.to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+        };
         let wanted = loose(&title);
         let mut statement = state
             .db
@@ -2348,7 +2480,12 @@ impl App {
             .map_err(|error| error.to_string())?;
         let close = statement
             .query_map(params![project_id, aspect_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, Option<String>>(3)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
             })
             .map_err(|error| error.to_string())?
             .filter_map(|row| row.ok())
@@ -2423,7 +2560,9 @@ impl App {
             // A harness says "finished" or "started" as often as "done".
             .map(|state| match state.as_str() {
                 "finished" | "complete" | "completed" | "closed" | "fixed" => "done".to_string(),
-                "started" | "doing" | "wip" | "working" | "in_process" | "ongoing" => "in_progress".to_string(),
+                "started" | "doing" | "wip" | "working" | "in_process" | "ongoing" => {
+                    "in_progress".to_string()
+                }
                 "open" | "not_started" | "pending" | "to_do" | "reopened" => "todo".to_string(),
                 "stuck" | "waiting" => "blocked".to_string(),
                 _ => state,
@@ -2563,15 +2702,26 @@ impl App {
             "signal": signal,
             "note": note,
         });
-        self.event_for(Some(&project_id), session, "progress", &message, details.clone());
+        self.event_for(
+            Some(&project_id),
+            session,
+            "progress",
+            &message,
+            details.clone(),
+        );
         let mut result = details;
         result["recorded"] = json!(true);
         result["message"] = json!(message);
         // A new part is often a misspelt old one: say so, and name the others.
         if let Some(title) = created_part {
-            let others = if parts_before.is_empty() { "none".to_string() } else { parts_before.join(", ") };
+            let others = if parts_before.is_empty() {
+                "none".to_string()
+            } else {
+                parts_before.join(", ")
+            };
             result["note"] = json!(match result["note"].as_str() {
-                Some(note) => format!("{note}. This created a new part “{title}” (existing parts: {others})"),
+                Some(note) =>
+                    format!("{note}. This created a new part “{title}” (existing parts: {others})"),
                 None => format!("This created a new part “{title}” (existing parts: {others})"),
             });
         }
@@ -2615,21 +2765,18 @@ impl App {
     ) -> Result<i64> {
         let state = self.state.lock().unwrap();
         insert_signal(
-            &state.db,
-            project_id,
-            task_id,
-            aspect_id,
-            kind,
-            source,
-            value,
-            confidence,
-            evidence,
+            &state.db, project_id, task_id, aspect_id, kind, source, value, confidence, evidence,
         )
     }
 
     /// The newest estimates and verdicts one source recorded for a project,
     /// with the part and task titles they name.
-    pub fn source_reports(&self, project_id: &str, source: &str, limit: usize) -> Result<Vec<Value>> {
+    pub fn source_reports(
+        &self,
+        project_id: &str,
+        source: &str,
+        limit: usize,
+    ) -> Result<Vec<Value>> {
         let state = self.state.lock().unwrap();
         let mut query = state
             .db
@@ -2662,7 +2809,9 @@ impl App {
         let state = self.state.lock().unwrap();
         state
             .db
-            .query_row("SELECT COALESCE(MAX(id),0) FROM signals", [], |row| row.get(0))
+            .query_row("SELECT COALESCE(MAX(id),0) FROM signals", [], |row| {
+                row.get(0)
+            })
             .map_err(|error| error.to_string())
     }
 
@@ -2675,10 +2824,16 @@ impl App {
             .db
             .execute(
                 "DELETE FROM signals WHERE project_id=?1 AND id>?2 AND id<=?3 AND source='user'",
-                params![project_id, change["after"].as_i64().unwrap_or(i64::MAX), change["until"].as_i64().unwrap_or(0)],
+                params![
+                    project_id,
+                    change["after"].as_i64().unwrap_or(i64::MAX),
+                    change["until"].as_i64().unwrap_or(0)
+                ],
             )
             .map_err(|error| error.to_string())?;
-        if let (Some(task), Some(previous)) = (change["task_id"].as_str(), change["task_state"].as_str()) {
+        if let (Some(task), Some(previous)) =
+            (change["task_id"].as_str(), change["task_state"].as_str())
+        {
             state
                 .db
                 .execute(
@@ -2701,7 +2856,13 @@ impl App {
         drop(state);
         let mut details = change.clone();
         details["source"] = json!("user");
-        self.event_for(Some(project_id), None, "progress", "Undid the last progress change", details);
+        self.event_for(
+            Some(project_id),
+            None,
+            "progress",
+            "Undid the last progress change",
+            details,
+        );
         Ok(removed)
     }
 
@@ -2709,7 +2870,12 @@ impl App {
     /// session is byte-identical (BUG-087). The hash, not the timestamp, is the
     /// key: a sampler that reads the same screen ten times writes one row, so a
     /// single test result can never become ten signals.
-    pub fn record_tail(&self, session_id: &str, project_id: Option<&str>, text: &str) -> Result<Value> {
+    pub fn record_tail(
+        &self,
+        session_id: &str,
+        project_id: Option<&str>,
+        text: &str,
+    ) -> Result<Value> {
         let hash = tail_hash(text);
         let lines = text.lines().count() as i64;
         let state = self.state.lock().unwrap();
@@ -2965,9 +3131,7 @@ impl App {
             if !value["maximized"].is_null() && !value["maximized"].is_boolean() {
                 return Err("Invalid window maximized".into());
             }
-            if !value["monitor"].is_null()
-                && value["monitor"].as_u64().is_none_or(|m| m > 255)
-            {
+            if !value["monitor"].is_null() && value["monitor"].as_u64().is_none_or(|m| m > 255) {
                 return Err("Invalid window monitor".into());
             }
             state
@@ -3034,7 +3198,6 @@ impl App {
         .collect::<Result<Vec<_>>>()?;
         Ok(times.into_iter().flatten().max())
     }
-
 }
 
 fn git_state(path: &str) -> (Option<String>, Option<String>, bool) {
@@ -3089,7 +3252,11 @@ fn counted(count: u64, noun: &str) -> String {
 
 /// "1 task has", "3 tasks have".
 fn counted_have(count: u64, noun: &str) -> String {
-    format!("{} {}", counted(count, noun), if count == 1 { "has" } else { "have" })
+    format!(
+        "{} {}",
+        counted(count, noun),
+        if count == 1 { "has" } else { "have" }
+    )
 }
 
 #[cfg(test)]
@@ -3198,7 +3365,18 @@ mod tests {
         aspect(&database, "a2", 3.0);
         task(&database, "t1", "a1", 1.0);
         task(&database, "t2", "a2", 3.0);
-        insert_signal(&database, "p", Some("t1"), Some("a1"), "test_pass", "harness", Some(1.0), 1.0, "PASSED 12").unwrap();
+        insert_signal(
+            &database,
+            "p",
+            Some("t1"),
+            Some("a1"),
+            "test_pass",
+            "harness",
+            Some(1.0),
+            1.0,
+            "PASSED 12",
+        )
+        .unwrap();
         let score = graph_score_at(&database, "p", now()).unwrap();
         assert_eq!(score["percent"], 25.0);
         assert_eq!(score["verified"], 25.0);
@@ -3212,7 +3390,18 @@ mod tests {
         aspect(&database, "a1", 1.0);
         aspect(&database, "empty", 9.0);
         task(&database, "t1", "a1", 1.0);
-        insert_signal(&database, "p", Some("t1"), Some("a1"), "verdict", "user", Some(1.0), 1.0, "done").unwrap();
+        insert_signal(
+            &database,
+            "p",
+            Some("t1"),
+            Some("a1"),
+            "verdict",
+            "user",
+            Some(1.0),
+            1.0,
+            "done",
+        )
+        .unwrap();
         let score = graph_score_at(&database, "p", now()).unwrap();
         assert_eq!(score["percent"], 100.0);
     }
@@ -3224,7 +3413,18 @@ mod tests {
         task(&database, "t1", "a1", 1.0);
         let day = 86_400_000_u64;
         let at = now();
-        insert_signal(&database, "p", Some("t1"), Some("a1"), "assistant_claim", "assistant", Some(1.0), 1.0, "claim").unwrap();
+        insert_signal(
+            &database,
+            "p",
+            Some("t1"),
+            Some("a1"),
+            "assistant_claim",
+            "assistant",
+            Some(1.0),
+            1.0,
+            "claim",
+        )
+        .unwrap();
         let fresh = graph_score_at(&database, "p", at).unwrap();
         assert_eq!(fresh["percent"], 50.0);
         let old = graph_score_at(&database, "p", at + 8 * day).unwrap();
@@ -3236,8 +3436,30 @@ mod tests {
         let database = setup();
         aspect(&database, "a1", 1.0);
         task(&database, "t1", "a1", 1.0);
-        insert_signal(&database, "p", Some("t1"), Some("a1"), "verdict", "user", Some(1.0), 1.0, "done").unwrap();
-        insert_signal(&database, "p", Some("t1"), Some("a1"), "assistant_claim", "assistant", Some(0.0), 1.0, "not done").unwrap();
+        insert_signal(
+            &database,
+            "p",
+            Some("t1"),
+            Some("a1"),
+            "verdict",
+            "user",
+            Some(1.0),
+            1.0,
+            "done",
+        )
+        .unwrap();
+        insert_signal(
+            &database,
+            "p",
+            Some("t1"),
+            Some("a1"),
+            "assistant_claim",
+            "assistant",
+            Some(0.0),
+            1.0,
+            "not done",
+        )
+        .unwrap();
         let score = graph_score_at(&database, "p", now()).unwrap();
         assert_eq!(score["percent"], 100.0);
     }

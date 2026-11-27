@@ -1,6 +1,6 @@
 //! Exact crash-recovery ownership records. Never infer ownership from a prefix.
 use crate::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 

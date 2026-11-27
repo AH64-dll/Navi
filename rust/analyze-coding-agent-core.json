@@ -1,0 +1,5561 @@
+{
+  "schema": "rust-anything/analyze@1",
+  "language": "ts",
+  "summary": {
+    "packages": 1,
+    "source_files": 106,
+    "test_files": 0,
+    "ui_files": 0,
+    "loc": 31794,
+    "units": 68,
+    "ready": 40,
+    "caution": 27,
+    "blocked": 1,
+    "keep": 0,
+    "parse_errors": 0
+  },
+  "packages": [
+    {
+      "name": "core",
+      "dir": "",
+      "order": 1,
+      "runtime": "node",
+      "workspace_deps": [],
+      "test_files": 0,
+      "units": [
+        "agent-session-runtime.ts",
+        "agent-session-services.ts",
+        "agent-session.ts",
+        "auth-guidance.ts",
+        "auth-storage.ts",
+        "bash-executor.ts",
+        "bug-report-upload.ts",
+        "bug-report.ts",
+        "cache-stats.ts",
+        "cache-warmer.ts",
+        "client-identity.ts",
+        "compaction/",
+        "crash-log.ts",
+        "defaults.ts",
+        "diagnostics.ts",
+        "event-bus.ts",
+        "exec.ts",
+        "experimental.ts",
+        "export-html/",
+        "export-html/vendor/",
+        "extensions/",
+        "footer-data-provider.ts",
+        "http-dispatcher.ts",
+        "index.ts",
+        "key-id-schema.ts",
+        "keybindings-schema.ts",
+        "keybindings.ts",
+        "mcp-servers.ts",
+        "messages.ts",
+        "model-config.ts",
+        "model-registry.ts",
+        "model-resolver.ts",
+        "model-runtime.ts",
+        "models-store.ts",
+        "nested-tool-calls.ts",
+        "output-guard.ts",
+        "package-manager.ts",
+        "pi-ai-schemas.ts",
+        "pi-manifest.ts",
+        "preferred-providers.ts",
+        "project-trust.ts",
+        "prompt-templates.ts",
+        "provider-composer.ts",
+        "provider-matching.ts",
+        "radius-mcp.ts",
+        "radius.ts",
+        "remote-catalog-provider.ts",
+        "resolve-config-value.ts",
+        "resource-loader.ts",
+        "runtime-credentials.ts",
+        "sdk.ts",
+        "session-cwd.ts",
+        "session-export.ts",
+        "session-manager.ts",
+        "settings-defaults.ts",
+        "settings-diagnostics.ts",
+        "settings-manager.ts",
+        "settings-schema.ts",
+        "skills.ts",
+        "slash-commands.ts",
+        "source-info.ts",
+        "system-prompt.ts",
+        "timings.ts",
+        "tools/",
+        "tools/renderers/",
+        "trust-manager.ts",
+        "usage-totals.ts",
+        "virtual-models.ts"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "id": "agent-session-runtime.ts",
+      "package": "core",
+      "files": [
+        "agent-session-runtime.ts"
+      ],
+      "loc": 376,
+      "wave": 10,
+      "readiness": 62,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 43,
+          "samples": [
+            "agent-session-runtime.ts:152",
+            "agent-session-runtime.ts:161",
+            "agent-session-runtime.ts:169"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 11,
+          "samples": [
+            "agent-session-runtime.ts:35",
+            "agent-session-runtime.ts:75",
+            "agent-session-runtime.ts:76"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "agent-session-runtime.ts:83"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "agent-session-runtime.ts:46"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 8,
+          "samples": [
+            "agent-session-runtime.ts:295",
+            "agent-session-runtime.ts:302",
+            "agent-session-runtime.ts:312"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "agent-session-services.ts",
+        "agent-session.ts",
+        "extensions/",
+        "sdk.ts",
+        "session-cwd.ts",
+        "session-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.3,
+      "priority": 42,
+      "exports": 3,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with sdk.ts, agent-session-services.ts: port them together.",
+        "Imports `agent-session-services.ts`, `agent-session.ts`, `extensions/`, `sdk.ts`, `session-cwd.ts`, `session-manager.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "agent-session-services.ts",
+      "package": "core",
+      "files": [
+        "agent-session-services.ts"
+      ],
+      "loc": 186,
+      "wave": 10,
+      "readiness": 79,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "agent-session-services.ts:135",
+            "agent-session-services.ts:142",
+            "agent-session-services.ts:154"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "agent-session-services.ts:58",
+            "agent-session-services.ts:60"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "agent-session-services.ts:92"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "agent-session-services.ts:159",
+            "agent-session-services.ts:171",
+            "agent-session-services.ts:183"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "extensions/",
+        "model-runtime.ts",
+        "resource-loader.ts",
+        "sdk.ts",
+        "session-manager.ts",
+        "settings-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 3.2,
+      "priority": 56,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "2 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with sdk.ts, agent-session-runtime.ts: port them together.",
+        "Imports `extensions/`, `model-runtime.ts`, `resource-loader.ts`, `sdk.ts`, `session-manager.ts`, `settings-manager.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "agent-session.ts",
+      "package": "core",
+      "files": [
+        "agent-session.ts"
+      ],
+      "loc": 3408,
+      "wave": 9,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 23,
+          "samples": [
+            "agent-session.ts:863",
+            "agent-session.ts:885",
+            "agent-session.ts:988"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 169,
+          "samples": [
+            "agent-session.ts:569",
+            "agent-session.ts:580",
+            "agent-session.ts:609"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 41,
+          "samples": [
+            "agent-session.ts:262",
+            "agent-session.ts:454",
+            "agent-session.ts:471"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 20,
+          "samples": [
+            "agent-session.ts:272",
+            "agent-session.ts:350",
+            "agent-session.ts:414"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 14,
+          "samples": [
+            "agent-session.ts:254",
+            "agent-session.ts:320",
+            "agent-session.ts:339"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 51,
+          "samples": [
+            "agent-session.ts:579",
+            "agent-session.ts:584",
+            "agent-session.ts:586"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "agent-session.ts:1382",
+            "agent-session.ts:1847",
+            "agent-session.ts:1896"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "auth-guidance.ts",
+        "bash-executor.ts",
+        "bug-report.ts",
+        "cache-warmer.ts",
+        "compaction/",
+        "defaults.ts",
+        "export-html/",
+        "extensions/",
+        "mcp-servers.ts",
+        "messages.ts",
+        "model-registry.ts",
+        "model-runtime.ts",
+        "nested-tool-calls.ts",
+        "prompt-templates.ts",
+        "resource-loader.ts",
+        "session-export.ts",
+        "session-manager.ts",
+        "settings-manager.ts",
+        "slash-commands.ts",
+        "source-info.ts",
+        "system-prompt.ts",
+        "tools/",
+        "usage-totals.ts",
+        "virtual-models.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 1.8,
+      "priority": 9,
+      "exports": 3,
+      "bridgeable": 2,
+      "notes": [
+        "2 npm dependencies not in the crate table: check them by hand.",
+        "5 imports use aliases or virtual modules and were not followed.",
+        "Imports `auth-guidance.ts`, `bash-executor.ts`, `bug-report.ts`, `cache-warmer.ts`, `compaction/`, `defaults.ts`, `export-html/`, `extensions/`, `mcp-servers.ts`, `messages.ts`, `model-registry.ts`, `model-runtime.ts`, `nested-tool-calls.ts`, `prompt-templates.ts`, `resource-loader.ts`, `session-export.ts`, `session-manager.ts`, `settings-manager.ts`, `slash-commands.ts`, `source-info.ts`, `system-prompt.ts`, `tools/`, `usage-totals.ts`, `virtual-models.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "auth-guidance.ts",
+      "package": "core",
+      "files": [
+        "auth-guidance.ts"
+      ],
+      "loc": 20,
+      "wave": 0,
+      "readiness": 97,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 51,
+      "exports": 4,
+      "bridgeable": 4,
+      "notes": [
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "auth-storage.ts",
+      "package": "core",
+      "files": [
+        "auth-storage.ts"
+      ],
+      "loc": 434,
+      "wave": 1,
+      "readiness": 49,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 33,
+          "samples": [
+            "auth-storage.ts:118",
+            "auth-storage.ts:132",
+            "auth-storage.ts:147"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 16,
+          "samples": [
+            "auth-storage.ts:54",
+            "auth-storage.ts:55",
+            "auth-storage.ts:56"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "auth-storage.ts:230",
+            "auth-storage.ts:242",
+            "auth-storage.ts:273"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "auth-storage.ts:25"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 19,
+          "samples": [
+            "auth-storage.ts:85",
+            "auth-storage.ts:89",
+            "auth-storage.ts:103"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 6,
+          "samples": [
+            "auth-storage.ts:218",
+            "auth-storage.ts:360",
+            "auth-storage.ts:368"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "auth-storage.ts:90",
+            "auth-storage.ts:91",
+            "auth-storage.ts:124"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "auth-storage.ts:146"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "resolve-config-value.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "proper-lockfile"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.9,
+      "priority": 36,
+      "exports": 5,
+      "bridgeable": 1,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "4 imports use aliases or virtual modules and were not followed.",
+        "Imports `resolve-config-value.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "bash-executor.ts",
+      "package": "core",
+      "files": [
+        "bash-executor.ts"
+      ],
+      "loc": 104,
+      "wave": 6,
+      "readiness": 81,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "bash-executor.ts:126"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "bash-executor.ts:49",
+            "bash-executor.ts:126",
+            "bash-executor.ts:131"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "bash-executor.ts:21"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "bash-executor.ts:125",
+            "bash-executor.ts:132"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "tools/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 2.9,
+      "priority": 56,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with compaction/, tools/renderers/, tools/, extensions/: port them together.",
+        "Imports `tools/`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "bug-report-upload.ts",
+      "package": "core",
+      "files": [
+        "bug-report-upload.ts"
+      ],
+      "loc": 34,
+      "wave": 9,
+      "readiness": 94,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "bug-report-upload.ts:12",
+            "bug-report-upload.ts:20",
+            "bug-report-upload.ts:26"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "bug-report-upload.ts:36"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "bug-report.ts",
+        "radius.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 2.9,
+      "priority": 57,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "Imports `bug-report.ts`, `radius.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "bug-report.ts",
+      "package": "core",
+      "files": [
+        "bug-report.ts"
+      ],
+      "loc": 339,
+      "wave": 8,
+      "readiness": 64,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "bug-report.ts:28"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "bug-report.ts:20"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "bug-report.ts:87",
+            "bug-report.ts:107",
+            "bug-report.ts:119"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "bug-report.ts:330",
+            "bug-report.ts:356"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "bug-report.ts:30",
+            "bug-report.ts:366",
+            "bug-report.ts:368"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "bug-report.ts:53",
+            "bug-report.ts:54",
+            "bug-report.ts:254"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "bug-report.ts:160",
+            "bug-report.ts:360"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "compaction/",
+        "crash-log.ts",
+        "extensions/",
+        "messages.ts",
+        "model-runtime.ts",
+        "session-manager.ts",
+        "settings-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 1.2,
+      "priority": 45,
+      "exports": 8,
+      "bridgeable": 7,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Imports `compaction/`, `crash-log.ts`, `extensions/`, `messages.ts`, `model-runtime.ts`, `session-manager.ts`, `settings-manager.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "cache-stats.ts",
+      "package": "core",
+      "files": [
+        "cache-stats.ts"
+      ],
+      "loc": 111,
+      "wave": 2,
+      "readiness": 93,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "cache-stats.ts:110"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "cache-stats.ts:34"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "session-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.9,
+      "priority": 58,
+      "exports": 3,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `session-manager.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "cache-warmer.ts",
+      "package": "core",
+      "files": [
+        "cache-warmer.ts"
+      ],
+      "loc": 296,
+      "wave": 4,
+      "readiness": 67,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 7,
+          "samples": [
+            "cache-warmer.ts:70",
+            "cache-warmer.ts:94",
+            "cache-warmer.ts:96"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "cache-warmer.ts:104",
+            "cache-warmer.ts:228",
+            "cache-warmer.ts:236"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 7,
+          "samples": [
+            "cache-warmer.ts:163",
+            "cache-warmer.ts:181",
+            "cache-warmer.ts:213"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "cache-warmer.ts:307",
+            "cache-warmer.ts:312",
+            "cache-warmer.ts:318"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "cache-warmer.ts:235",
+            "cache-warmer.ts:259"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "model-runtime.ts",
+        "session-manager.ts",
+        "settings-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 4,
+      "density": 0.3,
+      "priority": 44,
+      "exports": 3,
+      "bridgeable": 2,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Imports `model-runtime.ts`, `session-manager.ts`, `settings-manager.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "client-identity.ts",
+      "package": "core",
+      "files": [
+        "client-identity.ts"
+      ],
+      "loc": 9,
+      "wave": 0,
+      "readiness": 94,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 48,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "compaction/",
+      "package": "core",
+      "files": [
+        "compaction/branch-summarization.ts",
+        "compaction/compaction.ts",
+        "compaction/index.ts",
+        "compaction/utils.ts"
+      ],
+      "loc": 1171,
+      "wave": 6,
+      "readiness": 25,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "compaction/compaction.ts:823",
+            "compaction/compaction.ts:894",
+            "compaction/compaction.ts:898"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 15,
+          "samples": [
+            "compaction/branch-summarization.ts:307",
+            "compaction/branch-summarization.ts:369",
+            "compaction/compaction.ts:620"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 12,
+          "samples": [
+            "compaction/branch-summarization.ts:74",
+            "compaction/compaction.ts:149",
+            "compaction/compaction.ts:598"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 9,
+          "samples": [
+            "compaction/branch-summarization.ts:126",
+            "compaction/branch-summarization.ts:227",
+            "compaction/compaction.ts:306"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "compaction/compaction.ts:746",
+            "compaction/compaction.ts:749",
+            "compaction/compaction.ts:1049"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "compaction/compaction.ts:310",
+            "compaction/compaction.ts:327",
+            "compaction/utils.ts:135"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "compaction/branch-summarization.ts:356",
+            "compaction/compaction.ts:691"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "messages.ts",
+        "session-manager.ts",
+        "tools/",
+        "usage-totals.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 4,
+      "density": 3.1,
+      "priority": 24,
+      "exports": 22,
+      "bridgeable": 22,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Import cycle with tools/renderers/, tools/, bash-executor.ts, extensions/: port them together.",
+        "Imports `messages.ts`, `session-manager.ts`, `tools/`, `usage-totals.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "crash-log.ts",
+      "package": "core",
+      "files": [
+        "crash-log.ts"
+      ],
+      "loc": 150,
+      "wave": 7,
+      "readiness": 77,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 6,
+          "samples": [
+            "crash-log.ts:61",
+            "crash-log.ts:65",
+            "crash-log.ts:76"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "crash-log.ts:90"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "crash-log.ts:26",
+            "crash-log.ts:81",
+            "crash-log.ts:128"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "crash-log.ts:27",
+            "crash-log.ts:44"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "crash-log.ts:131",
+            "crash-log.ts:147"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "extensions/",
+        "source-info.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 5.3,
+      "priority": 59,
+      "exports": 5,
+      "bridgeable": 3,
+      "notes": [
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Imports `extensions/`, `source-info.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "defaults.ts",
+      "package": "core",
+      "files": [
+        "defaults.ts"
+      ],
+      "loc": 11,
+      "wave": 0,
+      "readiness": 95,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 49,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "diagnostics.ts",
+      "package": "core",
+      "files": [
+        "diagnostics.ts"
+      ],
+      "loc": 14,
+      "wave": 0,
+      "readiness": 94,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 4,
+      "density": 0.0,
+      "priority": 49,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "event-bus.ts",
+      "package": "core",
+      "files": [
+        "event-bus.ts"
+      ],
+      "loc": 30,
+      "wave": 0,
+      "readiness": 85,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "event-bus.ts:4",
+            "event-bus.ts:5",
+            "event-bus.ts:9"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "event-bus.ts:19",
+            "event-bus.ts:21"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "event-bus.ts:20"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 46,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "exec.ts",
+      "package": "core",
+      "files": [
+        "exec.ts"
+      ],
+      "loc": 110,
+      "wave": 0,
+      "readiness": 91,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "exec.ts:49",
+            "exec.ts:132"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "exec.ts:57",
+            "exec.ts:130",
+            "exec.ts:134"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 56,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "experimental.ts",
+      "package": "core",
+      "files": [
+        "experimental.ts"
+      ],
+      "loc": 3,
+      "wave": 0,
+      "readiness": 98,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 50,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "export-html/",
+      "package": "core",
+      "files": [
+        "export-html/ansi-to-html.ts",
+        "export-html/index.ts",
+        "export-html/template.js",
+        "export-html/tool-renderer.ts"
+      ],
+      "loc": 2172,
+      "wave": 7,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node",
+        "browser"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 19,
+          "samples": [
+            "export-html/ansi-to-html.ts:51",
+            "export-html/ansi-to-html.ts:57",
+            "export-html/ansi-to-html.ts:233"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "export-html/ansi-to-html.ts:200",
+            "export-html/template.js:697",
+            "export-html/template.js:1714"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 27,
+          "samples": [
+            "export-html/index.ts:114",
+            "export-html/index.ts:180",
+            "export-html/index.ts:260"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "export-html/index.ts:17",
+            "export-html/index.ts:19",
+            "export-html/tool-renderer.ts:17"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "export-html/index.ts:238",
+            "export-html/index.ts:290",
+            "export-html/template.js:1238"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "export-html/tool-renderer.ts:62",
+            "export-html/tool-renderer.ts:65"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 13,
+          "samples": [
+            "export-html/index.ts:247",
+            "export-html/index.ts:250",
+            "export-html/index.ts:295"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 11,
+          "samples": [
+            "export-html/ansi-to-html.ts:246",
+            "export-html/index.ts:76",
+            "export-html/template.js:769"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "export-html/index.ts:161",
+            "export-html/template.js:14",
+            "export-html/template.js:677"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "extensions/",
+        "session-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 3.5,
+      "priority": 12,
+      "exports": 6,
+      "bridgeable": 3,
+      "notes": [
+        "4 imports use aliases or virtual modules and were not followed.",
+        "Imports `extensions/`, `session-manager.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "export-html/vendor/",
+      "package": "core",
+      "files": [
+        "export-html/vendor/highlight.min.js",
+        "export-html/vendor/marked-cjk-friendly.min.js",
+        "export-html/vendor/marked.min.js"
+      ],
+      "loc": 1279,
+      "wave": 0,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "browser"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 180,
+          "samples": [
+            "export-html/vendor/highlight.min.js:50",
+            "export-html/vendor/highlight.min.js:53",
+            "export-html/vendor/highlight.min.js:54"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 87,
+          "samples": [
+            "export-html/vendor/highlight.min.js:77",
+            "export-html/vendor/highlight.min.js:311",
+            "export-html/vendor/highlight.min.js:352"
+          ]
+        },
+        {
+          "risk": "dynamic-regex",
+          "severity": "high",
+          "count": 16,
+          "samples": [
+            "export-html/vendor/highlight.min.js:50",
+            "export-html/vendor/highlight.min.js:126",
+            "export-html/vendor/marked-cjk-friendly.min.js:6"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 17,
+          "samples": [
+            "export-html/vendor/marked.min.js:76",
+            "export-html/vendor/marked.min.js:77"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 15,
+          "samples": [
+            "export-html/vendor/highlight.min.js:16",
+            "export-html/vendor/highlight.min.js:17",
+            "export-html/vendor/highlight.min.js:96"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 9,
+          "samples": [
+            "export-html/vendor/marked.min.js:39",
+            "export-html/vendor/marked.min.js:76"
+          ]
+        },
+        {
+          "risk": "reflection",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "export-html/vendor/highlight.min.js:10",
+            "export-html/vendor/highlight.min.js:66",
+            "export-html/vendor/highlight.min.js:174"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "export-html/vendor/highlight.min.js:38",
+            "export-html/vendor/highlight.min.js:172"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 31,
+          "samples": [
+            "export-html/vendor/highlight.min.js:8",
+            "export-html/vendor/highlight.min.js:9",
+            "export-html/vendor/highlight.min.js:92"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "export-html/vendor/marked-cjk-friendly.min.js:6"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "export-html/vendor/highlight.min.js:33"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 18.8,
+      "priority": 30,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "extensions/",
+      "package": "core",
+      "files": [
+        "extensions/index.ts",
+        "extensions/jiti-loader.ts",
+        "extensions/jiti-static-loader.ts",
+        "extensions/loader.ts",
+        "extensions/pi-ai-extension-view.ts",
+        "extensions/runner.ts",
+        "extensions/types.ts",
+        "extensions/virtual-modules.ts",
+        "extensions/wrapper.ts"
+      ],
+      "loc": 3642,
+      "wave": 6,
+      "readiness": 0,
+      "status": "blocked",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "extensions/loader.ts:293",
+            "extensions/runner.ts:278",
+            "extensions/runner.ts:1325"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 307,
+          "samples": [
+            "extensions/loader.ts:134",
+            "extensions/loader.ts:169",
+            "extensions/loader.ts:260"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 70,
+          "samples": [
+            "extensions/loader.ts:190",
+            "extensions/loader.ts:539",
+            "extensions/loader.ts:541"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 24,
+          "samples": [
+            "extensions/loader.ts:138",
+            "extensions/loader.ts:169",
+            "extensions/loader.ts:193"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 21,
+          "samples": [
+            "extensions/loader.ts:45",
+            "extensions/runner.ts:160",
+            "extensions/runner.ts:374"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 39,
+          "samples": [
+            "extensions/loader.ts:166",
+            "extensions/loader.ts:172",
+            "extensions/loader.ts:267"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "bash-executor.ts",
+        "cache-warmer.ts",
+        "compaction/",
+        "diagnostics.ts",
+        "event-bus.ts",
+        "exec.ts",
+        "footer-data-provider.ts",
+        "keybindings.ts",
+        "mcp-servers.ts",
+        "messages.ts",
+        "model-registry.ts",
+        "model-resolver.ts",
+        "pi-manifest.ts",
+        "session-manager.ts",
+        "settings-manager.ts",
+        "slash-commands.ts",
+        "source-info.ts",
+        "system-prompt.ts",
+        "timings.ts",
+        "tools/",
+        "virtual-models.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-mcp",
+        "@earendil-works/pi-tui",
+        "jiti",
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 12,
+      "density": 1.7,
+      "priority": 8,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "`jiti` has no Rust equivalent.",
+        "5 npm dependencies not in the crate table: check them by hand.",
+        "4 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with compaction/, tools/renderers/, tools/, bash-executor.ts: port them together.",
+        "Imports `bash-executor.ts`, `cache-warmer.ts`, `compaction/`, `diagnostics.ts`, `event-bus.ts`, `exec.ts`, `footer-data-provider.ts`, `keybindings.ts`, `mcp-servers.ts`, `messages.ts`, `model-registry.ts`, `model-resolver.ts`, `pi-manifest.ts`, `session-manager.ts`, `settings-manager.ts`, `slash-commands.ts`, `source-info.ts`, `system-prompt.ts`, `timings.ts`, `tools/`, `virtual-models.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "footer-data-provider.ts",
+      "package": "core",
+      "files": [
+        "footer-data-provider.ts"
+      ],
+      "loc": 328,
+      "wave": 0,
+      "readiness": 65,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "footer-data-provider.ts:26",
+            "footer-data-provider.ts:244",
+            "footer-data-provider.ts:258"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "footer-data-provider.ts:63",
+            "footer-data-provider.ts:213",
+            "footer-data-provider.ts:222"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "footer-data-provider.ts:108",
+            "footer-data-provider.ts:112",
+            "footer-data-provider.ts:140"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "footer-data-provider.ts:103",
+            "footer-data-provider.ts:112"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "footer-data-provider.ts:21",
+            "footer-data-provider.ts:221",
+            "footer-data-provider.ts:240"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 1.5,
+      "priority": 46,
+      "exports": 2,
+      "bridgeable": 1,
+      "notes": [
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "http-dispatcher.ts",
+      "package": "core",
+      "files": [
+        "http-dispatcher.ts"
+      ],
+      "loc": 92,
+      "wave": 0,
+      "readiness": 96,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "http-dispatcher.ts:84"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "undici"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 58,
+      "exports": 4,
+      "bridgeable": 4,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "index.ts",
+      "package": "core",
+      "files": [
+        "index.ts"
+      ],
+      "loc": 92,
+      "wave": 11,
+      "readiness": 98,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "agent-session-runtime.ts",
+        "agent-session-services.ts",
+        "agent-session.ts",
+        "bash-executor.ts",
+        "cache-warmer.ts",
+        "compaction/",
+        "event-bus.ts",
+        "experimental.ts",
+        "extensions/",
+        "source-info.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 59,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `agent-session-runtime.ts`, `agent-session-services.ts`, `agent-session.ts`, `bash-executor.ts`, `cache-warmer.ts`, `compaction/`, `event-bus.ts`, `experimental.ts`, `extensions/`, `source-info.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "key-id-schema.ts",
+      "package": "core",
+      "files": [
+        "key-id-schema.ts"
+      ],
+      "loc": 17,
+      "wave": 0,
+      "readiness": 86,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "key-id-schema.ts:5"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-tui",
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 45,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "2 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "keybindings-schema.ts",
+      "package": "core",
+      "files": [
+        "keybindings-schema.ts"
+      ],
+      "loc": 17,
+      "wave": 2,
+      "readiness": 93,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "keybindings-schema.ts:11"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "key-id-schema.ts",
+        "keybindings.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 5.9,
+      "priority": 61,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Imports `key-id-schema.ts`, `keybindings.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "keybindings.ts",
+      "package": "core",
+      "files": [
+        "keybindings.ts"
+      ],
+      "loc": 335,
+      "wave": 1,
+      "readiness": 70,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "keybindings.ts:271",
+            "keybindings.ts:285",
+            "keybindings.ts:302"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "keybindings.ts:264"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "keybindings.ts:329"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "keybindings.ts:320"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "keybindings.ts:321"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "key-id-schema.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-tui",
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 1.2,
+      "priority": 48,
+      "exports": 3,
+      "bridgeable": 2,
+      "notes": [
+        "2 npm dependencies not in the crate table: check them by hand.",
+        "2 imports use aliases or virtual modules and were not followed.",
+        "Imports `key-id-schema.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "mcp-servers.ts",
+      "package": "core",
+      "files": [
+        "mcp-servers.ts"
+      ],
+      "loc": 152,
+      "wave": 0,
+      "readiness": 72,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "dynamic-regex",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "mcp-servers.ts:26"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 7,
+          "samples": [
+            "mcp-servers.ts:31",
+            "mcp-servers.ts:41",
+            "mcp-servers.ts:162"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "mcp-servers.ts:30",
+            "mcp-servers.ts:240",
+            "mcp-servers.ts:265"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-mcp"
+      ],
+      "direct_tests": 0,
+      "fan_in": 4,
+      "density": 1.3,
+      "priority": 48,
+      "exports": 6,
+      "bridgeable": 4,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "messages.ts",
+      "package": "core",
+      "files": [
+        "messages.ts"
+      ],
+      "loc": 156,
+      "wave": 0,
+      "readiness": 87,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 6,
+      "density": 0.0,
+      "priority": 54,
+      "exports": 6,
+      "bridgeable": 6,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "model-config.ts",
+      "package": "core",
+      "files": [
+        "model-config.ts"
+      ],
+      "loc": 193,
+      "wave": 1,
+      "readiness": 74,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 8,
+          "samples": [
+            "model-config.ts:155",
+            "model-config.ts:170",
+            "model-config.ts:176"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "model-config.ts:169",
+            "model-config.ts:174"
+          ]
+        },
+        {
+          "risk": "reflection",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "model-config.ts:156"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "model-config.ts:173",
+            "model-config.ts:184"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "model-config.ts:185"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "pi-ai-schemas.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 1.0,
+      "priority": 49,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Imports `pi-ai-schemas.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "model-registry.ts",
+      "package": "core",
+      "files": [
+        "model-registry.ts"
+      ],
+      "loc": 200,
+      "wave": 4,
+      "readiness": 86,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "model-registry.ts:89",
+            "model-registry.ts:91",
+            "model-registry.ts:198"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "model-registry.ts:90",
+            "model-registry.ts:199",
+            "model-registry.ts:214"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "model-runtime.ts",
+        "provider-composer.ts",
+        "virtual-models.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 53,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `model-runtime.ts`, `provider-composer.ts`, `virtual-models.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "model-resolver.ts",
+      "package": "core",
+      "files": [
+        "model-resolver.ts"
+      ],
+      "loc": 467,
+      "wave": 4,
+      "readiness": 53,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 9,
+          "samples": [
+            "model-resolver.ts:121",
+            "model-resolver.ts:122",
+            "model-resolver.ts:124"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "model-resolver.ts:258",
+            "model-resolver.ts:276",
+            "model-resolver.ts:283"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "model-resolver.ts:152",
+            "model-resolver.ts:195",
+            "model-resolver.ts:239"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "model-resolver.ts:408",
+            "model-resolver.ts:413",
+            "model-resolver.ts:536"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "defaults.ts",
+        "model-runtime.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai",
+        "minimatch"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 3.0,
+      "priority": 43,
+      "exports": 6,
+      "bridgeable": 5,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Imports `defaults.ts`, `model-runtime.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "model-runtime.ts",
+      "package": "core",
+      "files": [
+        "model-runtime.ts"
+      ],
+      "loc": 956,
+      "wave": 3,
+      "readiness": 28,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 66,
+          "samples": [
+            "model-runtime.ts:218",
+            "model-runtime.ts:222",
+            "model-runtime.ts:263"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 32,
+          "samples": [
+            "model-runtime.ts:163",
+            "model-runtime.ts:165",
+            "model-runtime.ts:178"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "model-runtime.ts:580",
+            "model-runtime.ts:582"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "model-runtime.ts:696"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "model-runtime.ts:138"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 27,
+          "samples": [
+            "model-runtime.ts:261",
+            "model-runtime.ts:317",
+            "model-runtime.ts:385"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "auth-storage.ts",
+        "model-config.ts",
+        "models-store.ts",
+        "provider-composer.ts",
+        "remote-catalog-provider.ts",
+        "runtime-credentials.ts",
+        "virtual-models.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 7,
+      "density": 1.0,
+      "priority": 21,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "2 imports use aliases or virtual modules and were not followed.",
+        "Imports `auth-storage.ts`, `model-config.ts`, `models-store.ts`, `provider-composer.ts`, `remote-catalog-provider.ts`, `runtime-credentials.ts`, `virtual-models.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "models-store.ts",
+      "package": "core",
+      "files": [
+        "models-store.ts"
+      ],
+      "loc": 127,
+      "wave": 2,
+      "readiness": 83,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 14,
+          "samples": [
+            "models-store.ts:29",
+            "models-store.ts:35",
+            "models-store.ts:40"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "models-store.ts:27"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "models-store.ts:63",
+            "models-store.ts:132",
+            "models-store.ts:143"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "models-store.ts:109"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "auth-storage.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 52,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "4 imports use aliases or virtual modules and were not followed.",
+        "Imports `auth-storage.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "nested-tool-calls.ts",
+      "package": "core",
+      "files": [
+        "nested-tool-calls.ts"
+      ],
+      "loc": 201,
+      "wave": 3,
+      "readiness": 69,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "nested-tool-calls.ts:84"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 9,
+          "samples": [
+            "nested-tool-calls.ts:166",
+            "nested-tool-calls.ts:176",
+            "nested-tool-calls.ts:194"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 6,
+          "samples": [
+            "nested-tool-calls.ts:133",
+            "nested-tool-calls.ts:135",
+            "nested-tool-calls.ts:137"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "nested-tool-calls.ts:49",
+            "nested-tool-calls.ts:164"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "nested-tool-calls.ts:75",
+            "nested-tool-calls.ts:82"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "nested-tool-calls.ts:62",
+            "nested-tool-calls.ts:71"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "nested-tool-calls.ts:220"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "nested-tool-calls.ts:82"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "usage-totals.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.5,
+      "priority": 46,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Imports `usage-totals.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "output-guard.ts",
+      "package": "core",
+      "files": [
+        "output-guard.ts"
+      ],
+      "loc": 93,
+      "wave": 0,
+      "readiness": 81,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 11,
+          "samples": [
+            "output-guard.ts:11",
+            "output-guard.ts:20",
+            "output-guard.ts:23"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 6,
+          "samples": [
+            "output-guard.ts:2",
+            "output-guard.ts:3",
+            "output-guard.ts:56"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "output-guard.ts:22",
+            "output-guard.ts:24",
+            "output-guard.ts:38"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 2.2,
+      "priority": 55,
+      "exports": 6,
+      "bridgeable": 6,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "package-manager.ts",
+      "package": "core",
+      "files": [
+        "package-manager.ts"
+      ],
+      "loc": 2573,
+      "wave": 3,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 21,
+          "samples": [
+            "package-manager.ts:25",
+            "package-manager.ts:27",
+            "package-manager.ts:318"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "package-manager.ts:66"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 128,
+          "samples": [
+            "package-manager.ts:1006",
+            "package-manager.ts:1014",
+            "package-manager.ts:1023"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 18,
+          "samples": [
+            "package-manager.ts:144",
+            "package-manager.ts:161",
+            "package-manager.ts:162"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 16,
+          "samples": [
+            "package-manager.ts:18",
+            "package-manager.ts:891",
+            "package-manager.ts:895"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 52,
+          "samples": [
+            "package-manager.ts:21",
+            "package-manager.ts:338",
+            "package-manager.ts:402"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "package-manager.ts:1746",
+            "package-manager.ts:1762",
+            "package-manager.ts:2159"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "output-guard.ts",
+        "pi-manifest.ts",
+        "settings-manager.ts",
+        "source-info.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "ignore",
+        "minimatch",
+        "semver"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 2.8,
+      "priority": 11,
+      "exports": 3,
+      "bridgeable": 2,
+      "notes": [
+        "5 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with source-info.ts: port them together.",
+        "Imports `output-guard.ts`, `pi-manifest.ts`, `settings-manager.ts`, `source-info.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "pi-ai-schemas.ts",
+      "package": "core",
+      "files": [
+        "pi-ai-schemas.ts"
+      ],
+      "loc": 31,
+      "wave": 0,
+      "readiness": 88,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai",
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 48,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "2 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "pi-manifest.ts",
+      "package": "core",
+      "files": [
+        "pi-manifest.ts"
+      ],
+      "loc": 35,
+      "wave": 0,
+      "readiness": 95,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "pi-manifest.ts:19"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "pi-manifest.ts:20"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 2.9,
+      "priority": 58,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "preferred-providers.ts",
+      "package": "core",
+      "files": [
+        "preferred-providers.ts"
+      ],
+      "loc": 15,
+      "wave": 1,
+      "readiness": 95,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "preferred-providers.ts:25"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "radius.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 6.7,
+      "priority": 63,
+      "exports": 2,
+      "bridgeable": 2,
+      "notes": [
+        "Imports `radius.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "project-trust.ts",
+      "package": "core",
+      "files": [
+        "project-trust.ts"
+      ],
+      "loc": 87,
+      "wave": 7,
+      "readiness": 90,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "project-trust.ts:29",
+            "project-trust.ts:34",
+            "project-trust.ts:48"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "project-trust.ts:22"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "extensions/",
+        "settings-defaults.ts",
+        "settings-manager.ts",
+        "trust-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 1.1,
+      "priority": 57,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Imports `extensions/`, `settings-defaults.ts`, `settings-manager.ts`, `trust-manager.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "prompt-templates.ts",
+      "package": "core",
+      "files": [
+        "prompt-templates.ts"
+      ],
+      "loc": 251,
+      "wave": 4,
+      "readiness": 75,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "prompt-templates.ts:111",
+            "prompt-templates.ts:113",
+            "prompt-templates.ts:158"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "prompt-templates.ts:180"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 5,
+          "samples": [
+            "prompt-templates.ts:132",
+            "prompt-templates.ts:142",
+            "prompt-templates.ts:188"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "prompt-templates.ts:100",
+            "prompt-templates.ts:105",
+            "prompt-templates.ts:110"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "diagnostics.ts",
+        "source-info.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 2.4,
+      "priority": 53,
+      "exports": 4,
+      "bridgeable": 3,
+      "notes": [
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Imports `diagnostics.ts`, `source-info.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "provider-composer.ts",
+      "package": "core",
+      "files": [
+        "provider-composer.ts"
+      ],
+      "loc": 692,
+      "wave": 2,
+      "readiness": 51,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 28,
+          "samples": [
+            "provider-composer.ts:363",
+            "provider-composer.ts:364",
+            "provider-composer.ts:375"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 7,
+          "samples": [
+            "provider-composer.ts:312",
+            "provider-composer.ts:415",
+            "provider-composer.ts:420"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 6,
+          "samples": [
+            "provider-composer.ts:47",
+            "provider-composer.ts:48",
+            "provider-composer.ts:49"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 12,
+          "samples": [
+            "provider-composer.ts:221",
+            "provider-composer.ts:226",
+            "provider-composer.ts:228"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "model-config.ts",
+        "resolve-config-value.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.7,
+      "priority": 32,
+      "exports": 5,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Imports `model-config.ts`, `resolve-config-value.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "provider-matching.ts",
+      "package": "core",
+      "files": [
+        "provider-matching.ts"
+      ],
+      "loc": 10,
+      "wave": 0,
+      "readiness": 100,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 51,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "radius-mcp.ts",
+      "package": "core",
+      "files": [
+        "radius-mcp.ts"
+      ],
+      "loc": 35,
+      "wave": 1,
+      "readiness": 89,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "radius-mcp.ts:26",
+            "radius-mcp.ts:28",
+            "radius-mcp.ts:38"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "radius-mcp.ts:32"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "mcp-servers.ts",
+        "radius.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-mcp"
+      ],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 2.9,
+      "priority": 55,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Imports `mcp-servers.ts`, `radius.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "radius.ts",
+      "package": "core",
+      "files": [
+        "radius.ts"
+      ],
+      "loc": 7,
+      "wave": 0,
+      "readiness": 91,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 47,
+      "exports": 1,
+      "bridgeable": 1,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "remote-catalog-provider.ts",
+      "package": "core",
+      "files": [
+        "remote-catalog-provider.ts"
+      ],
+      "loc": 199,
+      "wave": 0,
+      "readiness": 70,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 16,
+          "samples": [
+            "remote-catalog-provider.ts:54",
+            "remote-catalog-provider.ts:60",
+            "remote-catalog-provider.ts:128"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "remote-catalog-provider.ts:41",
+            "remote-catalog-provider.ts:48"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "remote-catalog-provider.ts:33",
+            "remote-catalog-provider.ts:44"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "remote-catalog-provider.ts:105"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "remote-catalog-provider.ts:46",
+            "remote-catalog-provider.ts:180",
+            "remote-catalog-provider.ts:235"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "remote-catalog-provider.ts:148",
+            "remote-catalog-provider.ts:158",
+            "remote-catalog-provider.ts:242"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.5,
+      "priority": 46,
+      "exports": 2,
+      "bridgeable": 1,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "resolve-config-value.ts",
+      "package": "core",
+      "files": [
+        "resolve-config-value.ts"
+      ],
+      "loc": 230,
+      "wave": 0,
+      "readiness": 70,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 9,
+          "samples": [
+            "resolve-config-value.ts:33",
+            "resolve-config-value.ts:35",
+            "resolve-config-value.ts:39"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "resolve-config-value.ts:10",
+            "resolve-config-value.ts:262",
+            "resolve-config-value.ts:268"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 6,
+          "samples": [
+            "resolve-config-value.ts:154",
+            "resolve-config-value.ts:186",
+            "resolve-config-value.ts:237"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 6.1,
+      "priority": 57,
+      "exports": 12,
+      "bridgeable": 12,
+      "notes": [
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "resource-loader.ts",
+      "package": "core",
+      "files": [
+        "resource-loader.ts"
+      ],
+      "loc": 1155,
+      "wave": 7,
+      "readiness": 22,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "resource-loader.ts:171",
+            "resource-loader.ts:622",
+            "resource-loader.ts:776"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 26,
+          "samples": [
+            "resource-loader.ts:58",
+            "resource-loader.ts:184",
+            "resource-loader.ts:185"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 25,
+          "samples": [
+            "resource-loader.ts:61",
+            "resource-loader.ts:79",
+            "resource-loader.ts:95"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 22,
+          "samples": [
+            "resource-loader.ts:541",
+            "resource-loader.ts:545",
+            "resource-loader.ts:549"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "resource-loader.ts:203",
+            "resource-loader.ts:219",
+            "resource-loader.ts:781"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "resource-loader.ts:87"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "diagnostics.ts",
+        "event-bus.ts",
+        "extensions/",
+        "footer-data-provider.ts",
+        "package-manager.ts",
+        "prompt-templates.ts",
+        "settings-manager.ts",
+        "skills.ts",
+        "source-info.ts",
+        "timings.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-tui",
+        "chalk"
+      ],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 3.1,
+      "priority": 22,
+      "exports": 4,
+      "bridgeable": 2,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "4 imports use aliases or virtual modules and were not followed.",
+        "Imports `diagnostics.ts`, `event-bus.ts`, `extensions/`, `footer-data-provider.ts`, `package-manager.ts`, `prompt-templates.ts`, `settings-manager.ts`, `skills.ts`, `source-info.ts`, `timings.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "runtime-credentials.ts",
+      "package": "core",
+      "files": [
+        "runtime-credentials.ts"
+      ],
+      "loc": 53,
+      "wave": 0,
+      "readiness": 84,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 8,
+          "samples": [
+            "runtime-credentials.ts:26",
+            "runtime-credentials.ts:32",
+            "runtime-credentials.ts:33"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "runtime-credentials.ts:6",
+            "runtime-credentials.ts:8",
+            "runtime-credentials.ts:33"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "runtime-credentials.ts:43"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 1.9,
+      "priority": 53,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "sdk.ts",
+      "package": "core",
+      "files": [
+        "sdk.ts"
+      ],
+      "loc": 339,
+      "wave": 10,
+      "readiness": 68,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 13,
+          "samples": [
+            "sdk.ts:191",
+            "sdk.ts:198",
+            "sdk.ts:205"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "sdk.ts:58",
+            "sdk.ts:62",
+            "sdk.ts:361"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "sdk.ts:281"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "agent-session-runtime.ts",
+        "agent-session.ts",
+        "auth-guidance.ts",
+        "cache-warmer.ts",
+        "client-identity.ts",
+        "defaults.ts",
+        "extensions/",
+        "mcp-servers.ts",
+        "messages.ts",
+        "model-resolver.ts",
+        "model-runtime.ts",
+        "prompt-templates.ts",
+        "resource-loader.ts",
+        "session-manager.ts",
+        "settings-manager.ts",
+        "skills.ts",
+        "timings.ts",
+        "tools/",
+        "virtual-models.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 44,
+      "exports": 1,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "2 npm dependencies not in the crate table: check them by hand.",
+        "2 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with agent-session-services.ts, agent-session-runtime.ts: port them together.",
+        "Imports `agent-session-runtime.ts`, `agent-session.ts`, `auth-guidance.ts`, `cache-warmer.ts`, `client-identity.ts`, `defaults.ts`, `extensions/`, `mcp-servers.ts`, `messages.ts`, `model-resolver.ts`, `model-runtime.ts`, `prompt-templates.ts`, `resource-loader.ts`, `session-manager.ts`, `settings-manager.ts`, `skills.ts`, `timings.ts`, `tools/`, `virtual-models.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "session-cwd.ts",
+      "package": "core",
+      "files": [
+        "session-cwd.ts"
+      ],
+      "loc": 59,
+      "wave": 0,
+      "readiness": 91,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "session-cwd.ts:10",
+            "session-cwd.ts:11"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "session-cwd.ts:58"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "session-cwd.ts:71"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 53,
+      "exports": 6,
+      "bridgeable": 3,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "session-export.ts",
+      "package": "core",
+      "files": [
+        "session-export.ts"
+      ],
+      "loc": 40,
+      "wave": 2,
+      "readiness": 94,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "session-export.ts:6"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "session-export.ts:13",
+            "session-export.ts:38"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "session-export.ts:28"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "session-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 2.5,
+      "priority": 57,
+      "exports": 2,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Imports `session-manager.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "session-manager.ts",
+      "package": "core",
+      "files": [
+        "session-manager.ts"
+      ],
+      "loc": 1566,
+      "wave": 1,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 9,
+          "samples": [
+            "session-manager.ts:279",
+            "session-manager.ts:648",
+            "session-manager.ts:650"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 26,
+          "samples": [
+            "session-manager.ts:804",
+            "session-manager.ts:810",
+            "session-manager.ts:913"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 11,
+          "samples": [
+            "session-manager.ts:288",
+            "session-manager.ts:383",
+            "session-manager.ts:554"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "session-manager.ts:277",
+            "session-manager.ts:896",
+            "session-manager.ts:916"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "session-manager.ts:776",
+            "session-manager.ts:1386"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "session-manager.ts:612"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 33,
+          "samples": [
+            "session-manager.ts:270",
+            "session-manager.ts:361",
+            "session-manager.ts:621"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 14,
+          "samples": [
+            "session-manager.ts:1074",
+            "session-manager.ts:1231",
+            "session-manager.ts:1244"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 7,
+          "samples": [
+            "session-manager.ts:362",
+            "session-manager.ts:622",
+            "session-manager.ts:1141"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "messages.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 13,
+      "density": 2.8,
+      "priority": 11,
+      "exports": 13,
+      "bridgeable": 12,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "2 imports use aliases or virtual modules and were not followed.",
+        "Imports `messages.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "settings-defaults.ts",
+      "package": "core",
+      "files": [
+        "settings-defaults.ts"
+      ],
+      "loc": 69,
+      "wave": 0,
+      "readiness": 90,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 54,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "settings-diagnostics.ts",
+      "package": "core",
+      "files": [
+        "settings-diagnostics.ts"
+      ],
+      "loc": 19,
+      "wave": 11,
+      "readiness": 97,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "settings-diagnostics.ts:18"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "agent-session-services.ts",
+        "settings-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 51,
+      "exports": 2,
+      "bridgeable": 2,
+      "notes": [
+        "Imports `agent-session-services.ts`, `settings-manager.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "settings-manager.ts",
+      "package": "core",
+      "files": [
+        "settings-manager.ts"
+      ],
+      "loc": 1206,
+      "wave": 2,
+      "readiness": 14,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "settings-manager.ts:116",
+            "settings-manager.ts:117"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 12,
+          "samples": [
+            "settings-manager.ts:70",
+            "settings-manager.ts:280",
+            "settings-manager.ts:281"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 8,
+          "samples": [
+            "settings-manager.ts:169",
+            "settings-manager.ts:199",
+            "settings-manager.ts:226"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 6,
+          "samples": [
+            "settings-manager.ts:209",
+            "settings-manager.ts:401",
+            "settings-manager.ts:407"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 5,
+          "samples": [
+            "settings-manager.ts:286",
+            "settings-manager.ts:516",
+            "settings-manager.ts:517"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 11,
+          "samples": [
+            "settings-manager.ts:157",
+            "settings-manager.ts:205",
+            "settings-manager.ts:213"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "settings-manager.ts:364",
+            "settings-manager.ts:382",
+            "settings-manager.ts:622"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "settings-manager.ts:216",
+            "settings-manager.ts:217"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "http-dispatcher.ts",
+        "settings-defaults.ts",
+        "settings-schema.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "proper-lockfile"
+      ],
+      "direct_tests": 0,
+      "fan_in": 10,
+      "density": 0.7,
+      "priority": 13,
+      "exports": 6,
+      "bridgeable": 3,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Imports `http-dispatcher.ts`, `settings-defaults.ts`, `settings-schema.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "settings-schema.ts",
+      "package": "core",
+      "files": [
+        "settings-schema.ts"
+      ],
+      "loc": 496,
+      "wave": 1,
+      "readiness": 82,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "pi-ai-schemas.ts",
+        "settings-defaults.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 0.0,
+      "priority": 51,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Imports `pi-ai-schemas.ts`, `settings-defaults.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "skills.ts",
+      "package": "core",
+      "files": [
+        "skills.ts"
+      ],
+      "loc": 382,
+      "wave": 4,
+      "readiness": 72,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "skills.ts:34",
+            "skills.ts:36",
+            "skills.ts:40"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "skills.ts:421",
+            "skills.ts:422"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 7,
+          "samples": [
+            "skills.ts:54",
+            "skills.ts:191",
+            "skills.ts:203"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "diagnostics.ts",
+        "source-info.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "ignore"
+      ],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 2.9,
+      "priority": 52,
+      "exports": 3,
+      "bridgeable": 2,
+      "notes": [
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Imports `diagnostics.ts`, `source-info.ts`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "slash-commands.ts",
+      "package": "core",
+      "files": [
+        "slash-commands.ts"
+      ],
+      "loc": 40,
+      "wave": 4,
+      "readiness": 96,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [],
+      "internal_deps": [
+        "source-info.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 0.0,
+      "priority": 53,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Imports `source-info.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "source-info.ts",
+      "package": "core",
+      "files": [
+        "source-info.ts"
+      ],
+      "loc": 63,
+      "wave": 3,
+      "readiness": 80,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "source-info.ts:37"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "source-info.ts:22"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "package-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 9,
+      "density": 1.6,
+      "priority": 51,
+      "exports": 6,
+      "bridgeable": 6,
+      "notes": [
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with package-manager.ts: port them together.",
+        "Imports `package-manager.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "system-prompt.ts",
+      "package": "core",
+      "files": [
+        "system-prompt.ts"
+      ],
+      "loc": 174,
+      "wave": 5,
+      "readiness": 81,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 9,
+          "samples": [
+            "system-prompt.ts:67",
+            "system-prompt.ts:68",
+            "system-prompt.ts:94"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "system-prompt.ts:146"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "skills.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 2,
+      "density": 4.6,
+      "priority": 60,
+      "exports": 5,
+      "bridgeable": 5,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "1 imports use aliases or virtual modules and were not followed.",
+        "Imports `skills.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "timings.ts",
+      "package": "core",
+      "files": [
+        "timings.ts"
+      ],
+      "loc": 37,
+      "wave": 0,
+      "readiness": 91,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "timings.ts:14"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "timings.ts:18",
+            "timings.ts:23"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 5.4,
+      "priority": 61,
+      "exports": 3,
+      "bridgeable": 3,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "tools/",
+      "package": "core",
+      "files": [
+        "tools/bash.ts",
+        "tools/edit-diff.ts",
+        "tools/edit.ts",
+        "tools/file-mutation-queue.ts",
+        "tools/find.ts",
+        "tools/grep.ts",
+        "tools/index.ts",
+        "tools/ls.ts",
+        "tools/output-accumulator.ts",
+        "tools/path-utils.ts",
+        "tools/powershell.ts",
+        "tools/read.ts",
+        "tools/render-utils.ts",
+        "tools/tool-definition-wrapper.ts",
+        "tools/truncate.ts",
+        "tools/write.ts"
+      ],
+      "loc": 3247,
+      "wave": 6,
+      "readiness": 0,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node",
+        "browser"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 55,
+          "samples": [
+            "tools/bash.ts:402",
+            "tools/edit-diff.ts:26",
+            "tools/edit-diff.ts:30"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 89,
+          "samples": [
+            "tools/bash.ts:117",
+            "tools/bash.ts:124",
+            "tools/bash.ts:175"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 30,
+          "samples": [
+            "tools/bash.ts:88",
+            "tools/bash.ts:92",
+            "tools/bash.ts:115"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 19,
+          "samples": [
+            "tools/edit-diff.ts:714",
+            "tools/edit.ts:175",
+            "tools/file-mutation-queue.ts:11"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 7,
+          "samples": [
+            "tools/file-mutation-queue.ts:4",
+            "tools/find.ts:170",
+            "tools/find.ts:347"
+          ]
+        },
+        {
+          "risk": "generators",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "tools/read.ts:81",
+            "tools/read.ts:88"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "tools/bash.ts:105"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 50,
+          "samples": [
+            "tools/bash.ts:29",
+            "tools/bash.ts:34",
+            "tools/bash.ts:120"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 10,
+          "samples": [
+            "tools/bash.ts:187",
+            "tools/bash.ts:433",
+            "tools/edit.ts:90"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "tools/bash.ts:142",
+            "tools/bash.ts:145",
+            "tools/bash.ts:318"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "tools/edit.ts:109",
+            "tools/grep.ts:242",
+            "tools/render-utils.ts:102"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "extensions/",
+        "tools/renderers/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-tui",
+        "diff",
+        "minimatch",
+        "typebox"
+      ],
+      "direct_tests": 0,
+      "fan_in": 6,
+      "density": 2.8,
+      "priority": 11,
+      "exports": 68,
+      "bridgeable": 32,
+      "notes": [
+        "2 npm dependencies not in the crate table: check them by hand.",
+        "14 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with compaction/, tools/renderers/, bash-executor.ts, extensions/: port them together.",
+        "Imports `extensions/`, `tools/renderers/`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "tools/renderers/",
+      "package": "core",
+      "files": [
+        "tools/renderers/bash.ts",
+        "tools/renderers/edit.ts",
+        "tools/renderers/find.ts",
+        "tools/renderers/grep.ts",
+        "tools/renderers/index.ts",
+        "tools/renderers/ls.ts",
+        "tools/renderers/read.ts",
+        "tools/renderers/write.ts"
+      ],
+      "loc": 899,
+      "wave": 6,
+      "readiness": 39,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 12,
+          "samples": [
+            "tools/renderers/bash.ts:46",
+            "tools/renderers/bash.ts:47",
+            "tools/renderers/bash.ts:48"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 31,
+          "samples": [
+            "tools/renderers/bash.ts:39",
+            "tools/renderers/bash.ts:98",
+            "tools/renderers/bash.ts:109"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "tools/renderers/read.ts:26"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "tools/renderers/write.ts:27"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "tools/renderers/edit.ts:119"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "tools/renderers/edit.ts:177",
+            "tools/renderers/edit.ts:208"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "extensions/",
+        "tools/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-tui"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 1.8,
+      "priority": 28,
+      "exports": 3,
+      "bridgeable": 0,
+      "notes": [
+        "Every export is JS-shaped (functions, plugin objects, iterators): porting the logic means adding a data-only function, an API change.",
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "13 imports use aliases or virtual modules and were not followed.",
+        "Import cycle with compaction/, tools/, bash-executor.ts, extensions/: port them together.",
+        "Imports `extensions/`, `tools/`: port them first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "trust-manager.ts",
+      "package": "core",
+      "files": [
+        "trust-manager.ts"
+      ],
+      "loc": 214,
+      "wave": 0,
+      "readiness": 75,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "trust-manager.ts:47",
+            "trust-manager.ts:124",
+            "trust-manager.ts:135"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "trust-manager.ts:145",
+            "trust-manager.ts:177"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "trust-manager.ts:157"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "trust-manager.ts:112",
+            "trust-manager.ts:116",
+            "trust-manager.ts:120"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "trust-manager.ts:113",
+            "trust-manager.ts:126",
+            "trust-manager.ts:142"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "trust-manager.ts:164",
+            "trust-manager.ts:165"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "proper-lockfile"
+      ],
+      "direct_tests": 0,
+      "fan_in": 1,
+      "density": 4.2,
+      "priority": 56,
+      "exports": 4,
+      "bridgeable": 4,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "3 imports use aliases or virtual modules and were not followed.",
+        "Leaf: imports no other unit.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "usage-totals.ts",
+      "package": "core",
+      "files": [
+        "usage-totals.ts"
+      ],
+      "loc": 87,
+      "wave": 2,
+      "readiness": 91,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "usage-totals.ts:64"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "session-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 3,
+      "density": 1.1,
+      "priority": 58,
+      "exports": 4,
+      "bridgeable": 4,
+      "notes": [
+        "Imports `session-manager.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    },
+    {
+      "id": "virtual-models.ts",
+      "package": "core",
+      "files": [
+        "virtual-models.ts"
+      ],
+      "loc": 159,
+      "wave": 2,
+      "readiness": 75,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "virtual-models.ts:191",
+            "virtual-models.ts:210"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "virtual-models.ts:101",
+            "virtual-models.ts:130"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "virtual-models.ts:216"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "virtual-models.ts:192"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "session-manager.ts"
+      ],
+      "workspace_deps": [],
+      "external_deps": [
+        "@earendil-works/pi-ai"
+      ],
+      "direct_tests": 0,
+      "fan_in": 5,
+      "density": 3.1,
+      "priority": 54,
+      "exports": 6,
+      "bridgeable": 4,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Imports `session-manager.ts`: port it first, or port them together.",
+        "No tests found: write characterization tests against the original code first."
+      ]
+    }
+  ],
+  "start_here": [
+    "timings.ts",
+    "system-prompt.ts",
+    "crash-log.ts",
+    "http-dispatcher.ts",
+    "pi-manifest.ts",
+    "usage-totals.ts",
+    "bug-report-upload.ts",
+    "resolve-config-value.ts",
+    "trust-manager.ts",
+    "radius-mcp.ts"
+  ],
+  "dependencies": [
+    {
+      "name": "jiti",
+      "used_by": 1,
+      "crates": "-",
+      "fit": "none",
+      "note": "Loads TS/JS config or plugins at runtime. Keep loading in JS and pass data to Rust."
+    },
+    {
+      "name": "@earendil-works/pi-ai",
+      "used_by": 17,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "typebox",
+      "used_by": 8,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@earendil-works/pi-tui",
+      "used_by": 6,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@earendil-works/pi-agent-core",
+      "used_by": 3,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "@earendil-works/pi-mcp",
+      "used_by": 3,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "proper-lockfile",
+      "used_by": 3,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    },
+    {
+      "name": "minimatch",
+      "used_by": 3,
+      "crates": "globset",
+      "fit": "good",
+      "note": "Check brace and extglob edge cases."
+    },
+    {
+      "name": "ignore",
+      "used_by": 2,
+      "crates": "ignore",
+      "fit": "good",
+      "note": ""
+    },
+    {
+      "name": "chalk",
+      "used_by": 1,
+      "crates": "owo-colors, anstream",
+      "fit": "good",
+      "note": ""
+    },
+    {
+      "name": "diff",
+      "used_by": 1,
+      "crates": "similar",
+      "fit": "good",
+      "note": ""
+    },
+    {
+      "name": "semver",
+      "used_by": 1,
+      "crates": "node-semver",
+      "fit": "good",
+      "note": "Use node-semver, not semver: npm range syntax differs from Cargo's."
+    },
+    {
+      "name": "undici",
+      "used_by": 1,
+      "crates": "reqwest",
+      "fit": "good",
+      "note": ""
+    }
+  ],
+  "whole_app": {
+    "shape": "library",
+    "entry_points": [
+      {
+        "kind": "library",
+        "path": ".",
+        "name": "core",
+        "evidence": "no main and no server: the package's public API"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "jiti",
+        "names": [
+          "jiti"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": "-",
+        "fit": "none",
+        "note": "Loads TS/JS config or plugins at runtime. Keep loading in JS and pass data to Rust."
+      },
+      {
+        "name": "@earendil-works/pi-ai",
+        "names": [
+          "@earendil-works/pi-ai"
+        ],
+        "declared": false,
+        "used_by": 17,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "typebox",
+        "names": [
+          "typebox"
+        ],
+        "declared": false,
+        "used_by": 8,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@earendil-works/pi-tui",
+        "names": [
+          "@earendil-works/pi-tui"
+        ],
+        "declared": false,
+        "used_by": 6,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@earendil-works/pi-agent-core",
+        "names": [
+          "@earendil-works/pi-agent-core"
+        ],
+        "declared": false,
+        "used_by": 3,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "@earendil-works/pi-mcp",
+        "names": [
+          "@earendil-works/pi-mcp"
+        ],
+        "declared": false,
+        "used_by": 3,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "proper-lockfile",
+        "names": [
+          "proper-lockfile"
+        ],
+        "declared": false,
+        "used_by": 3,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      },
+      {
+        "name": "minimatch",
+        "names": [
+          "minimatch"
+        ],
+        "declared": false,
+        "used_by": 3,
+        "crates": "globset",
+        "fit": "good",
+        "note": "Check brace and extglob edge cases."
+      },
+      {
+        "name": "ignore",
+        "names": [
+          "ignore"
+        ],
+        "declared": false,
+        "used_by": 2,
+        "crates": "ignore",
+        "fit": "good",
+        "note": ""
+      },
+      {
+        "name": "chalk",
+        "names": [
+          "chalk"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": "owo-colors, anstream",
+        "fit": "good",
+        "note": ""
+      },
+      {
+        "name": "diff",
+        "names": [
+          "diff"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": "similar",
+        "fit": "good",
+        "note": ""
+      },
+      {
+        "name": "semver",
+        "names": [
+          "semver"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": "node-semver",
+        "fit": "good",
+        "note": "Use node-semver, not semver: npm range syntax differs from Cargo's."
+      },
+      {
+        "name": "undici",
+        "names": [
+          "undici"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": "reqwest",
+        "fit": "good",
+        "note": ""
+      }
+    ],
+    "pieces": [
+      {
+        "wave": 0,
+        "units": [
+          "auth-guidance.ts"
+        ],
+        "loc": 20,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "client-identity.ts"
+        ],
+        "loc": 9,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "defaults.ts"
+        ],
+        "loc": 11,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "diagnostics.ts"
+        ],
+        "loc": 14,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "event-bus.ts"
+        ],
+        "loc": 30,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "exec.ts"
+        ],
+        "loc": 110,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "experimental.ts"
+        ],
+        "loc": 3,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "export-html/vendor/"
+        ],
+        "loc": 1279,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "footer-data-provider.ts"
+        ],
+        "loc": 328,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "http-dispatcher.ts"
+        ],
+        "loc": 92,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "key-id-schema.ts"
+        ],
+        "loc": 17,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "mcp-servers.ts"
+        ],
+        "loc": 152,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "messages.ts"
+        ],
+        "loc": 156,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "output-guard.ts"
+        ],
+        "loc": 93,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "pi-ai-schemas.ts"
+        ],
+        "loc": 31,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "pi-manifest.ts"
+        ],
+        "loc": 35,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "provider-matching.ts"
+        ],
+        "loc": 10,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "radius.ts"
+        ],
+        "loc": 7,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "remote-catalog-provider.ts"
+        ],
+        "loc": 199,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "resolve-config-value.ts"
+        ],
+        "loc": 230,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "runtime-credentials.ts"
+        ],
+        "loc": 53,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "session-cwd.ts"
+        ],
+        "loc": 59,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "settings-defaults.ts"
+        ],
+        "loc": 69,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "timings.ts"
+        ],
+        "loc": 37,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "trust-manager.ts"
+        ],
+        "loc": 214,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "auth-storage.ts"
+        ],
+        "loc": 434,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "keybindings.ts"
+        ],
+        "loc": 335,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "model-config.ts"
+        ],
+        "loc": 193,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "preferred-providers.ts"
+        ],
+        "loc": 15,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "radius-mcp.ts"
+        ],
+        "loc": 35,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "session-manager.ts"
+        ],
+        "loc": 1566,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "settings-schema.ts"
+        ],
+        "loc": 496,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "cache-stats.ts"
+        ],
+        "loc": 111,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "keybindings-schema.ts"
+        ],
+        "loc": 17,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "models-store.ts"
+        ],
+        "loc": 127,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "provider-composer.ts"
+        ],
+        "loc": 692,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "session-export.ts"
+        ],
+        "loc": 40,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "settings-manager.ts"
+        ],
+        "loc": 1206,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "usage-totals.ts"
+        ],
+        "loc": 87,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "virtual-models.ts"
+        ],
+        "loc": 159,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "model-runtime.ts"
+        ],
+        "loc": 956,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "nested-tool-calls.ts"
+        ],
+        "loc": 201,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "package-manager.ts",
+          "source-info.ts"
+        ],
+        "loc": 2636,
+        "tangled": true
+      },
+      {
+        "wave": 4,
+        "units": [
+          "cache-warmer.ts"
+        ],
+        "loc": 296,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "model-registry.ts"
+        ],
+        "loc": 200,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "model-resolver.ts"
+        ],
+        "loc": 467,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "prompt-templates.ts"
+        ],
+        "loc": 251,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "skills.ts"
+        ],
+        "loc": 382,
+        "tangled": false
+      },
+      {
+        "wave": 4,
+        "units": [
+          "slash-commands.ts"
+        ],
+        "loc": 40,
+        "tangled": false
+      },
+      {
+        "wave": 5,
+        "units": [
+          "system-prompt.ts"
+        ],
+        "loc": 174,
+        "tangled": false
+      },
+      {
+        "wave": 6,
+        "units": [
+          "bash-executor.ts",
+          "compaction/",
+          "extensions/",
+          "tools/",
+          "tools/renderers/"
+        ],
+        "loc": 9063,
+        "tangled": true
+      },
+      {
+        "wave": 7,
+        "units": [
+          "crash-log.ts"
+        ],
+        "loc": 150,
+        "tangled": false
+      },
+      {
+        "wave": 7,
+        "units": [
+          "export-html/"
+        ],
+        "loc": 2172,
+        "tangled": false
+      },
+      {
+        "wave": 7,
+        "units": [
+          "project-trust.ts"
+        ],
+        "loc": 87,
+        "tangled": false
+      },
+      {
+        "wave": 7,
+        "units": [
+          "resource-loader.ts"
+        ],
+        "loc": 1155,
+        "tangled": false
+      },
+      {
+        "wave": 8,
+        "units": [
+          "bug-report.ts"
+        ],
+        "loc": 339,
+        "tangled": false
+      },
+      {
+        "wave": 9,
+        "units": [
+          "agent-session.ts"
+        ],
+        "loc": 3408,
+        "tangled": false
+      },
+      {
+        "wave": 9,
+        "units": [
+          "bug-report-upload.ts"
+        ],
+        "loc": 34,
+        "tangled": false
+      },
+      {
+        "wave": 10,
+        "units": [
+          "agent-session-runtime.ts",
+          "agent-session-services.ts",
+          "sdk.ts"
+        ],
+        "loc": 901,
+        "tangled": true
+      },
+      {
+        "wave": 11,
+        "units": [
+          "index.ts"
+        ],
+        "loc": 92,
+        "tangled": false
+      },
+      {
+        "wave": 11,
+        "units": [
+          "settings-diagnostics.ts"
+        ],
+        "loc": 19,
+        "tangled": false
+      }
+    ],
+    "decisions": [
+      {
+        "id": "D1",
+        "topic": "shape",
+        "question": "The app is a library, entered through core (.). Port every entry point, in that shape?",
+        "recommendation": "Yes: the Rust crate's public API becomes the library's front door"
+      },
+      {
+        "id": "D2",
+        "topic": "blocked extensions/",
+        "question": "extensions/ is blocked: `jiti` has no Rust equivalent. Rework that part in Rust, or keep the unit outside?",
+        "recommendation": "Research the blocker first; then port it with the piece that uses it"
+      },
+      {
+        "id": "D3",
+        "topic": "dependency jiti",
+        "question": "No crate does what jiti does (used by 1 unit; Loads TS/JS config or plugins at runtime. Keep loading in JS and pass data to Rust). Reimplement what the app uses, or drop the feature?",
+        "recommendation": "Reimplement only the part the app uses, proved by its recorded cases"
+      },
+      {
+        "id": "D4",
+        "topic": "dependency @earendil-works/pi-ai",
+        "question": "Which crate replaces @earendil-works/pi-ai (used by 17 units)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-ai.md before porting what uses it"
+      },
+      {
+        "id": "D5",
+        "topic": "dependency typebox",
+        "question": "Which crate replaces typebox (used by 8 units)?",
+        "recommendation": "Research it against primary sources into rust/research/typebox.md before porting what uses it"
+      },
+      {
+        "id": "D6",
+        "topic": "dependency @earendil-works/pi-tui",
+        "question": "Which crate replaces @earendil-works/pi-tui (used by 6 units)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-tui.md before porting what uses it"
+      },
+      {
+        "id": "D7",
+        "topic": "dependency @earendil-works/pi-agent-core",
+        "question": "Which crate replaces @earendil-works/pi-agent-core (used by 3 units)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-agent-core.md before porting what uses it"
+      },
+      {
+        "id": "D8",
+        "topic": "dependency @earendil-works/pi-mcp",
+        "question": "Which crate replaces @earendil-works/pi-mcp (used by 3 units)?",
+        "recommendation": "Research it against primary sources into rust/research/@earendil-works-pi-mcp.md before porting what uses it"
+      },
+      {
+        "id": "D9",
+        "topic": "dependency proper-lockfile",
+        "question": "Which crate replaces proper-lockfile (used by 3 units)?",
+        "recommendation": "Research it against primary sources into rust/research/proper-lockfile.md before porting what uses it"
+      },
+      {
+        "id": "D10",
+        "topic": "tangled units",
+        "question": "package-manager.ts, source-info.ts import each other (2636 lines). Port them as one piece?",
+        "recommendation": "Yes: one piece in wave 3, no glue between its parts"
+      },
+      {
+        "id": "D11",
+        "topic": "tangled units",
+        "question": "bash-executor.ts, compaction/, extensions/, tools/, tools/renderers/ import each other (9063 lines). Port them as one piece?",
+        "recommendation": "Yes: one piece in wave 6, no glue between its parts"
+      },
+      {
+        "id": "D12",
+        "topic": "tangled units",
+        "question": "agent-session-runtime.ts, agent-session-services.ts, sdk.ts import each other (901 lines). Port them as one piece?",
+        "recommendation": "Yes: one piece in wave 10, no glue between its parts"
+      }
+    ]
+  }
+}

@@ -1,0 +1,993 @@
+{
+  "schema": "rust-anything/analyze@1",
+  "language": "ts",
+  "summary": {
+    "packages": 1,
+    "source_files": 35,
+    "test_files": 11,
+    "ui_files": 0,
+    "loc": 5142,
+    "units": 9,
+    "ready": 5,
+    "caution": 4,
+    "blocked": 0,
+    "keep": 0,
+    "parse_errors": 0
+  },
+  "packages": [
+    {
+      "name": "@navi/foundation",
+      "dir": "",
+      "order": 1,
+      "runtime": "node",
+      "workspace_deps": [],
+      "test_files": 11,
+      "units": [
+        "browser/content/",
+        "browser/platform/",
+        "browser/popup/",
+        "browser/worker/",
+        "scripts/",
+        "src/cli/",
+        "src/core/",
+        "src/protocol/",
+        "src/transport/"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "id": "browser/content/",
+      "package": "@navi/foundation",
+      "files": [
+        "browser/content/actions.ts",
+        "browser/content/collector.ts",
+        "browser/content/main.ts",
+        "browser/content/refs.ts"
+      ],
+      "loc": 886,
+      "wave": 3,
+      "readiness": 44,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "browser"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 9,
+          "samples": [
+            "browser/content/collector.ts:186",
+            "browser/content/collector.ts:203",
+            "browser/content/collector.ts:206"
+          ]
+        },
+        {
+          "risk": "regex-syntax",
+          "severity": "high",
+          "count": 1,
+          "samples": [
+            "browser/content/actions.ts:51"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 11,
+          "samples": [
+            "browser/content/actions.ts:74",
+            "browser/content/collector.ts:170",
+            "browser/content/collector.ts:279"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 7,
+          "samples": [
+            "browser/content/actions.ts:13",
+            "browser/content/collector.ts:62",
+            "browser/content/collector.ts:73"
+          ]
+        },
+        {
+          "risk": "reflection",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "browser/content/collector.ts:216",
+            "browser/content/refs.ts:55"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "browser/content/actions.ts:4"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 28,
+          "samples": [
+            "browser/content/actions.ts:27",
+            "browser/content/actions.ts:29",
+            "browser/content/actions.ts:36"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "browser/content/collector.ts:532",
+            "browser/content/collector.ts:533",
+            "browser/content/collector.ts:652"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "browser/content/collector.ts:678",
+            "browser/content/collector.ts:685",
+            "browser/content/collector.ts:698"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "browser/content/collector.ts:566"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "browser/platform/",
+        "browser/worker/",
+        "src/protocol/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 3,
+      "fan_in": 0,
+      "density": 2.3,
+      "priority": 46,
+      "exports": 8,
+      "bridgeable": 6,
+      "notes": [
+        "Imports `browser/platform/`, `browser/worker/`, `src/protocol/`: port them first, or port them together.",
+        "3 test files import it directly."
+      ]
+    },
+    {
+      "id": "browser/platform/",
+      "package": "@navi/foundation",
+      "files": [
+        "browser/platform/chrome.ts",
+        "browser/platform/types.ts"
+      ],
+      "loc": 167,
+      "wave": 0,
+      "readiness": 86,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 31,
+          "samples": [
+            "browser/platform/chrome.ts:21",
+            "browser/platform/chrome.ts:22",
+            "browser/platform/chrome.ts:23"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "browser/platform/chrome.ts:88",
+            "browser/platform/chrome.ts:92"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 7,
+          "samples": [
+            "browser/platform/chrome.ts:51",
+            "browser/platform/chrome.ts:58",
+            "browser/platform/chrome.ts:68"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 2,
+      "fan_in": 3,
+      "density": 0.0,
+      "priority": 68,
+      "exports": 3,
+      "bridgeable": 1,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "2 test files import it directly."
+      ]
+    },
+    {
+      "id": "browser/popup/",
+      "package": "@navi/foundation",
+      "files": [
+        "browser/popup/popup.ts"
+      ],
+      "loc": 77,
+      "wave": 3,
+      "readiness": 95,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "browser"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "browser/popup/popup.ts:63",
+            "browser/popup/popup.ts:66"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "browser/popup/popup.ts:44"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "browser/popup/popup.ts:19",
+            "browser/popup/popup.ts:65",
+            "browser/popup/popup.ts:72"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "browser/platform/",
+        "browser/worker/",
+        "src/protocol/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 0.0,
+      "priority": 65,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "Imports `browser/platform/`, `browser/worker/`, `src/protocol/`: port them first, or port them together."
+      ]
+    },
+    {
+      "id": "browser/worker/",
+      "package": "@navi/foundation",
+      "files": [
+        "browser/worker/attach.ts",
+        "browser/worker/grant.ts",
+        "browser/worker/local-channel.ts",
+        "browser/worker/main.ts",
+        "browser/worker/native-session.ts",
+        "browser/worker/worker.ts"
+      ],
+      "loc": 1145,
+      "wave": 2,
+      "readiness": 35,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "browser/worker/attach.ts:65",
+            "browser/worker/attach.ts:148",
+            "browser/worker/worker.ts:312"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 29,
+          "samples": [
+            "browser/worker/attach.ts:29",
+            "browser/worker/attach.ts:32",
+            "browser/worker/attach.ts:75"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 22,
+          "samples": [
+            "browser/worker/native-session.ts:29",
+            "browser/worker/native-session.ts:32",
+            "browser/worker/native-session.ts:74"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 3,
+          "samples": [
+            "browser/worker/grant.ts:18",
+            "browser/worker/local-channel.ts:107",
+            "browser/worker/local-channel.ts:136"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "browser/worker/local-channel.ts:112",
+            "browser/worker/worker.ts:232"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "browser/worker/attach.ts:15",
+            "browser/worker/local-channel.ts:148"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 56,
+          "samples": [
+            "browser/worker/attach.ts:31",
+            "browser/worker/attach.ts:34",
+            "browser/worker/attach.ts:38"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 1,
+          "samples": [
+            "browser/worker/main.ts:16"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "browser/platform/",
+        "src/core/",
+        "src/protocol/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 2,
+      "fan_in": 2,
+      "density": 1.0,
+      "priority": 39,
+      "exports": 17,
+      "bridgeable": 8,
+      "notes": [
+        "Imports `browser/platform/`, `src/core/`, `src/protocol/`: port them first, or port them together.",
+        "2 test files import it directly."
+      ]
+    },
+    {
+      "id": "scripts/",
+      "package": "@navi/foundation",
+      "files": [
+        "scripts/package-extension.mjs"
+      ],
+      "loc": 38,
+      "wave": 0,
+      "readiness": 88,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 6,
+          "samples": [
+            "scripts/package-extension.mjs:7",
+            "scripts/package-extension.mjs:8",
+            "scripts/package-extension.mjs:29"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "scripts/package-extension.mjs:25"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "scripts/package-extension.mjs:26",
+            "scripts/package-extension.mjs:27",
+            "scripts/package-extension.mjs:32"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "scripts/package-extension.mjs:29",
+            "scripts/package-extension.mjs:31"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [
+        "esbuild"
+      ],
+      "direct_tests": 0,
+      "fan_in": 0,
+      "density": 2.6,
+      "priority": 62,
+      "exports": 0,
+      "bridgeable": 0,
+      "notes": [
+        "1 npm dependencies not in the crate table: check them by hand.",
+        "Leaf: imports no other unit."
+      ]
+    },
+    {
+      "id": "src/cli/",
+      "package": "@navi/foundation",
+      "files": [
+        "src/cli/diagnostics.ts",
+        "src/cli/main.ts",
+        "src/cli/native-setup.ts",
+        "src/cli/output.ts",
+        "src/cli/serve.ts"
+      ],
+      "loc": 227,
+      "wave": 2,
+      "readiness": 76,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "src/cli/main.ts:57",
+            "src/cli/output.ts:6"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 21,
+          "samples": [
+            "src/cli/diagnostics.ts:6",
+            "src/cli/diagnostics.ts:11",
+            "src/cli/diagnostics.ts:13"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 4,
+          "samples": [
+            "src/cli/serve.ts:13",
+            "src/cli/serve.ts:14",
+            "src/cli/serve.ts:33"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/cli/serve.ts:28"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 11,
+          "samples": [
+            "src/cli/diagnostics.ts:7",
+            "src/cli/diagnostics.ts:16",
+            "src/cli/diagnostics.ts:24"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "src/cli/native-setup.ts:36",
+            "src/cli/output.ts:3"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/core/",
+        "src/transport/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 2,
+      "fan_in": 0,
+      "density": 1.8,
+      "priority": 67,
+      "exports": 5,
+      "bridgeable": 3,
+      "notes": [
+        "Imports `src/core/`, `src/transport/`: port them first, or port them together.",
+        "2 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/core/",
+      "package": "@navi/foundation",
+      "files": [
+        "src/core/client.ts",
+        "src/core/connection.ts",
+        "src/core/errors.ts",
+        "src/core/grants.ts",
+        "src/core/index.ts",
+        "src/core/ports.ts"
+      ],
+      "loc": 960,
+      "wave": 1,
+      "readiness": 45,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 2,
+          "samples": [
+            "src/core/connection.ts:108",
+            "src/core/errors.ts:45"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 35,
+          "samples": [
+            "src/core/client.ts:40",
+            "src/core/client.ts:54",
+            "src/core/client.ts:94"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 16,
+          "samples": [
+            "src/core/client.ts:70",
+            "src/core/client.ts:101",
+            "src/core/client.ts:105"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/core/client.ts:54",
+            "src/core/connection.ts:121"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/core/connection.ts:501"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/core/ports.ts:56"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 21,
+          "samples": [
+            "src/core/client.ts:107",
+            "src/core/client.ts:110",
+            "src/core/client.ts:116"
+          ]
+        },
+        {
+          "risk": "clock-and-random",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "src/core/connection.ts:108",
+            "src/core/ports.ts:42",
+            "src/core/ports.ts:43"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/protocol/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 4,
+      "fan_in": 2,
+      "density": 0.6,
+      "priority": 44,
+      "exports": 9,
+      "bridgeable": 5,
+      "notes": [
+        "Imports `src/protocol/`: port it first, or port them together.",
+        "4 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/protocol/",
+      "package": "@navi/foundation",
+      "files": [
+        "src/protocol/codec.ts",
+        "src/protocol/index.ts",
+        "src/protocol/limits.ts",
+        "src/protocol/types.ts",
+        "src/protocol/validate.ts"
+      ],
+      "loc": 771,
+      "wave": 0,
+      "readiness": 72,
+      "status": "ready",
+      "bridge": "napi-rs",
+      "platforms": [],
+      "risks": [
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 2,
+          "samples": [
+            "src/protocol/validate.ts:216",
+            "src/protocol/validate.ts:312"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/protocol/validate.ts:222"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/protocol/validate.ts:48"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 9,
+          "samples": [
+            "src/protocol/codec.ts:19",
+            "src/protocol/codec.ts:26",
+            "src/protocol/codec.ts:28"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 3,
+          "samples": [
+            "src/protocol/codec.ts:17",
+            "src/protocol/codec.ts:29",
+            "src/protocol/validate.ts:184"
+          ]
+        }
+      ],
+      "internal_deps": [],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 8,
+      "fan_in": 5,
+      "density": 0.6,
+      "priority": 57,
+      "exports": 8,
+      "bridgeable": 7,
+      "notes": [
+        "Leaf: imports no other unit.",
+        "8 test files import it directly."
+      ]
+    },
+    {
+      "id": "src/transport/",
+      "package": "@navi/foundation",
+      "files": [
+        "src/transport/channel.ts",
+        "src/transport/connector.ts",
+        "src/transport/framing.ts",
+        "src/transport/index.ts",
+        "src/transport/socket.ts"
+      ],
+      "loc": 871,
+      "wave": 1,
+      "readiness": 48,
+      "status": "caution",
+      "bridge": "napi-rs",
+      "platforms": [
+        "node"
+      ],
+      "risks": [
+        {
+          "risk": "string-offsets",
+          "severity": "high",
+          "count": 3,
+          "samples": [
+            "src/transport/connector.ts:72",
+            "src/transport/connector.ts:76",
+            "src/transport/connector.ts:248"
+          ]
+        },
+        {
+          "risk": "callbacks",
+          "severity": "medium",
+          "count": 19,
+          "samples": [
+            "src/transport/channel.ts:14",
+            "src/transport/channel.ts:16",
+            "src/transport/channel.ts:30"
+          ]
+        },
+        {
+          "risk": "async",
+          "severity": "medium",
+          "count": 14,
+          "samples": [
+            "src/transport/connector.ts:149",
+            "src/transport/connector.ts:166",
+            "src/transport/connector.ts:215"
+          ]
+        },
+        {
+          "risk": "dynamic-typing",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/transport/connector.ts:151"
+          ]
+        },
+        {
+          "risk": "ordered-collections",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/transport/socket.ts:169"
+          ]
+        },
+        {
+          "risk": "class-inheritance",
+          "severity": "medium",
+          "count": 1,
+          "samples": [
+            "src/transport/framing.ts:20"
+          ]
+        },
+        {
+          "risk": "exceptions",
+          "severity": "low",
+          "count": 65,
+          "samples": [
+            "src/transport/channel.ts:36",
+            "src/transport/channel.ts:94",
+            "src/transport/channel.ts:96"
+          ]
+        },
+        {
+          "risk": "number-semantics",
+          "severity": "low",
+          "count": 4,
+          "samples": [
+            "src/transport/socket.ts:82",
+            "src/transport/socket.ts:83",
+            "src/transport/socket.ts:112"
+          ]
+        },
+        {
+          "risk": "json",
+          "severity": "low",
+          "count": 2,
+          "samples": [
+            "src/transport/framing.ts:49",
+            "src/transport/framing.ts:181"
+          ]
+        }
+      ],
+      "internal_deps": [
+        "src/protocol/"
+      ],
+      "workspace_deps": [],
+      "external_deps": [],
+      "direct_tests": 3,
+      "fan_in": 1,
+      "density": 1.3,
+      "priority": 47,
+      "exports": 14,
+      "bridgeable": 7,
+      "notes": [
+        "Imports `src/protocol/`: port it first, or port them together.",
+        "3 test files import it directly."
+      ]
+    }
+  ],
+  "start_here": [
+    "browser/platform/",
+    "src/cli/",
+    "src/protocol/"
+  ],
+  "dependencies": [
+    {
+      "name": "esbuild",
+      "used_by": 1,
+      "crates": null,
+      "fit": "unknown",
+      "note": ""
+    }
+  ],
+  "whole_app": {
+    "shape": "server",
+    "entry_points": [
+      {
+        "kind": "server",
+        "path": "src/transport/socket.ts",
+        "evidence": "`createServer(` at src/transport/socket.ts:171"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "esbuild",
+        "names": [
+          "esbuild"
+        ],
+        "declared": false,
+        "used_by": 1,
+        "crates": null,
+        "fit": "unknown",
+        "note": ""
+      }
+    ],
+    "pieces": [
+      {
+        "wave": 0,
+        "units": [
+          "browser/platform/"
+        ],
+        "loc": 167,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "scripts/"
+        ],
+        "loc": 38,
+        "tangled": false
+      },
+      {
+        "wave": 0,
+        "units": [
+          "src/protocol/"
+        ],
+        "loc": 771,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "src/core/"
+        ],
+        "loc": 960,
+        "tangled": false
+      },
+      {
+        "wave": 1,
+        "units": [
+          "src/transport/"
+        ],
+        "loc": 871,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "browser/worker/"
+        ],
+        "loc": 1145,
+        "tangled": false
+      },
+      {
+        "wave": 2,
+        "units": [
+          "src/cli/"
+        ],
+        "loc": 227,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "browser/content/"
+        ],
+        "loc": 886,
+        "tangled": false
+      },
+      {
+        "wave": 3,
+        "units": [
+          "browser/popup/"
+        ],
+        "loc": 77,
+        "tangled": false
+      }
+    ],
+    "decisions": [
+      {
+        "id": "D1",
+        "topic": "shape",
+        "question": "The app is a server, entered through src/transport/socket.ts. Port every entry point, in that shape?",
+        "recommendation": "Yes: an axum front door (`app front-door`) takes the server over first"
+      },
+      {
+        "id": "D2",
+        "topic": "dependency esbuild",
+        "question": "Which crate replaces esbuild (used by 1 unit)?",
+        "recommendation": "Research it against primary sources into rust/research/esbuild.md before porting what uses it"
+      }
+    ]
+  }
+}
